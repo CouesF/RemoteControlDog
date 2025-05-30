@@ -1,4 +1,4 @@
-# Python package requirements for Cloud Server (CS)
+# Python package requirements for Robot Dog (RD)
 
 protobuf
 python-dotenv
