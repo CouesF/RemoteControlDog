@@ -28,6 +28,7 @@ def main():
 
     while True:
         try:
+            print("getting data")
             data, addr = udp_socket.recvfrom(BUFFER_SIZE)
             print(f"CS: Received {len(data)} bytes from {addr}")
 
