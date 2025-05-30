@@ -1,0 +1,19 @@
+{
+    "name": "ce-controller",
+    "version": "0.1.0",
+    "description": "Control End for RJA System",
+    "main": "main.js",
+    "scripts": {
+      "start": "electron ."
+    },
+    "keywords": [],
+    "author": "",
+    "license": "ISC",
+    "devDependencies": {
+      "electron": "^28.0.0" 
+    },
+    "dependencies": {
+      "protobufjs": "^7.2.5", 
+      "uuid": "^9.0.1"
+    }
+  }

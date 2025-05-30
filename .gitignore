@@ -1,0 +1,36 @@
+# Node.js
+ce_controller/node_modules/
+ce_controller/package-lock.json
+ce_controller/.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.env
+*.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Protobuf generated files (if you want to ignore)
+*.pb2.py
+*.pb.js
+
+# VSCode settings
+.vscode/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+
+# Misc
+*.swp
+*.swo

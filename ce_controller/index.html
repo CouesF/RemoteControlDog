@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;">
+    <title>RJA Control End</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #333;
+            color: white;
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+        }
+        #video-container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            background-color: #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        #video-stream {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain; /* Or 'cover' or 'fill' depending on desired scaling */
+        }
+        #status-overlay {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background-color: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #555;
+            min-width: 250px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.5);
+        }
+        #status-overlay h3 {
+            margin-top: 0;
+            color: #00aaff;
+        }
+        #status-overlay p {
+            margin: 5px 0;
+            font-size: 0.9em;
+        }
+        #status-overlay pre {
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            font-size: 0.8em;
+            max-height: 200px;
+            overflow-y: auto;
+            background-color: rgba(20,20,20,0.8);
+            padding: 5px;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div id="video-container">
+        <img id="video-stream" src="" alt="Video Stream">
+    </div>
+
+    <div id="status-overlay">
+        <h3>Robot Status</h3>
+        <p>Battery: <span id="status-battery">N/A</span>%</p>
+        <p>Position: X=<span id="status-pos-x">N/A</span>, Y=<span id="status-pos-y">N/A</span>, Z=<span id="status-pos-z">N/A</span></p>
+        <p>Nav State: <span id="status-nav">N/A</span></p>
+        <p>Human Present: <span id="status-human">N/A</span></p>
+        <p>System Health: <span id="status-health">N/A</span></p>
+        <!-- <pre id="raw-status-data">Raw data will appear here...</pre> -->
+    </div>
+
+    <script src="./renderer.js"></script>
+</body>
+</html>
