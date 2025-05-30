@@ -29,7 +29,7 @@ def main():
     while True:
         try:
             data, addr = udp_socket.recvfrom(BUFFER_SIZE)
-            # print(f"CS: Received {len(data)} bytes from {addr}")
+            print(f"CS: Received {len(data)} bytes from {addr}")
 
             wrapper = pb.UdpPacketWrapper()
             try:
