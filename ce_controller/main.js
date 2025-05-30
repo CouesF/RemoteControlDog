@@ -9,7 +9,7 @@ let pbRoot; // This will store the loaded protobuf root object
 
 // Configuration from .env
 const CE_CLIENT_ID = process.env.CE_CLIENT_ID || "controller_main";
-// const RD_CLIENT_ID = process.env.RD_CLIENT_ID || "robot_dog_alpha"; // Not directly used for sending from main.js
+const RD_CLIENT_ID = process.env.RD_CLIENT_ID || "robot_dog_alpha"; // Not directly used for sending from main.js
 const CS_HOST = process.env.TARGET_CS_HOST || "127.0.0.1";
 const CS_PORT = parseInt(process.env.TARGET_CS_PORT || "9000", 10);
 const CE_LISTEN_PORT = parseInt(process.env.CE_LISTEN_PORT || "0", 10);
