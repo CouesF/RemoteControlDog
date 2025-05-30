@@ -2,6 +2,7 @@ import socket
 # Make sure messages_pb2.py is in the same directory or Python path
 import messages_pb2 as pb
 from dotenv import load_dotenv
+import os
 
 # Configuration
 # Load environment variables from .env file in the parent directory
