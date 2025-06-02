@@ -12,6 +12,7 @@ build/
 *.egg
 *.sqlite3
 *.db
+env*/
 
 # Node / Electron
 package-lock.json
