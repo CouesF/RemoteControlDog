@@ -33,17 +33,16 @@ let mainWindow;
 
 function createWindow() {
     mainWindow = new BrowserWindow({
-        width: 1000,
-        height: 800,
+        width: 1200, // Increased width for controls
+        height: 900, // Increased height for controls
         webPreferences: {
-            preload: path.join(__dirname, '..', 'preload', 'preload.js'), // Correct path to preload
+            preload: path.join(__dirname, '..', 'preload', 'preload.js'),
             contextIsolation: true,
             nodeIntegration: false
         }
     });
-    // mainWindow.loadFile('index.html'); // This will be relative to project root if not careful
-    mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html')); // Correct path to index.html
-    // mainWindow.webContents.openDevTools();
+    mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
+    mainWindow.webContents.openDevTools(); // Open DevTools for easier debugging
 }
 
 app.whenReady().then(async () => {
@@ -74,9 +73,8 @@ app.on('window-all-closed', () => {
     console.log("CE_Main: App quit.");
 });
 
-// IPC example for sending control commands from renderer
+// IPC for control commands (joystick)
 ipcMain.on('send-control-command', (event, command) => {
-    // command = { linearX: 0.5, linearY: 0.0, angularZ: 0.1 }
     console.log("CE_Main: Received 'send-control-command' from renderer:", command);
     if (command && typeof command.linearX === 'number' && 
         typeof command.linearY === 'number' && 
@@ -89,5 +87,29 @@ ipcMain.on('send-control-command', (event, command) => {
         );
     } else {
         console.warn("CE_Main: Invalid control command received via IPC:", command);
+    }
+});
+
+// IPC for system commands (E-Stop) - ADDED
+ipcMain.on('send-system-command', (event, command) => {
+    console.log("CE_Main: Received 'send-system-command' from renderer:", command);
+    if (command && command.action) {
+        // The action string (e.g., 'EMERGENCY_STOP') will be mapped to the enum value
+        // by the protobufHandler.createSystemActionCommand function.
+        udpHandler.sendSystemActionCommandToRobot(RD_TARGET_CLIENT_ID, command.action);
+    } else {
+        console.warn("CE_Main: Invalid system command received via IPC:", command);
+    }
+});
+
+// IPC for posture commands - ADDED
+ipcMain.on('send-posture-command', (event, command) => {
+    console.log("CE_Main: Received 'send-posture-command' from renderer:", command);
+    if (command && command.posture) {
+        // The posture string (e.g., 'STAND') will be mapped to the enum value
+        // by the protobufHandler.createSetPostureCommand function.
+        udpHandler.sendSetPostureCommandToRobot(RD_TARGET_CLIENT_ID, command.posture);
+    } else {
+        console.warn("CE_Main: Invalid posture command received via IPC:", command);
     }
 });

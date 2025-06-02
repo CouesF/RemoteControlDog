@@ -541,13 +541,43 @@ class SystemActionCommand(_message.Message):
         SHUTDOWN_ROBOT: _ClassVar[SystemActionCommand.ActionType]
         ENTER_STANDBY_MODE: _ClassVar[SystemActionCommand.ActionType]
         RUN_SELF_DIAGNOSTICS: _ClassVar[SystemActionCommand.ActionType]
+        EMERGENCY_STOP: _ClassVar[SystemActionCommand.ActionType]
     ACTION_UNSPECIFIED: SystemActionCommand.ActionType
     REBOOT_ROBOT: SystemActionCommand.ActionType
     SHUTDOWN_ROBOT: SystemActionCommand.ActionType
     ENTER_STANDBY_MODE: SystemActionCommand.ActionType
     RUN_SELF_DIAGNOSTICS: SystemActionCommand.ActionType
+    EMERGENCY_STOP: SystemActionCommand.ActionType
     HEADER_FIELD_NUMBER: _ClassVar[int]
     ACTION_FIELD_NUMBER: _ClassVar[int]
     header: Header
     action: SystemActionCommand.ActionType
     def __init__(self, header: _Optional[_Union[Header, _Mapping]] = ..., action: _Optional[_Union[SystemActionCommand.ActionType, str]] = ...) -> None: ...
+
+class ControlCommand(_message.Message):
+    __slots__ = ("header", "linear_velocity_x", "linear_velocity_y", "angular_velocity_z")
+    HEADER_FIELD_NUMBER: _ClassVar[int]
+    LINEAR_VELOCITY_X_FIELD_NUMBER: _ClassVar[int]
+    LINEAR_VELOCITY_Y_FIELD_NUMBER: _ClassVar[int]
+    ANGULAR_VELOCITY_Z_FIELD_NUMBER: _ClassVar[int]
+    header: Header
+    linear_velocity_x: float
+    linear_velocity_y: float
+    angular_velocity_z: float
+    def __init__(self, header: _Optional[_Union[Header, _Mapping]] = ..., linear_velocity_x: _Optional[float] = ..., linear_velocity_y: _Optional[float] = ..., angular_velocity_z: _Optional[float] = ...) -> None: ...
+
+class SetPostureCommand(_message.Message):
+    __slots__ = ("header", "posture")
+    class PostureType(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
+        __slots__ = ()
+        POSTURE_UNSPECIFIED: _ClassVar[SetPostureCommand.PostureType]
+        STAND: _ClassVar[SetPostureCommand.PostureType]
+        LIE_DOWN: _ClassVar[SetPostureCommand.PostureType]
+    POSTURE_UNSPECIFIED: SetPostureCommand.PostureType
+    STAND: SetPostureCommand.PostureType
+    LIE_DOWN: SetPostureCommand.PostureType
+    HEADER_FIELD_NUMBER: _ClassVar[int]
+    POSTURE_FIELD_NUMBER: _ClassVar[int]
+    header: Header
+    posture: SetPostureCommand.PostureType
+    def __init__(self, header: _Optional[_Union[Header, _Mapping]] = ..., posture: _Optional[_Union[SetPostureCommand.PostureType, str]] = ...) -> None: ...

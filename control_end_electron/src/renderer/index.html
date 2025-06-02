@@ -15,11 +15,16 @@
             color: white;
             font-family: Arial, sans-serif;
             display: flex;
-            flex-direction: column;
+            flex-direction: column; /* Changed from row to column */
+        }
+        #main-content { /* New wrapper for video and status */
+            display: flex;
+            flex-grow: 1; /* Allows this to take up space */
+            height: calc(100% - 180px); /* Adjust 180px based on controls height */
         }
         #video-container {
-            position: relative;
-            width: 100%;
+            position: relative; /* Keep relative for status overlay */
+            flex-grow: 1; /* Video takes available space */
             height: 100%;
             background-color: #000;
             display: flex;
@@ -29,52 +34,139 @@
         #video-stream {
             max-width: 100%;
             max-height: 100%;
-            object-fit: contain; /* Or 'cover' or 'fill' depending on desired scaling */
+            object-fit: contain;
         }
         #status-overlay {
             position: absolute;
-            top: 20px;
-            left: 20px;
+            top: 10px;
+            left: 10px;
             background-color: rgba(0, 0, 0, 0.7);
-            padding: 15px;
+            padding: 10px;
             border-radius: 8px;
             border: 1px solid #555;
-            min-width: 250px;
+            min-width: 220px; /* Reduced min-width */
             box-shadow: 0 0 10px rgba(0,0,0,0.5);
+            font-size: 0.8em; /* Smaller font for status */
         }
         #status-overlay h3 {
             margin-top: 0;
+            margin-bottom: 5px;
             color: #00aaff;
+            font-size: 1.2em;
         }
         #status-overlay p {
-            margin: 5px 0;
+            margin: 3px 0;
+        }
+        #controls-area { /* Container for all controls */
+            background-color: #2a2a2a;
+            padding: 10px;
+            border-top: 1px solid #555;
+            display: flex;
+            justify-content: space-around; /* Distribute control groups */
+            align-items: flex-start; /* Align groups to the top */
+            flex-wrap: wrap; /* Allow wrapping if not enough space */
+            height: auto; /* Auto height based on content */
+            min-height: 150px; /* Minimum height for the controls area */
+        }
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            margin: 5px;
+        }
+        .control-group h4 {
+            margin-top: 0;
+            margin-bottom: 5px;
+            color: #00aaff;
+            font-size: 1em;
+            text-align: center;
+        }
+        .control-row {
+            display: flex;
+            gap: 8px;
+            justify-content: center;
+        }
+        .control-group button, .joystick-grid button {
+            padding: 8px 10px;
+            background-color: #4CAF50; /* Green */
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            min-width: 70px;
             font-size: 0.9em;
         }
-        #status-overlay pre {
-            white-space: pre-wrap;
-            word-wrap: break-word;
-            font-size: 0.8em;
-            max-height: 200px;
-            overflow-y: auto;
-            background-color: rgba(20,20,20,0.8);
-            padding: 5px;
-            border-radius: 4px;
+        .control-group button:hover, .joystick-grid button:hover {
+            background-color: #45a049;
         }
+        #btn-e-stop {
+            background-color: #f44336; /* Red */
+        }
+        #btn-e-stop:hover {
+            background-color: #da190b;
+        }
+        .joystick-grid {
+            display: grid;
+            grid-template-areas:
+                ". up ."
+                "left stop right"
+                ". down ."
+                "rotl . rotr";
+            gap: 5px;
+            justify-items: center;
+        }
+        .joystick-grid button { width: 55px; height: 35px; background-color: #007bff; } /* Blue */
+        .joystick-grid button:hover { background-color: #0056b3; }
+        #btn-forward { grid-area: up; }
+        #btn-backward { grid-area: down; }
+        #btn-left { grid-area: left; }
+        #btn-right { grid-area: right; }
+        #btn-stop-move { grid-area: stop; background-color: #ffc107; color: #333; } /* Yellow */
+        #btn-stop-move:hover { background-color: #e0a800; }
+        #btn-rotate-left { grid-area: rotl; }
+        #btn-rotate-right { grid-area: rotr; }
     </style>
 </head>
 <body>
-    <div id="video-container">
-        <img id="video-stream" src="" alt="Video Stream">
+    <div id="main-content">
+        <div id="video-container">
+            <img id="video-stream" src="" alt="Video Stream">
+            <div id="status-overlay">
+                <h3>Robot Status</h3>
+                <p>Battery: <span id="status-battery">N/A</span>%</p>
+                <p>Position: X=<span id="status-pos-x">N/A</span>, Y=<span id="status-pos-y">N/A</span>, Z=<span id="status-pos-z">N/A</span></p>
+                <p>Nav State: <span id="status-nav">N/A</span></p>
+                <p>Human: <span id="status-human">N/A</span></p>
+                <p>Health: <span id="status-health">N/A</span></p>
+            </div>
+        </div>
     </div>
 
-    <div id="status-overlay">
-        <h3>Robot Status</h3>
-        <p>Battery: <span id="status-battery">N/A</span>%</p>
-        <p>Position: X=<span id="status-pos-x">N/A</span>, Y=<span id="status-pos-y">N/A</span>, Z=<span id="status-pos-z">N/A</span></p>
-        <p>Nav State: <span id="status-nav">N/A</span></p>
-        <p>Human Present: <span id="status-human">N/A</span></p>
-        <p>System Health: <span id="status-health">N/A</span></p>
-        <!-- <pre id="raw-status-data">Raw data will appear here...</pre> -->
+    <div id="controls-area">
+        <div class="control-group">
+            <h4>System</h4>
+            <button id="btn-e-stop">E-STOP</button>
+        </div>
+        <div class="control-group">
+            <h4>Posture</h4>
+            <div class="control-row">
+                <button id="btn-stand">Stand</button>
+                <button id="btn-lie-down">Lie Down</button>
+            </div>
+        </div>
+        <div class="control-group">
+            <h4>Movement (Joystick)</h4>
+            <div class="joystick-grid">
+                <button id="btn-forward">▲</button>
+                <button id="btn-left">◄</button>
+                <button id="btn-stop-move">■</button>
+                <button id="btn-right">►</button>
+                <button id="btn-backward">▼</button>
+                <button id="btn-rotate-left">↺</button>
+                <button id="btn-rotate-right">↻</button>
+            </div>
+        </div>
     </div>
 
     <script src="./renderer.js"></script>

@@ -381,16 +381,19 @@ message CommandAcknowledgement {
 }
 
 // CE -> RD: 请求机器人执行特定系统动作
+// CE -> RD: 请求机器人执行特定系统动作
 message SystemActionCommand {
-    Header header = 1;
-    enum ActionType {
-        ACTION_UNSPECIFIED = 0;
-        REBOOT_ROBOT = 1;
-        SHUTDOWN_ROBOT = 2;
-        ENTER_STANDBY_MODE = 3;
-        RUN_SELF_DIAGNOSTICS = 4;
-    }
-    ActionType action = 2;
+  Header header = 1;
+  enum ActionType {
+      ACTION_UNSPECIFIED = 0;
+      REBOOT_ROBOT = 1;
+      SHUTDOWN_ROBOT = 2;
+      ENTER_STANDBY_MODE = 3;
+      RUN_SELF_DIAGNOSTICS = 4;
+      EMERGENCY_STOP = 5;       // ADDED for E-Stop
+      // RESET_EMERGENCY_STOP = 6; // Optional: if E-stop needs explicit reset
+  }
+  ActionType action = 2;
 }
 
 // (10) Basic Robot Control (Example, if used for direct teleop from CE -> RD)
@@ -399,4 +402,16 @@ message ControlCommand {
   float linear_velocity_x = 2;    // Forward/backward speed
   float linear_velocity_y = 3;    // Strafing speed (if applicable)
   float angular_velocity_z = 4;   // Turning speed (yaw)
+}
+
+// (11) NEW message for posture control
+message SetPostureCommand {
+  Header header = 1;
+  enum PostureType {
+    POSTURE_UNSPECIFIED = 0;
+    STAND = 1;
+    LIE_DOWN = 2;
+    // SIT = 3; // Future extension
+  }
+  PostureType posture = 2;
 }

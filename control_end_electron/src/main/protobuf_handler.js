@@ -15,14 +15,6 @@ async function loadProtoDefinitions() {
         pbRoot = await protobuf.load(protoFilePath);
         console.log("CE_ProtoHandler: Protobuf definitions loaded successfully from:", protoFilePath);
 
-        // For debugging, you can inspect the loaded structure:
-        // console.log("Loaded Protobuf Root JSON:", JSON.stringify(pbRoot.toJSON(), null, 2));
-        // if (pbRoot.nested && pbRoot.nested.dog_system && pbRoot.nested.dog_system.nested && pbRoot.nested.dog_system.nested.v1) {
-        //     console.log("Found package dog_system.v1. Nested object keys:", Object.keys(pbRoot.nested.dog_system.nested.v1.nested));
-        // } else {
-        //     console.warn("CE_ProtoHandler: Package dog_system.v1 not found as expected in pbRoot.nested structure.");
-        // }
-
         const typesToLoad = [
             "Header", "Vector3", "Quaternion", "Pose",
             "ClientType", "NavigationState", "PromptActionType", "HeadMovementTargetDirection",
@@ -37,42 +29,31 @@ async function loadProtoDefinitions() {
             "RobotAnimationParams", "PlayFeedbackSoundParams", "DisplayFeedbackVisualParams",
             "EngagePersonalizedContentParams", "FeedbackAction", "RjaFeedbackCommand",
             "ChildProfile", "SetCurrentChildProfileCommand", "RjaPointDefinition", "DefineRjaPointsCommand",
-            "VideoStreamPacket", "RobotSystemEvent", "CommandAcknowledgement", "SystemActionCommand",
-            "ControlCommand" // Ensure this is in your .proto file
+            "VideoStreamPacket", "RobotSystemEvent", "CommandAcknowledgement", 
+            "SystemActionCommand", // Existing
+            "ControlCommand",      // Existing
+            "SetPostureCommand"    // ADDED
         ];
 
         typesToLoad.forEach(typeName => {
             const fullName = `dog_system.v1.${typeName}`;
             let resolved = false;
-
-            // Try to load as a Message Type
             try {
                 const messageItem = pbRoot.lookupType(fullName);
-                if (messageItem) { // lookupType throws on not found or wrong type, so this check is often redundant if no error
+                if (messageItem) {
                     messageTypes[typeName] = messageItem;
                     resolved = true;
-                    // console.log(`CE_ProtoHandler: Loaded Message: ${fullName}`);
                 }
             } catch (e_type) {
-                // This error means it's not a Message type (or truly not found by lookupType).
-                // Now, try to load as an Enum Type.
                 try {
                     const enumItem = pbRoot.lookupEnum(fullName);
-                    if (enumItem) { // lookupEnum also throws on not found
-                        messageTypes[typeName] = enumItem.values; // Store the enum's {name: value} map
+                    if (enumItem) {
+                        messageTypes[typeName] = enumItem.values; // Store {name: value} map
                         resolved = true;
-                        // console.log(`CE_ProtoHandler: Loaded Enum: ${fullName}`);
                     }
                 } catch (e_enum) {
-                    // Failed to resolve as both Message Type and Enum Type
                     console.error(`CE_ProtoHandler: Could not resolve '${typeName}' (as ${fullName}). \n  Not a Message (Error: ${e_type.message}). \n  Not an Enum (Error: ${e_enum.message}).`);
                 }
-            }
-
-            if (!resolved) {
-                // This log might be redundant if the detailed error above already printed,
-                // but can serve as a summary that a type wasn't loaded.
-                // console.warn(`CE_ProtoHandler: '${typeName}' was not successfully loaded.`);
             }
         });
 
@@ -81,19 +62,31 @@ async function loadProtoDefinitions() {
             throw new Error("CE_ProtoHandler: Essential protobuf message types (UdpPacketWrapper, RegisterClientRequest) failed to load.");
         }
         if (!messageTypes.ClientType || typeof messageTypes.ClientType.ROBOT_DOG === 'undefined') {
-            // Check if ClientType exists and has expected enum values
             console.error("CE_ProtoHandler: Problem with ClientType. Current value:", messageTypes.ClientType);
             throw new Error("CE_ProtoHandler: Essential enum ClientType failed to load correctly.");
         }
         if (!messageTypes.ControlCommand) {
-            console.warn("CE_ProtoHandler: WARNING - ControlCommand message type not loaded. Check .proto definition and logs for errors specific to ControlCommand.");
-            // Depending on its necessity, you might throw an error here too.
+            console.warn("CE_ProtoHandler: WARNING - ControlCommand message type not loaded.");
+        }
+        // Check for SystemActionCommand and its nested enum ActionType
+        const SystemActionCommandType = messageTypes.SystemActionCommand;
+        if (!SystemActionCommandType || !SystemActionCommandType.get("action") || !SystemActionCommandType.get("action").resolvedType || !SystemActionCommandType.get("action").resolvedType.values) {
+            console.warn("CE_ProtoHandler: WARNING - SystemActionCommand or its ActionType enum not loaded correctly.");
+        } else {
+            // console.log("CE_ProtoHandler: SystemActionCommand.ActionType enum values:", SystemActionCommandType.get("action").resolvedType.values);
+        }
+        // Check for SetPostureCommand and its nested enum PostureType
+        const SetPostureCommandType = messageTypes.SetPostureCommand;
+        if (!SetPostureCommandType || !SetPostureCommandType.get("posture") || !SetPostureCommandType.get("posture").resolvedType || !SetPostureCommandType.get("posture").resolvedType.values) {
+            console.warn("CE_ProtoHandler: WARNING - SetPostureCommand or its PostureType enum not loaded correctly.");
+        } else {
+            // console.log("CE_ProtoHandler: SetPostureCommand.PostureType enum values:", SetPostureCommandType.get("posture").resolvedType.values);
         }
 
-        console.log("CE_ProtoHandler: All specified message types and enums processed. Check logs for any individual load failures.");
+
+        console.log("CE_ProtoHandler: All specified message types and enums processed.");
 
     } catch (err) {
-        // This catches errors from protobuf.load itself or from the verification checks
         console.error("CE_ProtoHandler: FATAL - Failed to load protobuf definitions:", err);
         throw err;
     }
@@ -103,43 +96,37 @@ function getFormattedTimestampMs() {
     return Date.now();
 }
 
-// createHeader remains robust as protobufjs handles snake_case to camelCase
 function createHeader(sourceId, targetId, sessionId = null, trialId = null) {
     if (!messageTypes.Header) throw new Error("Header type not loaded");
     const payload = {
-        messageId: uuidv4(), // proto: message_id
-        timestampUtcMs: getFormattedTimestampMs(), // proto: timestamp_utc_ms
-        sourceId: sourceId, // proto: source_id
-        targetId: targetId, // proto: target_id
+        messageId: uuidv4(),
+        timestampUtcMs: getFormattedTimestampMs(),
+        sourceId: sourceId,
+        targetId: targetId,
     };
-    if (sessionId) payload.sessionId = sessionId; // proto: session_id
-    if (trialId) payload.trialId = trialId; // proto: trial_id
-    
-    const headerMessage = messageTypes.Header.create(payload);
-    // Verify (optional, for debugging)
-    // const errMsg = messageTypes.Header.verify(payload);
-    // if (errMsg) throw Error(errMsg);
-    return headerMessage;
+    if (sessionId) payload.sessionId = sessionId;
+    if (trialId) payload.trialId = trialId;
+    return messageTypes.Header.create(payload);
 }
 
-// --- Message Creation Functions ---
-
 function createRegisterClientRequest(clientId, clientVersion) {
+    // ... (implementation as before)
     if (!messageTypes.RegisterClientRequest || !messageTypes.Header || !messageTypes.ClientType) {
         throw new Error("Required types for RegisterClientRequest not loaded");
     }
     const header = createHeader(clientId, "server"); 
     const payload = {
         header: header,
-        clientType: messageTypes.ClientType.CONTROLLER_END, // Uses the numeric value from the loaded enum values
+        clientType: messageTypes.ClientType.CONTROLLER_END,
         clientId: clientId,
         clientVersion: clientVersion,
-        capabilities: ["video_H264", "audio_opus"] // Example capabilities
+        capabilities: ["video_H264", "audio_opus"]
     };
     return messageTypes.RegisterClientRequest.create(payload);
 }
 
 function createControlCommand(linearX, linearY, angularZ, sourceId, targetId) {
+    // ... (implementation as before)
     if (!messageTypes.ControlCommand || !messageTypes.Header) {
         throw new Error("Required types for ControlCommand not loaded");
     }
@@ -153,25 +140,56 @@ function createControlCommand(linearX, linearY, angularZ, sourceId, targetId) {
     return messageTypes.ControlCommand.create(payload);
 }
 
+// ADDED: Function to create SystemActionCommand
+function createSystemActionCommand(actionTypeString, sourceId, targetId) {
+    const SystemActionCommandType = messageTypes.SystemActionCommand;
+    if (!SystemActionCommandType || !messageTypes.Header) {
+        throw new Error("Required types for SystemActionCommand (SystemActionCommandType or Header) not loaded");
+    }
+    const actionEnum = SystemActionCommandType.get("action").resolvedType; // This is the Enum object
+    if (!actionEnum || typeof actionEnum.values[actionTypeString] === 'undefined') {
+        throw new Error(`Invalid actionTypeString: '${actionTypeString}' for SystemActionCommand.ActionType. Available: ${Object.keys(actionEnum.values).join(', ')}`);
+    }
+    const header = createHeader(sourceId, targetId);
+    const payload = {
+        header: header,
+        action: actionEnum.values[actionTypeString] // Use numeric enum value
+    };
+    return SystemActionCommandType.create(payload);
+}
 
-// --- Wrapper Creation ---
+// ADDED: Function to create SetPostureCommand
+function createSetPostureCommand(postureTypeString, sourceId, targetId) {
+    const SetPostureCommandType = messageTypes.SetPostureCommand;
+    if (!SetPostureCommandType || !messageTypes.Header) {
+        throw new Error("Required types for SetPostureCommand (SetPostureCommandType or Header) not loaded");
+    }
+    const postureEnum = SetPostureCommandType.get("posture").resolvedType; // This is the Enum object
+    if (!postureEnum || typeof postureEnum.values[postureTypeString] === 'undefined') {
+        throw new Error(`Invalid postureTypeString: '${postureTypeString}' for SetPostureCommand.PostureType. Available: ${Object.keys(postureEnum.values).join(', ')}`);
+    }
+    const header = createHeader(sourceId, targetId);
+    const payload = {
+        header: header,
+        posture: postureEnum.values[postureTypeString] // Use numeric enum value
+    };
+    return SetPostureCommandType.create(payload);
+}
+
 function wrapForServer(innerMessageInstance, innerMessageTypeString, sourceClientId, relayTargetClientId) {
+    // ... (implementation as before)
     if (!messageTypes.UdpPacketWrapper || !messageTypes.Header) {
         throw new Error("UdpPacketWrapper or Header type not loaded");
     }
-    // Get the simple name for lookup in messageTypes, e.g. "RegisterClientRequest"
     const simpleTypeName = innerMessageTypeString.split('.').pop(); 
     const InnerMessageType = messageTypes[simpleTypeName]; 
     
     if (!InnerMessageType) throw new Error(`Inner message type '${simpleTypeName}' (from '${innerMessageTypeString}') not loaded or not a message type.`);
-    // Check if InnerMessageType is actually a Type constructor and not an enum values object
     if (typeof InnerMessageType.encode !== 'function') {
         throw new Error(`'${simpleTypeName}' resolved to an enum, not a message type. Cannot encode.`);
     }
 
-
     const innerMessageBuffer = InnerMessageType.encode(innerMessageInstance).finish();
-
     const wrapperHeader = createHeader(sourceClientId, "server"); 
     const wrapperPayload = {
         header: wrapperHeader,
@@ -183,13 +201,14 @@ function wrapForServer(innerMessageInstance, innerMessageTypeString, sourceClien
     return messageTypes.UdpPacketWrapper.encode(wrapperInstance).finish();
 }
 
-// --- Message Parsing ---
 function decodeUdpPacketWrapper(buffer) {
+    // ... (implementation as before)
     if (!messageTypes.UdpPacketWrapper) throw new Error("UdpPacketWrapper type not loaded");
     return messageTypes.UdpPacketWrapper.decode(buffer);
 }
 
 function decodeActualMessage(wrapper) {
+    // ... (implementation as before)
     if (!wrapper || !wrapper.actualMessageType || !wrapper.actualMessageData) {
         console.error("CE_ProtoHandler: Invalid wrapper for decoding actual message.");
         return null;
@@ -201,7 +220,6 @@ function decodeActualMessage(wrapper) {
         console.warn(`CE_ProtoHandler: No decoder for message type '${wrapper.actualMessageType}'. Known types: ${Object.keys(messageTypes)}`);
         return null;
     }
-    // Check if ActualMessageType is actually a Type constructor and not an enum values object
     if (typeof ActualMessageType.decode !== 'function') {
         console.warn(`CE_ProtoHandler: '${simpleTypeName}' (from '${wrapper.actualMessageType}') resolved to an enum. Cannot decode as message.`);
         return null;
@@ -210,13 +228,8 @@ function decodeActualMessage(wrapper) {
     try {
         const decodedMessage = ActualMessageType.decode(wrapper.actualMessageData);
         return ActualMessageType.toObject(decodedMessage, {
-            longs: String,  
-            enums: String,  
-            bytes: String,  
-            defaults: true, 
-            arrays: true,   
-            objects: true,  
-            oneofs: true    
+            longs: String, enums: String, bytes: String, defaults: true, 
+            arrays: true, objects: true, oneofs: true    
         });
     } catch (e) {
         console.error(`CE_ProtoHandler: Failed to decode actual message of type '${wrapper.actualMessageType}':`, e);
@@ -224,25 +237,15 @@ function decodeActualMessage(wrapper) {
     }
 }
 
-
-
-// Ensure wrapForServer and decodeActualMessage also correctly handle this:
-// In wrapForServer:
-// const InnerMessageType = messageTypes[simpleTypeName];
-// if (!InnerMessageType || typeof InnerMessageType.encode !== 'function') { ... error ... }
-
-// In decodeActualMessage:
-// const ActualMessageType = messageTypes[simpleTypeName];
-// if (!ActualMessageType || typeof ActualMessageType.decode !== 'function') { ... error ... }
-
 module.exports = {
     loadProtoDefinitions,
     createRegisterClientRequest,
     createControlCommand,
+    createSystemActionCommand, // ADDED
+    createSetPostureCommand,   // ADDED
     wrapForServer,
     decodeUdpPacketWrapper,
     decodeActualMessage,
     createHeader,
     getFormattedTimestampMs,
-    // getMessageKeystore: () => messageTypes, // If you want to expose all loaded types/enums
 };
