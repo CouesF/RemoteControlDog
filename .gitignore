@@ -1,20 +1,50 @@
-# Node.js
-ce_controller/node_modules/
-ce_controller/package-lock.json
-ce_controller/.env
-
 # Python
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
-*.env
-*.venv
+*.py[cod]
+*$py.class
+*.egg-info/
+.env
 env/
 venv/
 ENV/
-env.bak/
-venv.bak/
+dist/
+build/
+*.egg
+*.sqlite3
+*.db
+
+# Node / Electron
+package-lock.json
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+dist/
+release/
+*.app
+*.asar
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.suo
+*.user
+*.sln
+*.userprefs
+
+
+
+upload_cs_main.sh
+
 
 # Protobuf generated files (if you want to ignore)
 *.pb2.py

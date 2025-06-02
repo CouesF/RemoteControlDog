@@ -1,0 +1,18 @@
+{
+    "name": "control-end-electron",
+    "version": "0.1.0",
+    "main": "src/main/index.js",
+    "scripts": {
+      "start": "electron .",
+      "rebuild": "electron-rebuild"
+    },
+    "dependencies": {
+      "dotenv": "^16.0.3", 
+      "electron": "^28.0.0",
+      "protobufjs": "^7.5.3", 
+      "uuid": "^9.0.0"
+    },
+    "devDependencies": {
+      "electron-rebuild": "^3.2.9"
+    }
+  }

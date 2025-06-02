@@ -1,0 +1,402 @@
+syntax = "proto3";
+
+package dog_system.v1; // 版本化的包名
+
+// 可以根据需要为不同语言生成代码指定选项
+// option go_package = "github.com/your_org/rja_system/v1;rjasystemv1";
+// option java_package = "com.yourcompany.rjasystem.v1";
+// option java_multiple_files = true;
+
+// --- 通用头部信息 ---
+message Header {
+  string message_id = 1;
+  int64 timestamp_utc_ms = 2;
+  string source_id = 3;       // ID of the original sender of the wrapped message
+  string target_id = 4;       // ID of the final recipient of the wrapped message
+                              // (For UdpPacketWrapper, this header's target_id might be 'server' or the final recipient,
+                              //  while target_client_id_for_relay is specifically for CS routing)
+  optional string session_id = 5;
+  optional string trial_id = 6;
+}
+
+// --- 基础几何与姿态 ---
+message Vector3 {
+  float x = 1;
+  float y = 2;
+  float z = 3;
+}
+
+message Quaternion {
+  float x = 1;
+  float y = 2;
+  float z = 3;
+  float w = 4; // 标量部分
+}
+
+// 机器人或物体的姿态
+message Pose {
+  Vector3 position = 1;        // 位置 (米)
+  Quaternion orientation = 2;  // 方向 (使用四元数更稳健)
+  // 或者只用Yaw (如果机器人主要是平面运动且头部负责俯仰)
+  // float yaw_degrees = 3;
+}
+
+// --- 枚举定义 ---
+
+// 客户端类型
+enum ClientType {
+  CLIENT_TYPE_UNSPECIFIED = 0;
+  CONTROLLER_END = 1;          // 控制端
+  ROBOT_DOG = 2;               // 机器狗端
+  CLOUD_SERVER = 3;            // 云服务器 (如果服务器也作为消息的source/target)
+}
+
+// 导航状态
+enum NavigationState {
+  NAV_STATE_UNSPECIFIED = 0;
+  IDLE = 1;                    // 空闲
+  NAVIGATING = 2;              // 导航中
+  SUCCEEDED = 3;               // 导航成功
+  FAILED = 4;                  // 导航失败
+  WAITING_FOR_HUMAN = 5;       // 检测到人脱离，等待中
+  OBSTACLE_DETECTED_PAUSED = 6; // 检测到障碍物暂停
+}
+
+// RJA Prompt 动作类型
+enum PromptActionType {
+  PROMPT_ACTION_TYPE_UNSPECIFIED = 0;
+  HEAD_MOVEMENT = 1;           // 头部朝向变化
+  POINTING_GESTURE = 2;        // 指示动作 (如用机械臂或头部指示)
+  PLAY_SOUND_CUE = 3;          // 播放提示音
+  DISPLAY_VISUAL_CUE = 4;      // 显示视觉提示 (如屏幕上的箭头)
+}
+
+// 头部运动参数 - 目标方向
+enum HeadMovementTargetDirection {
+  HEAD_TARGET_UNSPECIFIED = 0;
+  TOWARDS_ESTIMATED_CHILD_POSITION = 1;  // 朝向估计的儿童位置
+  TOWARDS_ESTIMATED_RJA_OBJECT_POSITION = 2; // 朝向估计的RJA对象位置
+  RELATIVE_ANGLES_TO_ROBOT_BODY = 3;     // 相对于机器人身体的特定角度
+  ABSOLUTE_ANGLES_IN_WORLD = 4;          // 世界坐标系下的特定角度 (需精确定位)
+}
+
+// 头部运动参数 - 强度/方式
+enum HeadMovementIntensity {
+  HEAD_INTENSITY_UNSPECIFIED = 0;
+  SUBTLE = 1;  // 轻微
+  NORMAL = 2;  // 普通
+  EMPHATIC = 3; // 强调
+}
+
+// 指示动作参数 - 使用哪个肢体
+enum PointingLimb {
+  LIMB_UNSPECIFIED = 0;
+  HEAD_POINTER = 1;      // 用头部模拟指示
+  LEFT_ARM = 2;          // 左臂 (如果可用)
+  RIGHT_ARM = 3;         // 右臂 (如果可用)
+}
+
+// 儿童对Prompt的回应类型
+enum ChildResponseType {
+  CHILD_RESPONSE_TYPE_UNSPECIFIED = 0;
+  CORRECT_RESPONSE = 1;        // 正确回应 (如看向目标)
+  INCORRECT_ATTENTION_TO_ROBOT = 2; // 错误：看向机器人而非目标
+  INCORRECT_ATTENTION_TO_OTHER = 3; // 错误：看向其他地方
+  INCORRECT_NO_SHIFT_OF_ATTENTION = 4; // 错误：未转移注意力
+  NO_RESPONSE_DETECTED = 5;    // 未检测到回应
+  OPERATOR_MARKED_OTHER = 6;   // 操作员标记为其他类型
+}
+
+// 反馈动作类型
+enum FeedbackActionType {
+  FEEDBACK_ACTION_TYPE_UNSPECIFIED = 0;
+  ROBOT_ANIMATION = 1;         // 机器人特定动画 (如点头、摇摆)
+  PLAY_FEEDBACK_SOUND = 2;     // 播放反馈声音 (如赞扬声、鼓励声)
+  DISPLAY_FEEDBACK_VISUAL = 3; // 显示反馈视觉内容 (如屏幕上的笑脸)
+  ENGAGE_PERSONALIZED_CONTENT = 4; // 播放个性化吸引内容
+}
+
+// 机器人动画ID (示例)
+enum RobotAnimationId {
+  ANIMATION_ID_UNSPECIFIED = 0;
+  NOD_APPROVAL = 1;            // 点头表示赞同
+  SHAKE_HEAD_GENTLE = 2;       // 轻微摇头 (可能用于“再试一次”)
+  HAPPY_WIGGLE = 3;            // 开心的摇摆动作
+  LOOK_INTERESTED = 4;         // 表现出感兴趣的姿态
+  ENCOURAGING_TILT = 5;        // 鼓励性的头部倾斜
+}
+
+// 个性化内容类型
+enum PersonalizedContentType {
+  PERSONALIZED_CONTENT_TYPE_UNSPECIFIED = 0;
+  SOUND = 1;                   // 声音类偏好 (如特定音乐、动物叫声)
+  VISUAL = 2;                  // 视觉类偏好 (如特定颜色闪烁、简单卡通形象)
+}
+
+// 系统事件严重等级
+enum SystemEventSeverity {
+  SEVERITY_UNSPECIFIED = 0;
+  INFO = 1;
+  WARNING = 2;
+  ERROR = 3;
+  CRITICAL = 4;
+}
+
+// --- 消息定义 ---
+
+// (0) UDP 包裹层 - 所有UDP传输的顶层消息
+message UdpPacketWrapper {
+  Header header = 1;                     // 此包裹消息的头部 (source_id 通常是CE或RD)
+  string target_client_id_for_relay = 2; // 中继服务器用此ID查找最终目标客户端 (CE或RD的ID)
+  string actual_message_type = 3;        // 内部承载的实际消息类型字符串 (如 "rja_system.v1.RobotStatusUpdate")
+  bytes actual_message_data = 4;        // 序列化后的实际消息数据
+}
+
+// (1) 客户端注册与认证
+message RegisterClientRequest {
+  Header header = 1;
+  ClientType client_type = 2;
+  string client_id = 3;        // 客户端的唯一ID
+  // 可选: 版本信息、能力描述等
+  string client_version = 4;
+  repeated string capabilities = 5; // 如 "video_H264", "audio_opus"
+}
+
+message RegisterClientResponse {
+  Header header = 1;           // source_id 通常是 CLOUD_SERVER
+  bool success = 2;
+  string message = 3;          // 成功或失败信息
+  // 可选: 如果成功，服务器可以分配一个会话令牌
+  string session_token = 4;
+}
+
+// (2) 导航相关
+message NavigateToPointCommand {
+  Header header = 1;
+  string rja_point_id = 2;     // 预定义的RJA点位ID (由CE维护其具体坐标)
+  Pose target_pose_override = 3; // 可选: 如果不使用预定义点，直接指定目标世界坐标姿态
+  bool wait_for_human_if_lost = 4; // 在途中或到达后如果人脱离，是否等待
+  int32 wait_duration_ms = 5;    // 等待时长 (毫秒)
+}
+
+// (3) 机器人状态与感知信息
+message HumanDetectionDetails {
+  bool is_present = 1;
+  float distance_m = 2;        // 相对于机器人的距离 (米)
+  Vector3 relative_position = 3; // 相对于机器人的位置向量
+  bool is_within_interaction_zone = 4; // 是否在预定义的有效互动区内
+  // 可选: 更详细信息
+  // repeated float bounding_box_2d = 5; // [xmin, ymin, xmax, ymax] 归一化或像素坐标
+  // repeated Vector3 skeleton_keypoints_3d = 6; // 3D骨骼点
+}
+
+message RjaObjectDetectionDetails {
+  string object_id = 1;        // 如果有多个RJA对象，其ID
+  bool is_visible = 2;
+  Vector3 relative_position_to_robot = 3; // 相对于机器人的位置
+  // 可选:
+  // float confidence = 4;
+}
+
+message ActiveActionStatus {
+  string action_name = 1;      // 当前执行的动作名 (如 "Prompt:HeadMovement", "Feedback:Nod")
+  float progress_percent = 2;  // 执行进度 (0-100)
+  string status_description = 3; // 状态描述
+}
+
+message RobotStatusUpdate {
+  Header header = 1;
+  float battery_percent = 2;
+  Pose current_world_pose = 3; // 机器人在世界坐标系下的当前姿态
+  NavigationState navigation_state = 4;
+  string current_rja_point_id = 5; // 如果在某个预设点
+  HumanDetectionDetails human_detection = 6;
+  repeated RjaObjectDetectionDetails rja_object_detections = 7; // 可能有多个RJA对象
+  ActiveActionStatus current_action = 8;
+  SystemEventSeverity overall_system_health = 9;
+  repeated string error_messages_active = 10; // 当前活动的错误消息列表
+}
+
+// (4) RJA 核心交互 - Prompt 指令 (CE -> RD)
+message HeadMovementParams {
+  HeadMovementTargetDirection target_direction = 1;
+  HeadMovementIntensity intensity = 2;
+  Pose specific_target_pose = 3; // 如果 direction 是 SPECIFIC_ANGLES, 则使用此参数
+                                 // (可以是相对机器人身体，也可以是世界坐标，取决于 target_direction)
+}
+
+message PointingGestureParams {
+  PointingLimb limb_to_use = 1;
+  Vector3 target_object_relative_position = 2; // 指向的目标物体相对于机器人的估计位置
+}
+
+message PlaySoundCueParams {
+  string sound_id_or_filename = 1; // 预定义的提示音ID或文件名
+  float volume_level = 2;          // 0.0 - 1.0
+  bool loop = 3;                   // 是否循环播放
+}
+
+message DisplayVisualCueParams {
+  string visual_cue_id_or_filename = 1; // 视觉提示ID或文件名 (如箭头图片)
+  // 可选: 显示位置、大小、持续时间等参数
+  // string display_area_on_robot_screen = 2; // 如 "TOP_LEFT", "CENTER"
+}
+
+message PromptAction {
+  string action_id = 1; // 此单一动作的ID，便于追踪
+  PromptActionType type = 2;
+  oneof params {
+    HeadMovementParams head_params = 3;
+    PointingGestureParams pointing_params = 4;
+    PlaySoundCueParams sound_params = 5;
+    DisplayVisualCueParams visual_params = 6;
+  }
+  int32 start_delay_ms = 7; // 相对于上一个动作或Prompt开始的延迟 (用于编排)
+  int32 estimated_duration_ms = 8; // 预计持续时间
+}
+
+message RjaPromptCommand {
+  Header header = 1; // header.trial_id 应该被设置
+  int32 child_current_level = 2; // 当前评估的小孩级别
+  repeated PromptAction actions = 3; // 一个Prompt可以包含多个组合动作
+  string rja_object_target_id = 4; // 本次Prompt针对的RJA对象ID (如果适用)
+}
+
+// (5) RJA 核心交互 - 儿童回应记录 (CE -> RD for logging/state, or CE -> CE_LOG)
+message RjaChildResponseRecord {
+  Header header = 1; // header.trial_id 应该与对应的PromptCommand一致
+  string responded_to_prompt_message_id = 2; // 回应的是哪个Prompt指令
+  ChildResponseType response_type = 3;
+  int64 response_time_ms_from_prompt_end = 4; // (可选) 从Prompt结束到儿童回应的估计时间
+  string operator_notes = 5;
+  // 可选: 如果CE能通过视频分析估计儿童的注视点
+  // Vector3 child_gaze_target_estimation_world = 6;
+}
+
+// (6) RJA 核心交互 - Feedback 指令 (CE -> RD)
+message RobotAnimationParams {
+  RobotAnimationId animation_id = 1;
+}
+
+message PlayFeedbackSoundParams {
+  string sound_id_or_filename = 1; // 预定义的反馈音ID或文件名
+  float volume_level = 2;          // 0.0 - 1.0
+}
+
+message DisplayFeedbackVisualParams {
+  string visual_id_or_filename = 1; // 反馈视觉ID或文件名
+  // string display_area_on_robot_screen = 2;
+}
+
+message EngagePersonalizedContentParams {
+  PersonalizedContentType content_type = 1;
+  string preference_tag = 2;        // 儿童偏好标签 (如 "dinosaurs", "calm_music_type_A")
+                                    // 机器狗端根据此tag选择具体内容
+  // string specific_content_id_override = 3; // 可选: CE直接指定内容ID
+}
+
+message FeedbackAction {
+  string action_id = 1;
+  FeedbackActionType type = 2;
+  oneof params {
+    RobotAnimationParams animation_params = 3;
+    PlayFeedbackSoundParams sound_params = 4;
+    DisplayFeedbackVisualParams visual_params = 5;
+    EngagePersonalizedContentParams personalized_params = 6;
+  }
+  int32 start_delay_ms = 7;
+  int32 estimated_duration_ms = 8;
+}
+
+message RjaFeedbackCommand {
+  Header header = 1; // header.trial_id 应该与对应的PromptCommand一致
+  string for_prompt_message_id = 2; // 针对哪个Prompt的反馈
+  ChildResponseType child_response_that_triggered_feedback = 3; // 儿童的何种反应触发了此反馈
+  repeated FeedbackAction actions = 4;
+}
+
+// (7) 配置与定义类消息 (通常由CE发送给RD，频率较低)
+message ChildProfile {
+  string child_id = 1;
+  int32 current_rja_level = 2; // 儿童的RJA能力级别
+  repeated string preference_tags = 3; // 偏好标签列表 (如 "dinosaurs", "blue_color", "song_X")
+  // 可选: 其他信息如敏感度、注意力特点等
+  // string general_sensitivity = 4; // e.g., "LOW", "MEDIUM", "HIGH"
+}
+
+// CE -> RD: 更新机器狗端当前操作的儿童档案
+message SetCurrentChildProfileCommand {
+  Header header = 1;
+  ChildProfile profile = 2;
+}
+
+message RjaPointDefinition {
+  string point_id = 1;         // 唯一ID
+  Pose world_pose = 2;         // 在世界坐标系中的位置和朝向 (机器人到达后应处的姿态)
+  string description = 3;      // 文字描述
+  // 可选: 此点位关联的RJA对象信息
+  // string associated_rja_object_id = 4;
+  // Pose rja_object_location_relative_to_point = 5; // RJA对象相对于此点位的位置
+}
+
+// CE -> RD: 定义或更新一个RJA点位信息 (如果RD需要存储这些信息)
+// 或者, RD仅通过NavigateToPointCommand中的target_pose_override接收目标, CE本地管理定义。
+// 此消息用于RD也需要了解点位语义的场景。
+message DefineRjaPointsCommand {
+  Header header = 1;
+  repeated RjaPointDefinition points = 2;
+  bool replace_all = 3; // true表示替换所有已知点位，false表示新增或更新
+}
+
+// (8) 视频流
+message VideoStreamPacket {
+  Header header = 1;
+  uint32 frame_id = 2;           // 视频帧的序列号
+  bytes frame_data = 3;          // 编码后的视频帧数据 (如H.264 NAL unit, MJPEG frame)
+  string encoding_type = 4;      // 如 "H264", "MJPEG", "RAW_RGB"
+  uint32 width = 5;              // 图像宽度
+  uint32 height = 6;             // 图像高度
+  bool is_key_frame = 7;         // (可选) 是否为关键帧 (对H.264等重要)
+  // 如果帧被拆分到多个UDP包:
+  // uint32 chunk_id = 8;
+  // uint32 total_chunks = 9;
+}
+
+// (9) 系统控制与事件
+// RD -> CE: 机器人端发出的非错误类别的特定事件
+message RobotSystemEvent {
+  Header header = 1;
+  SystemEventSeverity severity = 2;
+  string event_code = 3;       // 如 "LOW_BATTERY_WARNING", "NAVIGATION_OBSTACLE_AVOIDED"
+  string description = 4;
+  map<string, string> additional_data = 5; // 键值对形式的附加数据
+}
+
+// 通用命令确认 (可选, 用于需要确认的关键指令)
+message CommandAcknowledgement {
+  Header header = 1;
+  string acknowledged_message_id = 2; // 被确认的指令的message_id
+  bool success = 3;
+  string details = 4;               // 成功或失败的附加信息/错误码
+}
+
+// CE -> RD: 请求机器人执行特定系统动作
+message SystemActionCommand {
+    Header header = 1;
+    enum ActionType {
+        ACTION_UNSPECIFIED = 0;
+        REBOOT_ROBOT = 1;
+        SHUTDOWN_ROBOT = 2;
+        ENTER_STANDBY_MODE = 3;
+        RUN_SELF_DIAGNOSTICS = 4;
+    }
+    ActionType action = 2;
+}
+
+// (10) Basic Robot Control (Example, if used for direct teleop from CE -> RD)
+message ControlCommand {
+  Header header = 1;
+  float linear_velocity_x = 2;    // Forward/backward speed
+  float linear_velocity_y = 3;    // Strafing speed (if applicable)
+  float angular_velocity_z = 4;   // Turning speed (yaw)
+}
