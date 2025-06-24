@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dog Status Monitor - System Overview</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;700&family=Noto+Serif:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Noto Serif', serif; background-color: #f8f8f8; color: #333; line-height: 1.6; }
+        .cpp-container { background-color: #ffffff; border: 1px solid #c0c0c0; max-width: 960px; margin: 20px auto; padding: 0; border-radius: 0; box-shadow: none; }
+        .cpp-header { background-color: #e8e8e8; border-bottom: 1px solid #c0c0c0; padding: 1.5rem 2rem; text-align: left; }
+        .cpp-header h1 { font-family: 'Roboto Mono', monospace; font-size: 1.8rem; font-weight: 700; color: #1c365f; margin-bottom: 0.5rem; }
+        .cpp-header p { font-size: 0.9rem; color: #555; }
+        .cpp-section { padding: 2rem; border-bottom: 1px solid #e0e0e0; }
+        .cpp-section:last-child { border-bottom: none; }
+        .cpp-subsection-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; }
+        .cpp-stat-item { background-color: #f5f5f5; border: 1px solid #d0d0d0; padding: 1rem; border-radius: 4px; text-align: left; font-family: 'Roboto Mono', monospace; display: flex; flex-direction: column; justify-content: space-between; }
+        .cpp-stat-label { font-size: 0.85rem; color: #555; margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 0.05em; }
+        .cpp-stat-value { font-size: 1.75rem; font-weight: 700; color: #0077c2; }
+        #robot-status-section .cpp-stat-value, #jetson-temps-section .cpp-stat-value, #jetson-power-section .cpp-stat-value, #jetson-hardware-section .cpp-stat-value { font-size: 1.25rem; }
+        .cpp-footer { padding: 1rem 2rem; text-align: right; font-size: 0.8rem; color: #777; border-top: 1px solid #e0e0e0; }
+        #status-message { font-family: 'Roboto Mono', monospace; font-size: 0.85rem; color: #a0a0a0; margin-top: 1rem; padding: 0.5rem 1rem; border-left: 3px solid #a0a0a0; background-color: #f0f0f0; }
+        #status-message.success { color: #1a6d39; border-color: #1a6d39; background-color: #e6ffe6; }
+        #status-message.error { color: #d63333; border-color: #d63333; background-color: #ffe6e6; }
+        .motor-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; }
+        .motor-card { border: 1px solid #d0d0d0; border-radius: 4px; padding: 0.75rem; background-color: #f8f8f8; }
+        .motor-title { font-family: 'Roboto Mono', monospace; font-weight: 700; font-size: 1rem; border-bottom: 1px solid #e0e0e0; padding-bottom: 0.5rem; margin-bottom: 0.5rem; }
+        .motor-status { font-weight: 700; padding: 0.25rem 0.5rem; border-radius: 3px; margin-bottom: 0.5rem; text-align: center; }
+        .status-ok { background-color: #d4edda; color: #155724; }
+        .status-error { background-color: #f8d7da; color: #721c24; }
+        .motor-details { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.25rem 1rem; font-size: 0.85rem; }
+    </style>
+</head>
+<body class="flex items-center justify-center min-h-screen">
+    <div class="cpp-container w-full">
+        <div class="cpp-header"><h1>Dog Status Monitor</h1><p>Real-time system health and performance overview.</p></div>
+        <div class="cpp-section">
+            <h2 class="font-bold text-lg mb-4 text-gray-700 font-mono">System Metrics</h2>
+            <div class="cpp-subsection-grid">
+                <div class="cpp-stat-item"><p class="cpp-stat-label">Battery Charge</p><p id="battery" class="cpp-stat-value">-- %</p></div>
+                <div class="cpp-stat-item"><p class="cpp-stat-label">CPU Usage</p><p id="cpu" class="cpp-stat-value">-- %</p></div>
+                <div class="cpp-stat-item"><p class="cpp-stat-label">GPU Usage</p><p id="gpu" class="cpp-stat-value">-- %</p></div>
+                <div class="cpp-stat-item"><p class="cpp-stat-label">Memory Usage</p><p id="memory" class="cpp-stat-value">-- %</p></div>
+            </div>
+        </div>
+
+        <div id="latency-section" class="cpp-section">
+            <h2 class="font-bold text-lg mb-4 text-gray-700 font-mono">Network Performance</h2>
+            <div class="cpp-subsection-grid">
+                <div class="cpp-stat-item">
+                    <p class="cpp-stat-label">DDS Latency</p>
+                    <p id="latency" class="cpp-stat-value" style="font-size: 1.25rem;">-- ms</p>
+                </div>
+            </div>
+        </div>
+        <div id="robot-status-section" class="cpp-section">
+            <h2 class="font-bold text-lg mb-4 text-gray-700 font-mono">Robot Status</h2>
+            <div class="cpp-subsection-grid">
+                <div class="cpp-stat-item"><p class="cpp-stat-label">Mode (Form)</p><p id="robot-mode-form" class="cpp-stat-value">N/A</p></div>
+                <div class="cpp-stat-item"><p class="cpp-stat-label">Mode (Name)</p><p id="robot-mode-name" class="cpp-stat-value">N/A</p></div>
+            </div>
+        </div>
+        <div id="jetson-temps-section" class="cpp-section">
+            <h2 class="font-bold text-lg mb-4 text-gray-700 font-mono">Jetson Temperatures (&deg;C)</h2>
+            <div class="cpp-subsection-grid">
+                <div class="cpp-stat-item"><p class="cpp-stat-label">CPU Temp</p><p id="temp-cpu" class="cpp-stat-value">-- &deg;C</p></div>
+                <div class="cpp-stat-item"><p class="cpp-stat-label">GPU Temp</p><p id="temp-gpu" class="cpp-stat-value">-- &deg;C</p></div>
+                <div class="cpp-stat-item"><p class="cpp-stat-label">TJ Temp</p><p id="temp-tj" class="cpp-stat-value">-- &deg;C</p></div>
+                <div class="cpp-stat-item"><p class="cpp-stat-label">SOC (0)</p><p id="temp-soc0" class="cpp-stat-value">-- &deg;C</p></div>
+                <div class="cpp-stat-item"><p class="cpp-stat-label">SOC (1)</p><p id="temp-soc1" class="cpp-stat-value">-- &deg;C</p></div>
+                <div class="cpp-stat-item"><p class="cpp-stat-label">SOC (2)</p><p id="temp-soc2" class="cpp-stat-value">-- &deg;C</p></div>
+                <div class="cpp-stat-item"><p class="cpp-stat-label">CV (0)</p><p id="temp-cv0" class="cpp-stat-value">-- &deg;C</p></div>
+                <div class="cpp-stat-item"><p class="cpp-stat-label">CV (1)</p><p id="temp-cv1" class="cpp-stat-value">-- &deg;C</p></div>
+                <div class="cpp-stat-item"><p class="cpp-stat-label">CV (2)</p><p id="temp-cv2" class="cpp-stat-value">-- &deg;C</p></div>
+            </div>
+        </div>
+        <div id="jetson-power-section" class="cpp-section">
+             <h2 class="font-bold text-lg mb-4 text-gray-700 font-mono">Jetson Power (mW)</h2>
+             <div class="cpp-subsection-grid">
+                 <div class="cpp-stat-item"><p class="cpp-stat-label">CPU/GPU/CV</p><p id="power-cpu-gpu-cv" class="cpp-stat-value">-- mW</p></div>
+                 <div class="cpp-stat-item"><p class="cpp-stat-label">SOC</p><p id="power-soc" class="cpp-stat-value">-- mW</p></div>
+                 <div class="cpp-stat-item"><p class="cpp-stat-label">Total (NV)</p><p id="power-nv-power-total" class="cpp-stat-value">-- mW</p></div>
+                 <div class="cpp-stat-item"><p class="cpp-stat-label">VDD_INN</p><p id="power-vdd-inn" class="cpp-stat-value">-- mW</p></div>
+             </div>
+        </div>
+        <div id="jetson-hardware-section" class="cpp-section">
+            <h2 class="font-bold text-lg mb-4 text-gray-700 font-mono">Jetson Hardware</h2>
+            <div class="cpp-subsection-grid">
+                <div class="cpp-stat-item"><p class="cpp-stat-label">Uptime</p><p id="hardware-uptime" class="cpp-stat-value">-- min</p></div>
+                <div class="cpp-stat-item"><p class="cpp-stat-label">Clocks On</p><p id="hardware-clocks-on" class="cpp-stat-value">N/A</p></div>
+                <div class="cpp-stat-item"><p class="cpp-stat-label">Fan Speed</p><p id="hardware-fan-speed" class="cpp-stat-value">-- %</p></div>
+            </div>
+        </div>
+        <div id="motor-status-section" class="cpp-section">
+            <h2 class="font-bold text-lg mb-4 text-gray-700 font-mono">Motor Status</h2>
+            <div id="motor-grid" class="motor-grid"></div>
+        </div>
+        <div class="cpp-section pt-0 pb-0"><p id="status-message">Initializing...</p></div>
+        <div class="cpp-footer"><p>Last updated: <span id="last-updated">Never</span></p></div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.0/socket.io.min.js"></script>
+    <script>
+        const socket = io();
+        const elements = {
+            battery: document.getElementById('battery'), cpu: document.getElementById('cpu'), gpu: document.getElementById('gpu'),
+            memory: document.getElementById('memory'), 
+            latency: document.getElementById('latency'), // JavaScript already looks for this, but the HTML was missing
+            robotModeForm: document.getElementById('robot-mode-form'), robotModeName: document.getElementById('robot-mode-name'),
+            tempCpu: document.getElementById('temp-cpu'), tempGpu: document.getElementById('temp-gpu'),
+            tempTj: document.getElementById('temp-tj'), tempSoc0: document.getElementById('temp-soc0'),
+            tempSoc1: document.getElementById('temp-soc1'), tempSoc2: document.getElementById('temp-soc2'),
+            tempCv0: document.getElementById('temp-cv0'), tempCv1: document.getElementById('temp-cv1'),
+            tempCv2: document.getElementById('temp-cv2'), powerCpuGpuCv: document.getElementById('power-cpu-gpu-cv'),
+            powerSoc: document.getElementById('power-soc'), powerNvPowerTotal: document.getElementById('power-nv-power-total'),
+            powerVddInn: document.getElementById('power-vdd-inn'), hardwareUptime: document.getElementById('hardware-uptime'),
+            hardwareClocksOn: document.getElementById('hardware-clocks-on'), hardwareFanSpeed: document.getElementById('hardware-fan-speed'),
+            statusMessage: document.getElementById('status-message'), lastUpdated: document.getElementById('last-updated')
+        };
+        const motorNames = [
+            'FR_hip', 'FR_thigh', 'FR_calf', 'FL_hip', 'FL_thigh', 'FL_calf',
+            'RR_hip', 'RR_thigh', 'RR_calf', 'RL_hip', 'RL_thigh', 'RL_calf'
+        ];
+        
+        const motorGrid = document.getElementById('motor-grid');
+        for (let i = 0; i < 12; i++) {
+            const card = document.createElement('div');
+            card.className = 'motor-card';
+            card.innerHTML = `
+                <div class="motor-title">${motorNames[i]}</div>
+                <div id="motor-error-${i}" class="motor-status">--</div>
+                <div class="motor-details">
+                    <span>Angle:</span><span id="motor-q-${i}">-- rad</span>
+                    <span>Velocity:</span><span id="motor-dq-${i}">-- rad/s</span>
+                    <span>Torque:</span><span id="motor-tau-${i}">-- Nm</span>
+                    <span>Temp:</span><span id="motor-temp-${i}">-- &deg;C</span>
+                    <span>Mode:</span><span id="motor-mode-${i}">--</span>
+                    <span>Pkt Lost:</span><span id="motor-lost-${i}">--</span>
+                </div>`;
+            motorGrid.appendChild(card);
+        }
+
+        // Helper to safely update text content, now checks for existence of the key in the data
+        function updateText(element, data, key, unit = '', precision = 1) {
+            if (element && data.hasOwnProperty(key)) {
+                const value = data[key];
+                if (typeof value === 'number') {
+                    element.textContent = `${value.toFixed(precision)} ${unit}`;
+                } else {
+                    element.textContent = value; // For non-numeric values like mode names
+                }
+            }
+        }
+
+        socket.on('dog_status_update', function(data) {
+            if (!data || !data.data_received) {
+                elements.statusMessage.textContent = data.status_message || "Waiting for data...";
+                elements.statusMessage.className = 'text-gray-700 error';
+                return;
+            }
+
+            // The 'updateText' helper is already used here and will now
+            // correctly update the latency element when it receives the data.
+            updateText(elements.battery, data, 'battery_percent', '%');
+            updateText(elements.cpu, data, 'cpu_usage_percent', '%');
+            updateText(elements.gpu, data, 'gpu_usage_percent', '%');
+            updateText(elements.memory, data, 'memory_usage_percent', '%');
+            updateText(elements.latency, data, 'latency_ms', 'ms', 2);
+            
+            if (elements.robotModeForm) elements.robotModeForm.textContent = data.robot_mode_form || "N/A";
+            if (elements.robotModeName) elements.robotModeName.textContent = data.robot_mode_name || "N/A";
+
+            updateText(elements.tempCpu, data, 'temp_cpu', '\u00B0C');
+            updateText(elements.tempGpu, data, 'temp_gpu', '\u00B0C');
+            updateText(elements.tempTj, data, 'temp_tj', '\u00B0C');
+            updateText(elements.tempSoc0, data, 'temp_soc0', '\u00B0C');
+            updateText(elements.tempSoc1, data, 'temp_soc1', '\u00B0C');
+            updateText(elements.tempSoc2, data, 'temp_soc2', '\u00B0C');
+            updateText(elements.tempCv0, data, 'temp_cv0', '\u00B0C');
+            updateText(elements.tempCv1, data, 'temp_cv1', '\u00B0C');
+            updateText(elements.tempCv2, data, 'temp_cv2', '\u00B0C');
+            
+            updateText(elements.powerCpuGpuCv, data, 'power_cpu_gpu_cv', 'mW', 0);
+            updateText(elements.powerSoc, data, 'power_soc', 'mW', 0);
+            updateText(elements.powerNvPowerTotal, data, 'power_nv_power_total', 'mW', 0);
+            updateText(elements.powerVddInn, data, 'power_vdd_inn', 'mW', 0);
+            
+            if (data.hasOwnProperty('hardware_uptime_seconds')) {
+                elements.hardwareUptime.textContent = `${(data.hardware_uptime_seconds / 60).toFixed(1)} min`;
+            }
+            if (elements.hardwareClocksOn) {
+                elements.hardwareClocksOn.textContent = data.hardware_jetson_clocks_on ? 'ON' : 'OFF';
+            }
+            updateText(elements.hardwareFanSpeed, data, 'hardware_fan_speed_percent', '%');
+            
+            if (data.motors && data.motors.length === 12) {
+                for (let i = 0; i < 12; i++) {
+                    const motor = data.motors[i];
+                    const errorEl = document.getElementById(`motor-error-${i}`);
+                    document.getElementById(`motor-q-${i}`).textContent = `${motor.q.toFixed(3)} rad`;
+                    document.getElementById(`motor-dq-${i}`).textContent = `${motor.dq.toFixed(3)} rad/s`;
+                    document.getElementById(`motor-tau-${i}`).textContent = `${motor.tau_est.toFixed(3)} Nm`;
+                    document.getElementById(`motor-temp-${i}`).textContent = `${motor.temperature} \u00B0C`;
+                    document.getElementById(`motor-mode-${i}`).textContent = motor.mode;
+                    document.getElementById(`motor-lost-${i}`).textContent = motor.lost;
+                    errorEl.textContent = motor.error_str;
+                    errorEl.className = 'motor-status ' + (motor.error_str === 'OK' ? 'status-ok' : 'status-error');
+                }
+            }
+
+            elements.statusMessage.textContent = data.status_message;
+            elements.statusMessage.className = 'text-gray-700 ' + (data.data_received ? 'success' : 'error');
+            elements.lastUpdated.textContent = new Date().toLocaleTimeString();
+        });
+
+        socket.on('connect', function() { console.log('Connected to Socket.IO server'); });
+        socket.on('disconnect', function() { console.log('Disconnected from Socket.IO server'); });
+    </script>
+</body>
+</html>

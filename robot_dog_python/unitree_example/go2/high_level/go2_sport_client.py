@@ -94,19 +94,19 @@ if __name__ == "__main__":
         print(f"Updated Test Option: Name = {test_option.name}, ID = {test_option.id}\n")
 
         if test_option.id == 0:
-            sport_client.Damp()
+            print(sport_client.Damp())
         elif test_option.id == 1:
-            sport_client.StandUp()
+            print(sport_client.StandUp())
         elif test_option.id == 2:
-            sport_client.StandDown()
+            print(sport_client.StandDown())
         elif test_option.id == 3:
-            sport_client.Move(0.3,0,0)
+            print(sport_client.Move(0.3,0,0))
         elif test_option.id == 4:
-            sport_client.Move(0,0.3,0)
+            print(sport_client.Move(0,0.3,0))
         elif test_option.id == 5:
             sport_client.Move(0,0,0.5)
         elif test_option.id == 6:
-            sport_client.StopMove()
+            print(sport_client.StopMove())
         elif test_option.id == 7:
             sport_client.SwitchGait(0)
         elif test_option.id == 8:

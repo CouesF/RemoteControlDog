@@ -2,7 +2,8 @@ from google.protobuf.internal import containers as _containers
 from google.protobuf.internal import enum_type_wrapper as _enum_type_wrapper
 from google.protobuf import descriptor as _descriptor
 from google.protobuf import message as _message
-from typing import ClassVar as _ClassVar, Iterable as _Iterable, Mapping as _Mapping, Optional as _Optional, Union as _Union
+from collections.abc import Iterable as _Iterable, Mapping as _Mapping
+from typing import ClassVar as _ClassVar, Optional as _Optional, Union as _Union
 
 DESCRIPTOR: _descriptor.FileDescriptor
 
@@ -15,7 +16,7 @@ class ClientType(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
 
 class NavigationState(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     __slots__ = ()
-    NAV_STATE_UNSPECIFIED: _ClassVar[NavigationState]
+    UNKNOWN: _ClassVar[NavigationState]
     IDLE: _ClassVar[NavigationState]
     NAVIGATING: _ClassVar[NavigationState]
     SUCCEEDED: _ClassVar[NavigationState]
@@ -97,7 +98,7 @@ CLIENT_TYPE_UNSPECIFIED: ClientType
 CONTROLLER_END: ClientType
 ROBOT_DOG: ClientType
 CLOUD_SERVER: ClientType
-NAV_STATE_UNSPECIFIED: NavigationState
+UNKNOWN: NavigationState
 IDLE: NavigationState
 NAVIGATING: NavigationState
 SUCCEEDED: NavigationState
@@ -280,7 +281,7 @@ class ActiveActionStatus(_message.Message):
     def __init__(self, action_name: _Optional[str] = ..., progress_percent: _Optional[float] = ..., status_description: _Optional[str] = ...) -> None: ...
 
 class RobotStatusUpdate(_message.Message):
-    __slots__ = ("header", "battery_percent", "current_world_pose", "navigation_state", "current_rja_point_id", "human_detection", "rja_object_detections", "current_action", "overall_system_health", "error_messages_active")
+    __slots__ = ("header", "battery_percent", "current_world_pose", "navigation_state", "current_rja_point_id", "human_detection", "rja_object_detections", "current_action", "overall_system_health", "error_messages_active", "robot_internal_state")
     HEADER_FIELD_NUMBER: _ClassVar[int]
     BATTERY_PERCENT_FIELD_NUMBER: _ClassVar[int]
     CURRENT_WORLD_POSE_FIELD_NUMBER: _ClassVar[int]
@@ -291,6 +292,7 @@ class RobotStatusUpdate(_message.Message):
     CURRENT_ACTION_FIELD_NUMBER: _ClassVar[int]
     OVERALL_SYSTEM_HEALTH_FIELD_NUMBER: _ClassVar[int]
     ERROR_MESSAGES_ACTIVE_FIELD_NUMBER: _ClassVar[int]
+    ROBOT_INTERNAL_STATE_FIELD_NUMBER: _ClassVar[int]
     header: Header
     battery_percent: float
     current_world_pose: Pose
@@ -301,7 +303,8 @@ class RobotStatusUpdate(_message.Message):
     current_action: ActiveActionStatus
     overall_system_health: SystemEventSeverity
     error_messages_active: _containers.RepeatedScalarFieldContainer[str]
-    def __init__(self, header: _Optional[_Union[Header, _Mapping]] = ..., battery_percent: _Optional[float] = ..., current_world_pose: _Optional[_Union[Pose, _Mapping]] = ..., navigation_state: _Optional[_Union[NavigationState, str]] = ..., current_rja_point_id: _Optional[str] = ..., human_detection: _Optional[_Union[HumanDetectionDetails, _Mapping]] = ..., rja_object_detections: _Optional[_Iterable[_Union[RjaObjectDetectionDetails, _Mapping]]] = ..., current_action: _Optional[_Union[ActiveActionStatus, _Mapping]] = ..., overall_system_health: _Optional[_Union[SystemEventSeverity, str]] = ..., error_messages_active: _Optional[_Iterable[str]] = ...) -> None: ...
+    robot_internal_state: str
+    def __init__(self, header: _Optional[_Union[Header, _Mapping]] = ..., battery_percent: _Optional[float] = ..., current_world_pose: _Optional[_Union[Pose, _Mapping]] = ..., navigation_state: _Optional[_Union[NavigationState, str]] = ..., current_rja_point_id: _Optional[str] = ..., human_detection: _Optional[_Union[HumanDetectionDetails, _Mapping]] = ..., rja_object_detections: _Optional[_Iterable[_Union[RjaObjectDetectionDetails, _Mapping]]] = ..., current_action: _Optional[_Union[ActiveActionStatus, _Mapping]] = ..., overall_system_health: _Optional[_Union[SystemEventSeverity, str]] = ..., error_messages_active: _Optional[_Iterable[str]] = ..., robot_internal_state: _Optional[str] = ...) -> None: ...
 
 class HeadMovementParams(_message.Message):
     __slots__ = ("target_direction", "intensity", "specific_target_pose")

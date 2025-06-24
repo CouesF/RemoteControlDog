@@ -10,7 +10,7 @@ PROJECT_ROOT=$(pwd) # Assumes script is run from RemoteControlDog/ or this scrip
 PROTO_FILE="${PROJECT_ROOT}/messages.proto"
 
 # Output directory for Python (Robot Dog)
-RD_PYTHON_OUT_DIR="${PROJECT_ROOT}/robot_dog_python/protobuf_definitions"
+RD_PYTHON_OUT_DIR="${PROJECT_ROOT}/robot_dog_python/communication/protobuf_definitions"
 # Output directory for Python (Cloud Server)
 CS_PYTHON_OUT_DIR="${PROJECT_ROOT}/cloud_server_python/protobuf_definitions"
 

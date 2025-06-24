@@ -13,6 +13,12 @@ build/
 *.sqlite3
 *.db
 env*/
+*.pt
+*.onnx
+*.npz
+*.engine
+unitree_example/
+*.whl
 
 # Node / Electron
 package-lock.json

@@ -53,7 +53,7 @@ enum ClientType {
 
 // 导航状态
 enum NavigationState {
-  NAV_STATE_UNSPECIFIED = 0;
+  UNKNOWN = 0;
   IDLE = 1;                    // 空闲
   NAVIGATING = 2;              // 导航中
   SUCCEEDED = 3;               // 导航成功
@@ -215,6 +215,7 @@ message RobotStatusUpdate {
   ActiveActionStatus current_action = 8;
   SystemEventSeverity overall_system_health = 9;
   repeated string error_messages_active = 10; // 当前活动的错误消息列表
+  string robot_internal_state = 11; // <<< ADD THIS LINE (choose an appropriate field number)
 }
 
 // (4) RJA 核心交互 - Prompt 指令 (CE -> RD)

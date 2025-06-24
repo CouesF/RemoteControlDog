@@ -122,6 +122,7 @@ class Custom:
                 self.low_cmd.motor_cmd[i].tau = 0
 
         if (self.percent_1 == 1) and (self.percent_2 <= 1):
+            print(self.percent_2)
             self.percent_2 += 1.0 / self.duration_2
             self.percent_2 = min(self.percent_2, 1)
             for i in range(12):
@@ -159,10 +160,7 @@ if __name__ == '__main__':
     print("WARNING: Please ensure there are no obstacles around the robot while running this example.")
     input("Press Enter to continue...")
 
-    if len(sys.argv)>1:
-        ChannelFactoryInitialize(0, sys.argv[1])
-    else:
-        ChannelFactoryInitialize(0)
+    ChannelFactoryInitialize(networkInterface="enP8p1s0")
 
     custom = Custom()
     custom.Init()
