@@ -371,12 +371,20 @@ class ControlGateway:
         """接收数据循环"""
         while self.is_running:
             try:
-                loop = asyncio.get_running_loop()
-                data, addr = await loop.sock_recvfrom(self.socket, MAX_UDP_SIZE)
-                self.stats['packets_received'] += 1
-                
-                # 异步处理数据包
-                asyncio.create_task(self._process_packet(data, addr))
+                # 使用传统的socket方法，避免asyncio兼容性问题
+                self.socket.settimeout(0.1)  # 设置短超时
+                try:
+                    data, addr = self.socket.recvfrom(MAX_UDP_SIZE)
+                    self.stats['packets_received'] += 1
+                    
+                    # 异步处理数据包
+                    asyncio.create_task(self._process_packet(data, addr))
+                except socket.timeout:
+                    # 超时是正常的，继续循环
+                    pass
+                except BlockingIOError:
+                    # 没有数据可读
+                    await asyncio.sleep(0.001)
                 
             except asyncio.CancelledError:
                 break
@@ -475,9 +483,8 @@ class ControlGateway:
             response_packet = self.packet_manager.prepare_packet(response_data, self.security_manager)
             fragments = self.packet_manager.auto_fragment(response_packet)
             
-            loop = asyncio.get_running_loop()
             for fragment in fragments:
-                await loop.sock_sendto(self.socket, fragment, addr)
+                self.socket.sendto(fragment, addr)
             
             self.stats['packets_sent'] += 1
             

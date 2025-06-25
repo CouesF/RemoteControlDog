@@ -469,12 +469,40 @@ class SmartCameraHandler:
             self.cap.release()
         logger.info(f"摄像头 {self.camera_id} 已停止")
 
+class UDPProtocol(asyncio.DatagramProtocol):
+    """UDP协议处理器"""
+    
+    def __init__(self, gateway):
+        self.gateway = gateway
+        self.transport = None
+    
+    def connection_made(self, transport):
+        self.transport = transport
+        logger.info("UDP传输连接已建立")
+    
+    def datagram_received(self, data, addr):
+        """接收到数据报"""
+        if self.gateway.is_running:
+            self.gateway.stats['packets_received'] += 1
+            # 异步处理数据包
+            asyncio.create_task(self.gateway._process_packet(data, addr))
+    
+    def error_received(self, exc):
+        logger.error(f"UDP传输错误: {exc}")
+    
+    def connection_lost(self, exc):
+        if exc:
+            logger.error(f"UDP连接丢失: {exc}")
+        else:
+            logger.info("UDP连接正常关闭")
+
 class CameraGateway:
     """摄像头网关主类"""
     
     def __init__(self, port: int = 8991):
         self.port = port
-        self.socket = None
+        self.transport = None
+        self.protocol = None
         self.is_running = False
         self.security_manager = SecurityManager(SHARED_SECRET_KEY)
         self.packet_manager = PacketManager()
@@ -542,13 +570,20 @@ class CameraGateway:
         """接收数据循环"""
         while self.is_running:
             try:
-                # 使用正确的asyncio方法接收UDP数据
-                loop = asyncio.get_running_loop()
-                data, addr = await loop.sock_recvfrom(self.socket, MAX_UDP_SIZE)
-                self.stats['packets_received'] += 1
-                
-                # 异步处理数据包
-                asyncio.create_task(self._process_packet(data, addr))
+                # 使用传统的socket方法，避免asyncio兼容性问题
+                self.socket.settimeout(0.1)  # 设置短超时
+                try:
+                    data, addr = self.socket.recvfrom(MAX_UDP_SIZE)
+                    self.stats['packets_received'] += 1
+                    
+                    # 异步处理数据包
+                    asyncio.create_task(self._process_packet(data, addr))
+                except socket.timeout:
+                    # 超时是正常的，继续循环
+                    pass
+                except BlockingIOError:
+                    # 没有数据可读
+                    await asyncio.sleep(0.001)
                 
             except asyncio.CancelledError:
                 break
@@ -755,9 +790,8 @@ class CameraGateway:
             response_packet = self.packet_manager.prepare_packet(response_data, self.security_manager)
             fragments = self.packet_manager.auto_fragment(response_packet)
             
-            loop = asyncio.get_running_loop()
             for fragment in fragments:
-                await loop.sock_sendto(self.socket, fragment, addr)
+                self.socket.sendto(fragment, addr)
             
             self.stats['packets_sent'] += 1
             
