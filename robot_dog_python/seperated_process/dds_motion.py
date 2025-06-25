@@ -10,6 +10,9 @@ from unitree_sdk2py.utils.crc import CRC
 from unitree_sdk2py.comm.motion_switcher.motion_switcher_client import MotionSwitcherClient
 from unitree_sdk2py.go2.sport.sport_client import SportClient
 
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../communication")))
+from dds_data_structure import RaiseLegCommand
+
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../unitree_example/go2/low_level")))
 import unitree_legged_const as go2
 
@@ -56,6 +59,21 @@ def maintain_dynamic_pose(shared_pose, low_cmd, publisher, crc, stop_flag, kp_pr
         low_cmd.crc = crc.Crc(low_cmd)
         publisher.Write(low_cmd)
         time.sleep(0.002)
+
+def clamp_warning(index, new_val, min_val, max_val):
+    if new_val < min_val or new_val > max_val:
+        print(f"[Warning] 超过限制值，关节 {index} 的目标角度 {new_val:.2f} 超出范围 [{min_val}, {max_val}]，忽略本次输入")
+        return False
+    return True
+
+def move_joint(index, target):
+    while abs(pose_buffer[index] - target) > 0.05:  # 容差
+        if pose_buffer[index] < target:
+            pose_buffer[index] = min(pose_buffer[index] + 0.1, target)
+        else:
+            pose_buffer[index] = max(pose_buffer[index] - 0.1, target)
+        time.sleep(0.05)
+
 
 if __name__ == '__main__':
     ChannelFactoryInitialize(0, "enP8p1s0")
@@ -108,40 +126,53 @@ if __name__ == '__main__':
     interpolate_selected_joints(step1, step2, [2], 250, low_cmd, publisher, crc, high_kp, high_kd)
 
     step3 = step2[:]
-    step3[1] -= 1.0
-    interpolate_selected_joints(step2, step3, [1], 250, low_cmd, publisher, crc, high_kp, high_kd)
+    step3[0] -= 0.8
+    interpolate_selected_joints(step2, step3, [0], 300, low_cmd, publisher, crc, high_kp, high_kd)
 
     step4 = step3[:]
-    step4[2] = stand_pos[2]
-    interpolate_selected_joints(step3, step4, [2], 250, low_cmd, publisher, crc, high_kp, high_kd)
+    step4[1] -= 1.0
+    interpolate_selected_joints(step3, step4, [1], 250, low_cmd, publisher, crc, high_kp, high_kd)
+
+    step5 = step4[:]
+    step5[2] = stand_pos[2]
+    interpolate_selected_joints(step4, step5, [2], 250, low_cmd, publisher, crc, high_kp, high_kd)
 
     # ====== 新增：DDS 动态姿态控制 ======
-    pose_buffer = step4[:]
+    pose_buffer = step5[:]
     adjusting = {"running": True}
-    subscriber = ChannelSubscriber("rt/wireless_controller", WirelessController_)
+    subscriber = ChannelSubscriber("rt/keyboard_control", RaiseLegCommand)
     subscriber.Init()
 
-    def receive_command():
+    def receive_command_with_target():
         while adjusting["running"]:
             msg = subscriber.Read()
-            if msg is None: continue
-            key = chr(msg.keys[0])
-            if key == 'a':
-                pose_buffer[1] += 0.1
-            elif key == 'd':
-                pose_buffer[2] += 0.1
-            elif key == 'w':
-                pose_buffer[1] -= 0.1
-            elif key == 's':
-                pose_buffer[2] -= 0.1
-            elif key == 'q':
+            if msg is None:
+                time.sleep(0.01)
+                continue
+
+            if msg.command_id == ord('q'):
                 print("[DDS] 收到退出指令 q")
                 adjusting["running"] = False
-            time.sleep(0.01)
+                break
+
+            target1 = msg.joint1_target
+            target2 = msg.joint2_target
+
+            # 限值范围判断
+            if not clamp_warning(1, target1, -1.5, 3.4) or not clamp_warning(2, target2, -2.7, -0.8):
+                continue
+
+            # 按 0.1 步长逼近目标
+
+            move_joint(1, target1)  # RF_1
+            move_joint(2, target2)  # RF_2
+
+
 
     stop_flag_hold3 = {"stop": False}
     thread_hold3 = threading.Thread(target=maintain_dynamic_pose, args=(pose_buffer, low_cmd, publisher, crc, stop_flag_hold3, high_kp, high_kd))
-    thread_cmd = threading.Thread(target=receive_command)
+    thread_cmd = threading.Thread(target=receive_command_with_target)
+
 
     thread_hold3.start()
     thread_cmd.start()
@@ -152,7 +183,7 @@ if __name__ == '__main__':
     # === 分阶段恢复：RF_0 → RF_1 → RF_2 → RL_0 → RL_1 → RL_2 ===
     restore_step1 = pose_buffer[:]
     restore_step1[0] = stand_pos[0]  # RF_0
-    interpolate_selected_joints(step7, restore_step1, [0], 300, low_cmd, publisher, crc)
+    interpolate_selected_joints(pose_buffer, restore_step1, [0], 300, low_cmd, publisher, crc)
 
     restore_step2 = restore_step1[:]
     restore_step2[1] = stand_pos[1]  # RF_1

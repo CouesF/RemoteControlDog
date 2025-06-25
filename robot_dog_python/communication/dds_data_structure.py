@@ -293,9 +293,6 @@ class SimpleIntTest(IdlStruct, typename="SimpleIntTest"):
 
 @dataclass
 class RaiseLegCommand(IdlStruct, typename="RaiseLegCommand"):
-    """
-    抬腿动作指令结构体 (简化版，测试用)
-    """
-    command_id: int = 0        # 0 = 空闲, 1 = 执行抬腿动作
-    leg_index: int = 0         # 0 = FR, 1 = FL, 2 = RR, 3 = RL
-    hold_time_ms: int = 1000   # 抬腿持续时间（单位：毫秒）
+    command_id: int = 0                # 可用作控制退出，或扩展动作选择
+    joint1_target: float = 0.0         # 1号关节目标角度
+    joint2_target: float = 0.0         # 2号关节目标角度

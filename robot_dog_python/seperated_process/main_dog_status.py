@@ -117,7 +117,7 @@ def main():
                     total_cpu_usage = sum(get_jtop_val(stats.get(core)) for core in cpu_cores)
                     dog_status_to_publish.cpu_usage_percent = total_cpu_usage / len(cpu_cores) if cpu_cores else 0.0
 
-                    dog_status_to_publish.timestamp_ns = time.time_ns()
+                    # dog_status_to_publish.timestamp_ns = time.time_ns()
                     dog_status_to_publish.battery_percent = float(lowstate_msg.bms_state.soc)
                     dog_status_to_publish.gpu_usage_percent = get_jtop_val(stats.get('GPU'))
                     dog_status_to_publish.memory_usage_percent = get_jtop_val(stats.get('RAM')) * 100.0
@@ -145,6 +145,8 @@ def main():
                         setattr(dog_status_to_publish, f'm{i}_reserve0', motor.reserve[0])
                         setattr(dog_status_to_publish, f'm{i}_reserve1', motor.reserve[1])
                     # --- END OF UPDATE ---
+
+                    dog_status_to_publish.timestamp_ns = time.time_ns()
 
                     dog_status_pub.Write(dog_status_to_publish)
 
