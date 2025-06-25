@@ -595,9 +595,12 @@ class CameraGateway:
     async def _process_packet(self, data: bytes, addr: Tuple[str, int]):
         """处理数据包"""
         try:
+            logger.debug(f"收到来自 {addr} 的原始数据: {data[:100]}...") # 打印前100字节
+            
             # 解析数据包
             packet = self.packet_manager.process_received_packet(data, addr)
             if not packet:
+                logger.warning(f"无法从 {addr} 解析数据包")
                 return
             
             # 验证安全性
@@ -659,7 +662,8 @@ class CameraGateway:
             'last_activity': time.time()
         }
         
-        logger.info(f"客户端 {addr} 订阅摄像头: {camera_ids}")
+        logger.info(f"客户端 {addr} 订阅摄像头: {camera_ids} (会话ID: {session_id})")
+        logger.info(f"当前活跃客户端数量: {len(self.active_clients)}")
         
         # 发送确认响应
         await self._send_response(addr, {
@@ -737,6 +741,11 @@ class CameraGateway:
         """视频流发送循环"""
         while self.is_running:
             try:
+                if not self.active_clients:
+                    # 没有活跃客户端时，短暂休眠以降低CPU占用
+                    await asyncio.sleep(0.5)
+                    continue
+
                 # 为每个活跃客户端发送视频帧
                 for addr, client_info in list(self.active_clients.items()):
                     try:

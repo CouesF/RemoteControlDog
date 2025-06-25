@@ -309,6 +309,13 @@ export default class CameraConnectionDebugger extends BaseComponent {
         this.addEventListener(this.elements.clearBtn, 'click', () => {
             this.clearDebugLog();
         });
+
+        // 监听UDP消息用于调试
+        if (window.electronAPI?.onUDPMessage) {
+            window.electronAPI.onUDPMessage((data) => {
+                this.log('DEBUG', `收到UDP消息 [${data.connectionId}]: ${JSON.stringify(data.message)}`);
+            });
+        }
     }
 
     async startDiagnosis() {
@@ -529,11 +536,12 @@ export default class CameraConnectionDebugger extends BaseComponent {
                         </div>
                     `;
                     
-                    // 尝试发送测试消息
-                    this.log('INFO', '发送摄像头列表请求...');
+                    // 尝试发送订阅消息
+                    this.log('INFO', '发送摄像头订阅请求...');
                     
                     const messageResult = await window.electronAPI.sendUDPMessage('camera_debug', {
-                        request_type: 'get_camera_list'
+                        request_type: 'subscribe',
+                        camera_ids: [0, 1, 2] // 订阅所有摄像头
                     });
                     
                     this.log('INFO', `消息发送结果: ${JSON.stringify(messageResult)}`);
