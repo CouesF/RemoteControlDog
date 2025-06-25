@@ -23,11 +23,15 @@ export class Validator {
         }
 
         // 验证年龄
-        if (!this.validateRequired(participant.year) || !this.validateNumber(participant.year, 0, 18)) {
+        if (participant.year === null || participant.year === undefined) {
+            errors.push(new ValidationError('year', '年龄不能为空'));
+        } else if (!this.validateNumber(participant.year, 0, 18)) {
             errors.push(new ValidationError('year', '年龄必须在0-18岁之间'));
         }
 
-        if (!this.validateRequired(participant.month) || !this.validateNumber(participant.month, 0, 11)) {
+        if (participant.month === null || participant.month === undefined) {
+            errors.push(new ValidationError('month', '月龄不能为空'));
+        } else if (!this.validateNumber(participant.month, 0, 11)) {
             errors.push(new ValidationError('month', '月龄必须在0-11个月之间'));
         }
 
@@ -85,7 +89,16 @@ export class Validator {
     }
 
     static validateRequired(value) {
-        return value !== null && value !== undefined && value !== '';
+        if (value === null || value === undefined) {
+            return false;
+        }
+        if (typeof value === 'string') {
+            return value.trim() !== '';
+        }
+        if (typeof value === 'number') {
+            return !isNaN(value);
+        }
+        return true;
     }
 
     static validateLength(value, min, max) {

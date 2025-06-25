@@ -23,8 +23,11 @@ export default class Modal extends BaseComponent {
             throw new Error('Modal container not found');
         }
 
+        console.debug(`[Modal] Rendering modal: ${this.containerId}`);
+
         // 确保模态框有正确的结构
         if (!this.container.querySelector('.modal-content')) {
+            console.debug(`[Modal] Modal content not found, creating default structure for: ${this.containerId}`);
             this.container.innerHTML = `
                 <div class="modal-content">
                     <div class="modal-header">
@@ -40,12 +43,21 @@ export default class Modal extends BaseComponent {
                     </div>
                 </div>
             `;
+        } else {
+            console.debug(`[Modal] Modal content already exists for: ${this.containerId}`);
         }
 
         this.modalContent = this.querySelector('.modal-content');
         this.closeButton = this.querySelector('.close-button');
         this.confirmButton = this.querySelector('[data-confirm="modal"]');
         this.cancelButton = this.querySelector('[data-dismiss="modal"]');
+
+        console.debug(`[Modal] Modal elements found:`, {
+            modalContent: !!this.modalContent,
+            closeButton: !!this.closeButton,
+            confirmButton: !!this.confirmButton,
+            cancelButton: !!this.cancelButton
+        });
     }
 
     setupEventListeners() {
@@ -169,7 +181,11 @@ export default class Modal extends BaseComponent {
                 const result = this.onConfirmCallback();
                 // 如果回调返回Promise，等待完成
                 if (result instanceof Promise) {
-                    result.then(() => this.hide()).catch(error => {
+                    result.then((shouldClose) => {
+                        if (shouldClose !== false) {
+                            this.hide();
+                        }
+                    }).catch(error => {
                         console.error('Modal confirm callback error:', error);
                     });
                 } else if (result !== false) {

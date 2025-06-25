@@ -1,6 +1,7 @@
 // API基础类 - 提供统一的HTTP请求接口
 import Logger from '../utils/logger.js';
 import { Helpers } from '../utils/helpers.js';
+import CONFIG from '../config.js';
 
 export class APIError extends Error {
     constructor(message, status, response) {
@@ -176,5 +177,6 @@ export class BaseAPI {
 }
 
 // 创建默认实例，配置后端API地址
-const apiInstance = new BaseAPI('http://localhost:8000');
+const apiInstance = new BaseAPI(CONFIG.API.BASE_URL);
+apiInstance.setTimeout(CONFIG.API.TIMEOUT);
 export default apiInstance;

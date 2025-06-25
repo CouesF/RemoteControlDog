@@ -3,6 +3,7 @@ import BasePage from './BasePage.js';
 import Modal from '../components/modal.js';
 import ParticipantsAPI from '../api/participants.js';
 import SessionsAPI from '../api/sessions.js';
+import mapsAPI from '../api/maps.js';
 import { EVENTS } from '../utils/constants.js';
 import { Validator } from '../utils/validator.js';
 import Logger from '../utils/logger.js';
@@ -37,14 +38,15 @@ export default class ParticipantManagement extends BasePage {
     }
 
     async loadMaps() {
-        // TODO: 实现地图API加载
-        if (window.api?.getMaps) {
-            return await window.api.getMaps();
+        try {
+            // 调用真实的地图API
+            return await mapsAPI.getAll();
+        } catch (error) {
+            Logger.error('Failed to load maps:', error);
+            // 如果API调用失败，使用mock数据作为fallback
+            Logger.warn('Falling back to mock data for maps');
+            return mapsAPI.getMockMaps();
         }
-        return [
-            { mapId: 'map1', mapName: '测试地图1', mapDescription: '用于测试的地图' },
-            { mapId: 'map2', mapName: '测试地图2', mapDescription: '另一个测试地图' }
-        ];
     }
 
     async renderData() {
@@ -168,6 +170,9 @@ export default class ParticipantManagement extends BasePage {
             await this.experimentModal.render();
             this.experimentModal.onConfirm(() => this.handleConfirmStartExperiment());
 
+            // 设置表单实时验证
+            this.setupFormValidation();
+
             Logger.info('Modals initialized successfully');
         } catch (error) {
             Logger.error('Failed to initialize modals:', error);
@@ -238,26 +243,43 @@ export default class ParticipantManagement extends BasePage {
     }
 
     handleAddParticipant() {
+        Logger.info('handleAddParticipant called');
+        
+        // 检查模态框元素是否存在
+        const modalElement = document.getElementById('add-participant-modal');
+        if (!modalElement) {
+            Logger.error('Add participant modal element not found in DOM');
+            this.showError('错误', '模态框元素未找到，请刷新页面重试');
+            return;
+        }
+        
         if (!this.addParticipantModal) {
+            Logger.warn('Modal instance not initialized, attempting to initialize...');
             // 尝试重新初始化
             this.initializeModals().then(() => {
                 if (this.addParticipantModal) {
+                    Logger.info('Modal initialized successfully, showing modal');
                     this.clearAddParticipantForm();
                     this.addParticipantModal.show();
                 } else {
+                    Logger.error('Failed to initialize modal after retry');
                     this.showError('错误', '模态框初始化失败，请刷新页面重试');
                 }
+            }).catch(error => {
+                Logger.error('Error during modal initialization:', error);
+                this.showError('错误', '模态框初始化失败：' + error.message);
             });
             return;
         }
     
+        Logger.info('Showing existing modal');
         this.clearAddParticipantForm();
         this.addParticipantModal.show();
     }
     
 
     clearAddParticipantForm() {
-        const form = this.querySelector('#add-participant-form');
+        const form = document.querySelector('#add-participant-form');
         if (form) {
             form.reset();
             // 清除验证状态
@@ -271,28 +293,34 @@ export default class ParticipantManagement extends BasePage {
         try {
             const participantData = this.getParticipantFormData();
 
+            // 清除之前的验证状态
+            this.clearValidationErrors();
+
             // 验证数据
             const errors = Validator.validateParticipant(participantData);
             if (errors.length > 0) {
+                // 显示字段级别的验证错误
+                this.displayValidationErrors(errors);
                 this.showWarning(`表单验证失败：${errors.map(e => e.message).join('、')}`);
                 return false; // 阻止模态框关闭
             }
 
-            this.showLoading('正在添加被试...');
+            // 使用模态框内的loading，而不是全页面loading
+            this.showModalLoading('正在添加被试...');
 
             const newParticipant = await ParticipantsAPI.create(participantData);
 
             // 添加到本地数据
             this.participants.unshift(newParticipant);
 
-            this.hideLoading();
+            this.hideModalLoading();
             this.showSuccess(`被试 ${newParticipant.participantName} 添加成功`);
             this.renderParticipantTable();
 
             return true; // 允许模态框关闭
 
         } catch (error) {
-            this.hideLoading();
+            this.hideModalLoading();
             Logger.error('Failed to add participant:', error);
             this.showError('添加失败', error.message);
             return false; // 阻止模态框关闭
@@ -300,15 +328,123 @@ export default class ParticipantManagement extends BasePage {
     }
 
     getParticipantFormData() {
+        const yearValue = document.querySelector('#participant-year-input')?.value?.trim();
+        const monthValue = document.querySelector('#participant-month-input')?.value?.trim();
+        
         return {
-            participantName: this.querySelector('#participant-name-input')?.value?.trim() || '',
-            year: parseInt(this.querySelector('#participant-year-input')?.value) || 0,
-            month: parseInt(this.querySelector('#participant-month-input')?.value) || 0,
-            parentName: this.querySelector('#parent-name-input')?.value?.trim() || '',
-            parentPhone: this.querySelector('#parent-phone-input')?.value?.trim() || '',
-            diagnosticInfo: this.querySelector('#diagnostic-info-input')?.value?.trim() || '',
-            preferenceInfo: this.querySelector('#preference-info-input')?.value?.trim() || ''
+            participantName: document.querySelector('#participant-name-input')?.value?.trim() || '',
+            year: yearValue === '' ? null : parseInt(yearValue),
+            month: monthValue === '' ? null : parseInt(monthValue),
+            parentName: document.querySelector('#parent-name-input')?.value?.trim() || '',
+            parentPhone: document.querySelector('#parent-phone-input')?.value?.trim() || '',
+            diagnosticInfo: document.querySelector('#diagnostic-info-input')?.value?.trim() || '',
+            preferenceInfo: document.querySelector('#preference-info-input')?.value?.trim() || ''
         };
+    }
+
+    clearValidationErrors() {
+        const form = document.querySelector('#add-participant-form');
+        if (form) {
+            // 移除所有错误状态
+            form.querySelectorAll('.is-invalid').forEach(input => {
+                input.classList.remove('is-invalid');
+            });
+            
+            // 移除所有错误消息
+            form.querySelectorAll('.invalid-feedback').forEach(feedback => {
+                feedback.remove();
+            });
+        }
+    }
+
+    displayValidationErrors(errors) {
+        const fieldMapping = {
+            'participantName': '#participant-name-input',
+            'year': '#participant-year-input',
+            'month': '#participant-month-input',
+            'parentName': '#parent-name-input',
+            'parentPhone': '#parent-phone-input'
+        };
+
+        errors.forEach(error => {
+            const fieldSelector = fieldMapping[error.field];
+            if (fieldSelector) {
+                const field = document.querySelector(fieldSelector);
+                if (field) {
+                    // 添加错误样式
+                    field.classList.add('is-invalid');
+                    
+                    // 添加错误消息
+                    const existingFeedback = field.parentNode.querySelector('.invalid-feedback');
+                    if (!existingFeedback) {
+                        const feedback = document.createElement('div');
+                        feedback.className = 'invalid-feedback';
+                        feedback.textContent = error.message;
+                        field.parentNode.appendChild(feedback);
+                    }
+                }
+            }
+        });
+    }
+
+    setupFormValidation() {
+        // 延迟执行，确保模态框已经完全渲染
+        setTimeout(() => {
+            const formFields = [
+                { id: '#participant-name-input', field: 'participantName' },
+                { id: '#parent-name-input', field: 'parentName' },
+                { id: '#parent-phone-input', field: 'parentPhone' },
+                { id: '#participant-year-input', field: 'year' },
+                { id: '#participant-month-input', field: 'month' }
+            ];
+
+            formFields.forEach(({ id, field }) => {
+                const input = document.querySelector(id);
+                if (input) {
+                    // 添加实时验证
+                    input.addEventListener('blur', () => {
+                        this.validateSingleField(field, input);
+                    });
+
+                    // 清除错误状态当用户开始输入
+                    input.addEventListener('input', () => {
+                        if (input.classList.contains('is-invalid')) {
+                            input.classList.remove('is-invalid');
+                            const feedback = input.parentNode.querySelector('.invalid-feedback');
+                            if (feedback) {
+                                feedback.remove();
+                            }
+                        }
+                    });
+                } else {
+                    Logger.warn(`Form field not found: ${id}`);
+                }
+            });
+        }, 100);
+    }
+
+    validateSingleField(fieldName, inputElement) {
+        const participantData = this.getParticipantFormData();
+        const errors = Validator.validateParticipant(participantData);
+        
+        // 查找当前字段的错误
+        const fieldError = errors.find(error => error.field === fieldName);
+        
+        // 清除当前字段的错误状态
+        inputElement.classList.remove('is-invalid');
+        const existingFeedback = inputElement.parentNode.querySelector('.invalid-feedback');
+        if (existingFeedback) {
+            existingFeedback.remove();
+        }
+        
+        // 如果有错误，显示错误
+        if (fieldError) {
+            inputElement.classList.add('is-invalid');
+            const feedback = document.createElement('div');
+            feedback.className = 'invalid-feedback';
+            feedback.textContent = fieldError.message;
+            inputElement.parentNode.appendChild(feedback);
+        }
     }
 
     handleStartExperiment() {
@@ -333,7 +469,7 @@ export default class ParticipantManagement extends BasePage {
 
     populateExperimentModal() {
         // 填充被试选择器
-        const participantSelect = this.querySelector('#participant-select');
+        const participantSelect = document.querySelector('#participant-select');
         if (participantSelect) {
             const options = this.participants.map(p =>
                 `<option value="${p.participantId}">${p.participantName} (${p.year}岁${p.month}个月)</option>`
@@ -342,7 +478,7 @@ export default class ParticipantManagement extends BasePage {
         }
 
         // 填充地图选择器
-        const mapSelect = this.querySelector('#map-select');
+        const mapSelect = document.querySelector('#map-select');
         if (mapSelect) {
             const options = this.maps.map(m =>
                 `<option value="${m.mapId}">${m.mapName}</option>`
@@ -353,8 +489,8 @@ export default class ParticipantManagement extends BasePage {
 
     async handleConfirmStartExperiment() {
         try {
-            const participantId = this.querySelector('#participant-select')?.value;
-            const mapId = this.querySelector('#map-select')?.value;
+            const participantId = document.querySelector('#participant-select')?.value;
+            const mapId = document.querySelector('#map-select')?.value;
 
             if (!participantId || !mapId) {
                 this.showWarning('请选择被试和地图');
@@ -402,6 +538,70 @@ export default class ParticipantManagement extends BasePage {
             Logger.error('Failed to start experiment:', error);
             this.showError('开始实验失败', error.message);
             return false;
+        }
+    }
+
+    // 模态框内的loading方法
+    showModalLoading(message = '处理中...') {
+        const modal = this.addParticipantModal;
+        if (!modal || !modal.container) return;
+
+        const modalBody = modal.querySelector('.modal-body');
+        const modalFooter = modal.querySelector('.modal-footer');
+        
+        if (modalBody && modalFooter) {
+            // 禁用表单
+            const form = modalBody.querySelector('form');
+            if (form) {
+                const inputs = form.querySelectorAll('input, select, textarea');
+                inputs.forEach(input => input.disabled = true);
+            }
+            
+            // 禁用按钮并显示loading
+            const confirmBtn = modalFooter.querySelector('[data-confirm="modal"]');
+            const cancelBtn = modalFooter.querySelector('[data-dismiss="modal"]');
+            
+            if (confirmBtn) {
+                confirmBtn.disabled = true;
+                confirmBtn.innerHTML = `
+                    <span class="spinner-border spinner-border-sm" role="status"></span>
+                    ${message}
+                `;
+            }
+            
+            if (cancelBtn) {
+                cancelBtn.disabled = true;
+            }
+        }
+    }
+
+    hideModalLoading() {
+        const modal = this.addParticipantModal;
+        if (!modal || !modal.container) return;
+
+        const modalBody = modal.querySelector('.modal-body');
+        const modalFooter = modal.querySelector('.modal-footer');
+        
+        if (modalBody && modalFooter) {
+            // 启用表单
+            const form = modalBody.querySelector('form');
+            if (form) {
+                const inputs = form.querySelectorAll('input, select, textarea');
+                inputs.forEach(input => input.disabled = false);
+            }
+            
+            // 恢复按钮状态
+            const confirmBtn = modalFooter.querySelector('[data-confirm="modal"]');
+            const cancelBtn = modalFooter.querySelector('[data-dismiss="modal"]');
+            
+            if (confirmBtn) {
+                confirmBtn.disabled = false;
+                confirmBtn.innerHTML = '确认';
+            }
+            
+            if (cancelBtn) {
+                cancelBtn.disabled = false;
+            }
         }
     }
 

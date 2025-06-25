@@ -1,4 +1,6 @@
 // 应用常量定义
+import CONFIG from '../config.js';
+
 export const PAGES = {
     PARTICIPANT_MANAGEMENT: 'participant_management',
     MAP_MANAGEMENT: 'map_management',
@@ -31,45 +33,14 @@ export const EVENTS = {
     LOADING_END: 'loading_end'
 };
 
-export const API_ENDPOINTS = {
-    PARTICIPANTS: '/api/participants',
-    MAPS: '/api/maps',
-    SESSIONS: '/api/sessions',
-    TARGETS: '/api/targets',
-    IMAGES: '/api/images'
-};
+// 从配置文件导入API端点
+export const API_ENDPOINTS = CONFIG.API.ENDPOINTS;
 
-export const ROBOT_COMMANDS = {
-    POSTURES: {
-        STAND: 'STAND',
-        SIT: 'SIT',
-        LIE: 'LIE'
-    },
-    SYSTEM_ACTIONS: {
-        EMERGENCY_STOP: 'EMERGENCY_STOP',
-        RESET: 'RESET'
-    }
-};
+// 从配置文件导入机器人命令
+export const ROBOT_COMMANDS = CONFIG.ROBOT.COMMANDS;
 
-export const SESSION_STATUS = {
-    STARTED: 'started',
-    PAUSED: 'paused',
-    ENDED: 'ended'
-};
+// 从配置文件导入会话状态
+export const SESSION_STATUS = CONFIG.SESSION.STATUS;
 
-export const VALIDATION_RULES = {
-    PARTICIPANT_NAME: {
-        required: true,
-        minLength: 2,
-        maxLength: 50
-    },
-    PARENT_PHONE: {
-        required: true,
-        pattern: /^1[3-9]\d{9}$/
-    },
-    MAP_NAME: {
-        required: true,
-        minLength: 2,
-        maxLength: 100
-    }
-};
+// 从配置文件导入验证规则
+export const VALIDATION_RULES = CONFIG.VALIDATION;

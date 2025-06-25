@@ -8,7 +8,7 @@ export const LOG_LEVELS = {
 
 class Logger {
     constructor() {
-        this.level = LOG_LEVELS.INFO;
+        this.level = LOG_LEVELS.DEBUG;
         this.enableConsole = true;
         this.logs = [];
         this.maxLogs = 1000;

@@ -3,10 +3,12 @@ import { BaseAPI } from './base.js';
 import { API_ENDPOINTS } from '../utils/constants.js';
 import { Validator } from '../utils/validator.js';
 import Logger from '../utils/logger.js';
+import CONFIG from '../config.js';
 
 class ParticipantsAPI extends BaseAPI {
     constructor() {
-        super();
+        super(CONFIG.API.BASE_URL);
+        this.setTimeout(CONFIG.API.TIMEOUT);
         this.endpoint = API_ENDPOINTS.PARTICIPANTS;
     }
 

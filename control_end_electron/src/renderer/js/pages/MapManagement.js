@@ -4,6 +4,7 @@ import Modal from '../components/modal.js';
 import { EVENTS } from '../utils/constants.js';
 import { Validator } from '../utils/validator.js';
 import Logger from '../utils/logger.js';
+import mapsAPI from '../api/maps.js';
 
 export default class MapManagement extends BasePage {
     constructor() {
@@ -17,17 +18,14 @@ export default class MapManagement extends BasePage {
 
     async loadData() {
         try {
-            // TODO: 实现真实的地图API调用
-            if (window.api?.getMaps) {
-                this.maps = await window.api.getMaps();
-            } else {
-                this.maps = this.getMockMaps();
-            }
-            
+            // 调用真实的地图API
+            this.maps = await mapsAPI.getAll();
             Logger.info(`Loaded ${this.maps.length} maps`);
         } catch (error) {
             Logger.error('Failed to load maps:', error);
-            throw error;
+            // 如果API调用失败，使用mock数据作为fallback
+            Logger.warn('Falling back to mock data');
+            this.maps = mapsAPI.getMockMaps();
         }
     }
 
@@ -193,8 +191,8 @@ export default class MapManagement extends BasePage {
 
             this.showLoading('正在删除地图...');
 
-            // TODO: 实现真实的删除API调用
-            Logger.info(`TODO: Delete map ${map.mapId}`);
+            // 调用真实的删除API
+            await mapsAPI.delete(map.mapId);
 
             // 从本地数据中移除
             this.maps = this.maps.filter(m => m.mapId !== map.mapId);
@@ -244,22 +242,23 @@ export default class MapManagement extends BasePage {
                 return false; // 阻止模态框关闭
             }
 
-            this.showLoading('正在创建地图...');
+            // 使用模态框内的loading，而不是全页面loading
+            this.showModalLoading('正在创建地图...');
 
-            // TODO: 实现真实的创建API调用
-            const newMap = await this.createMapMock(mapData);
+            // 调用真实的创建API
+            const newMap = await mapsAPI.create(mapData);
             
             // 添加到本地数据
             this.maps.unshift(newMap);
             
-            this.hideLoading();
+            this.hideModalLoading();
             this.showSuccess(`地图 ${newMap.mapName} 创建成功`);
             this.renderMapTable();
 
             return true; // 允许模态框关闭
 
         } catch (error) {
-            this.hideLoading();
+            this.hideModalLoading();
             Logger.error('Failed to create map:', error);
             this.showError('创建失败', error.message);
             return false; // 阻止模态框关闭
@@ -273,41 +272,69 @@ export default class MapManagement extends BasePage {
         };
     }
 
-    // Mock数据和方法（临时使用）
-    getMockMaps() {
-        return [
-            {
-                mapId: 'uuid-m1',
-                mapName: '公园北区',
-                mapDescription: '适合初级训练的开阔草地',
-                targetCount: 6
-            },
-            {
-                mapId: 'uuid-m2',
-                mapName: '小区花园',
-                mapDescription: '有更多互动元素的复杂环境',
-                targetCount: 10
-            },
-            {
-                mapId: 'uuid-m3',
-                mapName: '室内训练场',
-                mapDescription: '室内环境，适合恶劣天气时使用',
-                targetCount: 4
+
+    // 模态框内的loading方法
+    showModalLoading(message = '处理中...') {
+        const modal = this.createMapModal;
+        if (!modal || !modal.container) return;
+
+        const modalBody = modal.querySelector('.modal-body');
+        const modalFooter = modal.querySelector('.modal-footer');
+        
+        if (modalBody && modalFooter) {
+            // 禁用表单
+            const form = modalBody.querySelector('form');
+            if (form) {
+                const inputs = form.querySelectorAll('input, select, textarea');
+                inputs.forEach(input => input.disabled = true);
             }
-        ];
+            
+            // 禁用按钮并显示loading
+            const confirmBtn = modalFooter.querySelector('[data-confirm="modal"]');
+            const cancelBtn = modalFooter.querySelector('[data-dismiss="modal"]');
+            
+            if (confirmBtn) {
+                confirmBtn.disabled = true;
+                confirmBtn.innerHTML = `
+                    <span class="spinner-border spinner-border-sm" role="status"></span>
+                    ${message}
+                `;
+            }
+            
+            if (cancelBtn) {
+                cancelBtn.disabled = true;
+            }
+        }
     }
 
-    async createMapMock(mapData) {
-        // TODO: 实现真实API调用
-        if (window.api?.createMap) {
-            return await window.api.createMap(mapData);
-        }
+    hideModalLoading() {
+        const modal = this.createMapModal;
+        if (!modal || !modal.container) return;
+
+        const modalBody = modal.querySelector('.modal-body');
+        const modalFooter = modal.querySelector('.modal-footer');
         
-        return {
-            ...mapData,
-            mapId: `uuid-m${Date.now()}`,
-            targetCount: 0
-        };
+        if (modalBody && modalFooter) {
+            // 启用表单
+            const form = modalBody.querySelector('form');
+            if (form) {
+                const inputs = form.querySelectorAll('input, select, textarea');
+                inputs.forEach(input => input.disabled = false);
+            }
+            
+            // 恢复按钮状态
+            const confirmBtn = modalFooter.querySelector('[data-confirm="modal"]');
+            const cancelBtn = modalFooter.querySelector('[data-dismiss="modal"]');
+            
+            if (confirmBtn) {
+                confirmBtn.disabled = false;
+                confirmBtn.innerHTML = '确认';
+            }
+            
+            if (cancelBtn) {
+                cancelBtn.disabled = false;
+            }
+        }
     }
 
     async beforeCleanup() {

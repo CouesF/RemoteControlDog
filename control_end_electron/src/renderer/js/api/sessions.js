@@ -2,10 +2,12 @@
 import { BaseAPI } from './base.js';
 import { API_ENDPOINTS, SESSION_STATUS } from '../utils/constants.js';
 import Logger from '../utils/logger.js';
+import CONFIG from '../config.js';
 
 class SessionsAPI extends BaseAPI {
     constructor() {
-        super();
+        super(CONFIG.API.BASE_URL);
+        this.setTimeout(CONFIG.API.TIMEOUT);
         this.endpoint = API_ENDPOINTS.SESSIONS;
     }
 
