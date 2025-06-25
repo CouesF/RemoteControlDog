@@ -18,14 +18,12 @@ export default class UDPConnectionManager extends BaseComponent {
             control: {
                 host: '118.31.58.101',
                 port: 48990,
-                localPort: 8990,
                 type: 'control',
                 autoReconnect: true
             },
             camera: {
                 host: '118.31.58.101', 
                 port: 48991,
-                localPort: 8991,
                 type: 'camera',
                 autoReconnect: true
             }

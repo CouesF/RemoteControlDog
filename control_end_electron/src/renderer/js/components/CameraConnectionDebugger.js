@@ -429,7 +429,7 @@ export default class CameraConnectionDebugger extends BaseComponent {
         const testTargets = [
             { name: '摄像头服务器', host: '118.31.58.101', port: 48991 },
             { name: '控制服务器', host: '118.31.58.101', port: 48990 },
-            { name: '主服务器', host: '118.31.58.101', port: 8995 }
+            { name: '主服务器', host: '118.31.58.101', port: 48995 }
         ];
         
         let html = '';
@@ -512,7 +512,6 @@ export default class CameraConnectionDebugger extends BaseComponent {
                 const cameraConfig = {
                     host: '118.31.58.101',
                     port: 48991,
-                    localPort: 8991,
                     type: 'camera',
                     autoReconnect: true
                 };
