@@ -336,10 +336,14 @@ class SmartCameraHandler:
         
         while self.is_running:
             try:
-                current_time = time.time()
-                if current_time - last_capture_time < frame_interval:
-                    time.sleep(0.001)  # 短暂休眠
-                    continue
+                capture_start_time = time.time()
+
+                # 精确控制帧率
+                sleep_time = frame_interval - (capture_start_time - last_capture_time)
+                if sleep_time > 0:
+                    time.sleep(sleep_time)
+                
+                last_capture_time = time.time()
                 
                 ret, frame = self.cap.read()
                 if not ret:
@@ -348,7 +352,6 @@ class SmartCameraHandler:
                     continue
                 
                 self.stats['frames_captured'] += 1
-                last_capture_time = current_time
                 
                 # 清理旧帧，保持实时性
                 while not self.frame_queue.empty():
@@ -365,7 +368,7 @@ class SmartCameraHandler:
                         camera_frame = CameraFrame(
                             camera_id=self.camera_id,
                             frame_data=frame_data,
-                            timestamp=current_time,
+                            timestamp=last_capture_time,
                             frame_id=uuid.uuid4().hex[:8],
                             resolution=self.config['resolution'],
                             quality=self.config['quality']
@@ -579,11 +582,8 @@ class CameraGateway:
                     # 异步处理数据包
                     asyncio.create_task(self._process_packet(data, addr))
                 except socket.timeout:
-                    # 超时是正常的，继续循环
-                    pass
-                except BlockingIOError:
-                    # 没有数据可读
-                    await asyncio.sleep(0.001)
+                    # 超时是正常的，让出CPU
+                    await asyncio.sleep(0.01)
                 
             except asyncio.CancelledError:
                 break
@@ -747,7 +747,8 @@ class CameraGateway:
                         if addr in self.active_clients:
                             del self.active_clients[addr]
                 
-                await asyncio.sleep(0.033)  # 约30fps
+                # 由摄像头帧率和网络状况决定发送速率
+                await asyncio.sleep(0.01)
                 
             except asyncio.CancelledError:
                 break

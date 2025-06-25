@@ -88,9 +88,13 @@ class CameraUDPConnection {
             // Bind to local port if specified
             if (this.config.localPort && this.config.localPort > 0) {
                 await new Promise((resolve, reject) => {
-                    this.socket.bind(this.config.localPort, (err) => {
-                        if (err) reject(err);
-                        else resolve();
+                    this.socket.bind(this.config.localPort, () => {
+                        console.log(`Camera UDP connection ${this.id} bound to local port ${this.config.localPort}`);
+                        resolve();
+                    });
+                    this.socket.on('error', (err) => {
+                        console.error(`Camera UDP socket error during bind on port ${this.config.localPort}:`, err);
+                        reject(err);
                     });
                 });
             }
