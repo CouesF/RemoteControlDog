@@ -10,6 +10,10 @@ fastapi
 uvicorn[standard]
 python-multipart
 
+# Camera and image processing dependencies
+opencv-python
+numpy
+
 # To install these requirements:
 # pip install -r requirements.txt
 
@@ -23,3 +27,5 @@ python-multipart
 # fastapi==0.104.1
 # uvicorn==0.24.0
 # python-multipart==0.0.6
+# opencv-python==4.8.1.78
+# numpy==1.24.3

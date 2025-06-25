@@ -1,10 +1,11 @@
 // 地图管理页面
 import BasePage from './BasePage.js';
 import Modal from '../components/modal.js';
-import { EVENTS } from '../utils/constants.js';
+import { EVENTS, PAGES } from '../utils/constants.js';
 import { Validator } from '../utils/validator.js';
 import Logger from '../utils/logger.js';
 import mapsAPI from '../api/maps.js';
+import EventBus from '../eventBus.js';
 
 export default class MapManagement extends BasePage {
     constructor() {
@@ -179,9 +180,12 @@ export default class MapManagement extends BasePage {
     }
 
     handleEditTargets(map) {
-        // TODO: 实现编辑目标点功能
-        this.showInfo(`TODO: 编辑地图 ${map.mapName} 的目标点`);
-        Logger.info('Edit targets for map:', map);
+        // 跳转到地图构建页面
+        EventBus.emit(EVENTS.NAVIGATE_TO, { 
+            page: PAGES.MAP_BUILDER,
+            options: { mapId: map.mapId }
+        });
+        Logger.info('Navigate to map builder for map:', map);
     }
 
     async handleDeleteMap(map) {

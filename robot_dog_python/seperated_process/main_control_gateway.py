@@ -371,7 +371,8 @@ class ControlGateway:
         """接收数据循环"""
         while self.is_running:
             try:
-                data, addr = await asyncio.get_event_loop().sock_recvfrom(self.socket, MAX_UDP_SIZE)
+                loop = asyncio.get_running_loop()
+                data, addr = await loop.sock_recvfrom(self.socket, MAX_UDP_SIZE)
                 self.stats['packets_received'] += 1
                 
                 # 异步处理数据包
@@ -474,8 +475,9 @@ class ControlGateway:
             response_packet = self.packet_manager.prepare_packet(response_data, self.security_manager)
             fragments = self.packet_manager.auto_fragment(response_packet)
             
+            loop = asyncio.get_running_loop()
             for fragment in fragments:
-                await asyncio.get_event_loop().sock_sendto(self.socket, fragment, addr)
+                await loop.sock_sendto(self.socket, fragment, addr)
             
             self.stats['packets_sent'] += 1
             

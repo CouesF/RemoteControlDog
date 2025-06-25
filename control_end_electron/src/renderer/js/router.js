@@ -7,8 +7,9 @@ import { EVENTS, PAGES } from './utils/constants.js';
 const pageModules = {
     [PAGES.PARTICIPANT_MANAGEMENT]: () => import('./pages/ParticipantManagement.js'),
     [PAGES.MAP_MANAGEMENT]: () => import('./pages/MapManagement.js'),
-    [PAGES.EXPERIMENT_CONTROL]: () => import('./pages/ExperimentControl.js'),
-    [PAGES.SESSION_RESULTS]: () => import('./pages/SessionResults.js')
+    [PAGES.MAP_BUILDER]: () => import('./pages/MapBuilder.js'),
+    [PAGES.EXPERIMENT_CONTROL]: () => import('./pages/experimentControl.js'),
+    [PAGES.SESSION_RESULTS]: () => import('./pages/SessionResult.js')
 };
 
 export default class Router {

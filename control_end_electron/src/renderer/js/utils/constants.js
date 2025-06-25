@@ -4,6 +4,7 @@ import CONFIG from '../config.js';
 export const PAGES = {
     PARTICIPANT_MANAGEMENT: 'participant_management',
     MAP_MANAGEMENT: 'map_management',
+    MAP_BUILDER: 'map_builder',
     EXPERIMENT_CONTROL: 'experiment_control',
     SESSION_RESULTS: 'session_results'
 };

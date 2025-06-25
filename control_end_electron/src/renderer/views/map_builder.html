@@ -1,0 +1,257 @@
+<!-- 地图构建页面 -->
+<div class="map-builder-page">
+    <!-- 页面头部 -->
+    <div class="page-header">
+        <div class="d-flex justify-content-between align-items-center">
+            <div>
+                <h2 class="page-title">
+                    <i class="fas fa-map-marked-alt"></i>
+                    地图构建
+                </h2>
+                <p class="page-subtitle text-muted" id="map-info">
+                    正在构建地图...
+                </p>
+            </div>
+            <div class="header-actions">
+                <button id="save-map-btn" class="btn btn-success">
+                    <i class="fas fa-save"></i> 保存地图
+                </button>
+                <button id="back-to-maps-btn" class="btn btn-outline-secondary">
+                    <i class="fas fa-arrow-left"></i> 返回地图管理
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 主要内容区域 -->
+    <div class="map-builder-content">
+        <div class="row">
+            <!-- 左侧：摄像头监控和控制 -->
+            <div class="col-lg-8">
+                <!-- 摄像头监控区域 -->
+                <div class="camera-section">
+                    <div class="section-header">
+                        <h5>
+                            <i class="fas fa-video"></i>
+                            摄像头监控
+                        </h5>
+                        <div class="camera-controls">
+                            <button id="capture-btn" class="btn btn-primary">
+                                <i class="fas fa-camera"></i> 截取当前画面
+                            </button>
+                            <button id="toggle-cameras-btn" class="btn btn-outline-info">
+                                <i class="fas fa-th"></i> 切换布局
+                            </button>
+                        </div>
+                    </div>
+                    <div id="camera-monitor-container" class="camera-monitor-container">
+                        <!-- 多摄像头监控组件将在这里渲染 -->
+                    </div>
+                </div>
+
+                <!-- 机器狗控制区域 -->
+                <div class="robot-control-section">
+                    <div class="section-header">
+                        <h5>
+                            <i class="fas fa-gamepad"></i>
+                            机器狗控制
+                        </h5>
+                        <div class="control-status">
+                            <span class="status-indicator" id="robot-status">未连接</span>
+                        </div>
+                    </div>
+                    <div id="robot-control-container" class="robot-control-container">
+                        <!-- 机器狗控制面板将在这里渲染 -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- 右侧：目标点管理 -->
+            <div class="col-lg-4">
+                <div class="targets-section">
+                    <div class="section-header">
+                        <h5>
+                            <i class="fas fa-map-marker-alt"></i>
+                            目标点管理
+                        </h5>
+                        <div class="targets-stats">
+                            <span class="badge badge-info" id="targets-count">0 个目标点</span>
+                        </div>
+                    </div>
+
+                    <!-- 目标点列表 -->
+                    <div class="targets-list-container">
+                        <div id="targets-list" class="targets-list">
+                            <div class="empty-targets">
+                                <i class="fas fa-map-marker-alt fa-2x text-muted"></i>
+                                <p class="text-muted mt-2">暂无目标点</p>
+                                <small class="text-muted">使用"截取当前画面"按钮添加目标点</small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 目标点操作 -->
+                    <div class="targets-actions">
+                        <button id="clear-all-targets-btn" class="btn btn-outline-danger btn-sm" disabled>
+                            <i class="fas fa-trash"></i> 清空所有目标点
+                        </button>
+                        <button id="reorder-targets-btn" class="btn btn-outline-secondary btn-sm" disabled>
+                            <i class="fas fa-sort"></i> 调整顺序
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 添加目标点模态框 -->
+<div class="modal fade" id="add-target-modal" tabindex="-1" role="dialog">
+    <div class="modal-dialog modal-lg" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fas fa-map-marker-alt"></i>
+                    添加目标点
+                </h5>
+                <button type="button" class="close" data-dismiss="modal">
+                    <span>&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <form id="add-target-form">
+                    <!-- 截图预览和裁剪 -->
+                    <div class="form-group">
+                        <label>截图预览</label>
+                        <div class="image-crop-container">
+                            <canvas id="crop-canvas" class="crop-canvas"></canvas>
+                            <div class="crop-overlay" id="crop-overlay">
+                                <div class="crop-selection" id="crop-selection">
+                                    <div class="crop-handle crop-handle-nw"></div>
+                                    <div class="crop-handle crop-handle-ne"></div>
+                                    <div class="crop-handle crop-handle-sw"></div>
+                                    <div class="crop-handle crop-handle-se"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <small class="form-text text-muted">
+                            拖拽选择区域来裁剪目标点图像
+                        </small>
+                    </div>
+
+                    <!-- 目标点信息 -->
+                    <div class="form-group">
+                        <label for="target-name">目标点名称 <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="target-name" 
+                               placeholder="请输入目标点名称" required>
+                        <div class="invalid-feedback"></div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="target-description">描述</label>
+                        <textarea class="form-control" id="target-description" rows="3"
+                                  placeholder="可选：添加目标点的详细描述"></textarea>
+                    </div>
+
+                    <!-- 位置信息（自动获取） -->
+                    <div class="form-group">
+                        <label>机器狗当前位置</label>
+                        <div class="position-info">
+                            <div class="row">
+                                <div class="col-4">
+                                    <label class="small">X坐标</label>
+                                    <input type="number" class="form-control form-control-sm" 
+                                           id="target-x" step="0.01" readonly>
+                                </div>
+                                <div class="col-4">
+                                    <label class="small">Y坐标</label>
+                                    <input type="number" class="form-control form-control-sm" 
+                                           id="target-y" step="0.01" readonly>
+                                </div>
+                                <div class="col-4">
+                                    <label class="small">朝向</label>
+                                    <input type="number" class="form-control form-control-sm" 
+                                           id="target-rotation" step="0.01" readonly>
+                                </div>
+                            </div>
+                            <small class="form-text text-muted">
+                                位置信息将自动从机器狗当前状态获取
+                            </small>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" id="confirm-add-target">
+                    <i class="fas fa-plus"></i> 添加目标点
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 编辑目标点模态框 -->
+<div class="modal fade" id="edit-target-modal" tabindex="-1" role="dialog">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fas fa-edit"></i>
+                    编辑目标点
+                </h5>
+                <button type="button" class="close" data-dismiss="modal">
+                    <span>&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <form id="edit-target-form">
+                    <div class="form-group">
+                        <label for="edit-target-name">目标点名称 <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="edit-target-name" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-target-description">描述</label>
+                        <textarea class="form-control" id="edit-target-description" rows="3"></textarea>
+                    </div>
+                    <input type="hidden" id="edit-target-id">
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" id="confirm-edit-target">
+                    <i class="fas fa-save"></i> 保存修改
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 目标点顺序调整模态框 -->
+<div class="modal fade" id="reorder-targets-modal" tabindex="-1" role="dialog">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fas fa-sort"></i>
+                    调整目标点顺序
+                </h5>
+                <button type="button" class="close" data-dismiss="modal">
+                    <span>&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted">拖拽目标点来调整执行顺序</p>
+                <div id="sortable-targets" class="sortable-targets">
+                    <!-- 可排序的目标点列表 -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" id="confirm-reorder-targets">
+                    <i class="fas fa-save"></i> 保存顺序
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
