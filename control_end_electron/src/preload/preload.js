@@ -11,9 +11,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
     sendSystemCommand: (command) => ipcRenderer.send('send-system-command', command), // ADDED
     sendPostureCommand: (command) => ipcRenderer.send('send-posture-command', command), // ADDED
 
+    // UDP Connection Management for Camera
+    initializeUDP: () => ipcRenderer.invoke('initialize-udp'),
+    connectUDP: (connectionId, config) => ipcRenderer.invoke('connect-udp', connectionId, config),
+    disconnectUDP: (connectionId) => ipcRenderer.invoke('disconnect-udp', connectionId),
+    sendUDPMessage: (connectionId, message) => ipcRenderer.invoke('send-udp-message', connectionId, message),
+    onUDPMessage: (callback) => ipcRenderer.on('udp-message', (_event, data) => callback(data)),
+    onConnectionStatusChange: (callback) => ipcRenderer.on('connection-status-change', (_event, status) => callback(status)),
+
     // Remove listeners if component unmounts to prevent memory leaks
     removeRobotStatusListener: (callback) => ipcRenderer.removeListener('robot-status', callback),
     removeVideoStreamListener: (callback) => ipcRenderer.removeListener('video-stream', callback),
+    removeUDPMessageListener: (callback) => ipcRenderer.removeListener('udp-message', callback),
+    removeConnectionStatusListener: (callback) => ipcRenderer.removeListener('connection-status-change', callback),
 });
 
 // Mock API for frontend development

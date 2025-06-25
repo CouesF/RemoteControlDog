@@ -46,7 +46,10 @@ export default class UDPConnectionManager extends BaseComponent {
         try {
             // 初始化UDP客户端
             if (window.electronAPI?.initializeUDP) {
-                await window.electronAPI.initializeUDP();
+                const result = await window.electronAPI.initializeUDP();
+                if (!result.success) {
+                    throw new Error(result.error || 'UDP初始化失败');
+                }
                 Logger.info('UDP客户端初始化成功');
             }
             
@@ -337,7 +340,10 @@ class UDPConnection {
     async connect() {
         try {
             if (window.electronAPI?.connectUDP) {
-                await window.electronAPI.connectUDP(this.id, this.config);
+                const result = await window.electronAPI.connectUDP(this.id, this.config);
+                if (!result.success) {
+                    throw new Error(result.error || '连接失败');
+                }
                 this.isConnected = true;
                 this.lastActivity = Date.now();
                 Logger.info(`UDP连接 ${this.id} 已建立`);
@@ -379,7 +385,10 @@ class UDPConnection {
 
         try {
             if (window.electronAPI?.sendUDPMessage) {
-                await window.electronAPI.sendUDPMessage(this.id, message);
+                const result = await window.electronAPI.sendUDPMessage(this.id, message);
+                if (!result.success) {
+                    throw new Error(result.error || '发送失败');
+                }
                 this.stats.messagesSent++;
                 this.lastActivity = Date.now();
                 this.manager.stats.packetsSent++;

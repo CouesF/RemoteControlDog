@@ -5,6 +5,7 @@ const dotenv = require('dotenv');
 
 const protobufHandler = require('./protobuf_handler');
 const udpHandler = require('./udp_handler');
+const { getCameraUDPManager } = require('./camera_udp_handler');
 
 // --- Configuration ---
 // Load .env from project root: RemoteControlDog/.env
@@ -57,6 +58,10 @@ app.whenReady().then(async () => {
 
     createWindow();
     udpHandler.initUdpClient(CE_CLIENT_ID, TARGET_CS_HOST, TARGET_CS_PORT, CE_LISTEN_PORT, mainWindow);
+    
+    // Initialize camera UDP manager
+    const cameraUDPManager = getCameraUDPManager();
+    cameraUDPManager.initialize(mainWindow);
 
     app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) {
@@ -67,6 +72,11 @@ app.whenReady().then(async () => {
 
 app.on('window-all-closed', () => {
     udpHandler.closeUdpClient();
+    
+    // Cleanup camera UDP manager
+    const cameraUDPManager = getCameraUDPManager();
+    cameraUDPManager.cleanup();
+    
     if (process.platform !== 'darwin') {
         app.quit();
     }
@@ -111,5 +121,59 @@ ipcMain.on('send-posture-command', (event, command) => {
         udpHandler.sendSetPostureCommandToRobot(RD_TARGET_CLIENT_ID, command.posture);
     } else {
         console.warn("CE_Main: Invalid posture command received via IPC:", command);
+    }
+});
+
+// IPC for camera UDP connections
+ipcMain.handle('initialize-udp', async () => {
+    try {
+        const cameraUDPManager = getCameraUDPManager();
+        if (!cameraUDPManager.isInitialized) {
+            cameraUDPManager.initialize(mainWindow);
+        }
+        return { success: true };
+    } catch (error) {
+        console.error('CE_Main: Failed to initialize UDP:', error);
+        return { success: false, error: error.message };
+    }
+});
+
+ipcMain.handle('connect-udp', async (event, connectionId, config) => {
+    try {
+        console.log(`CE_Main: Creating UDP connection ${connectionId}:`, config);
+        const cameraUDPManager = getCameraUDPManager();
+        const connection = await cameraUDPManager.createConnection(connectionId, config);
+        await connection.connect();
+        return { success: true };
+    } catch (error) {
+        console.error(`CE_Main: Failed to connect UDP ${connectionId}:`, error);
+        return { success: false, error: error.message };
+    }
+});
+
+ipcMain.handle('disconnect-udp', async (event, connectionId) => {
+    try {
+        console.log(`CE_Main: Disconnecting UDP connection ${connectionId}`);
+        const cameraUDPManager = getCameraUDPManager();
+        await cameraUDPManager.removeConnection(connectionId);
+        return { success: true };
+    } catch (error) {
+        console.error(`CE_Main: Failed to disconnect UDP ${connectionId}:`, error);
+        return { success: false, error: error.message };
+    }
+});
+
+ipcMain.handle('send-udp-message', async (event, connectionId, message) => {
+    try {
+        const cameraUDPManager = getCameraUDPManager();
+        const connection = cameraUDPManager.getConnection(connectionId);
+        if (!connection) {
+            throw new Error(`Connection ${connectionId} not found`);
+        }
+        await connection.sendMessage(message);
+        return { success: true };
+    } catch (error) {
+        console.error(`CE_Main: Failed to send UDP message to ${connectionId}:`, error);
+        return { success: false, error: error.message };
     }
 });
