@@ -339,6 +339,7 @@ class UDPConnection {
      */
     async connect() {
         try {
+            // 尝试新的API命名方式
             if (window.electronAPI?.connectUDP) {
                 const result = await window.electronAPI.connectUDP(this.id, this.config);
                 if (!result.success) {
@@ -347,12 +348,22 @@ class UDPConnection {
                 this.isConnected = true;
                 this.lastActivity = Date.now();
                 Logger.info(`UDP连接 ${this.id} 已建立`);
+            } else if (window.electronAPI?.['connect-udp']) {
+                // 尝试旧的API命名方式
+                const result = await window.electronAPI['connect-udp'](this.id, this.config);
+                if (!result.success) {
+                    throw new Error(result.error || '连接失败');
+                }
+                this.isConnected = true;
+                this.lastActivity = Date.now();
+                Logger.info(`UDP连接 ${this.id} 已建立`);
             } else {
-                throw new Error('electronAPI.connectUDP 不可用');
+                throw new Error('UDP连接API不可用 (connectUDP 或 connect-udp)');
             }
         } catch (error) {
             this.stats.errors++;
             this.stats.lastError = error.message;
+            Logger.error(`UDP连接失败 [${this.id}]:`, error);
             throw error;
         }
     }
@@ -364,6 +375,8 @@ class UDPConnection {
         try {
             if (window.electronAPI?.disconnectUDP) {
                 await window.electronAPI.disconnectUDP(this.id);
+            } else if (window.electronAPI?.['disconnect-udp']) {
+                await window.electronAPI['disconnect-udp'](this.id);
             }
             this.isConnected = false;
             Logger.info(`UDP连接 ${this.id} 已断开`);
@@ -393,8 +406,17 @@ class UDPConnection {
                 this.lastActivity = Date.now();
                 this.manager.stats.packetsSent++;
                 return true;
+            } else if (window.electronAPI?.['send-udp-message']) {
+                const result = await window.electronAPI['send-udp-message'](this.id, message);
+                if (!result.success) {
+                    throw new Error(result.error || '发送失败');
+                }
+                this.stats.messagesSent++;
+                this.lastActivity = Date.now();
+                this.manager.stats.packetsSent++;
+                return true;
             } else {
-                throw new Error('electronAPI.sendUDPMessage 不可用');
+                throw new Error('UDP消息发送API不可用 (sendUDPMessage 或 send-udp-message)');
             }
         } catch (error) {
             this.stats.errors++;

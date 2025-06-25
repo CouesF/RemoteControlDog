@@ -2,6 +2,7 @@
 import BasePage from './BasePage.js';
 import MultiCameraMonitor from '../components/MultiCameraMonitor.js';
 import RobotControlPanel from '../components/RobotControlPanel.js';
+import CameraConnectionDebugger from '../components/CameraConnectionDebugger.js';
 import Modal from '../components/modal.js';
 import { EVENTS, PAGES } from '../utils/constants.js';
 import { Validator } from '../utils/validator.js';
@@ -23,6 +24,7 @@ export default class MapBuilder extends BasePage {
         // 组件实例
         this.cameraMonitor = null;
         this.robotControl = null;
+        this.cameraDebugger = null;
         
         // 目标点数据
         this.targets = [];
@@ -93,6 +95,10 @@ export default class MapBuilder extends BasePage {
 
     async initializeComponents() {
         try {
+            // 初始化摄像头连接调试器
+            this.cameraDebugger = new CameraConnectionDebugger('camera-debug-container');
+            await this.cameraDebugger.render();
+            
             // 初始化摄像头监控组件
             this.cameraMonitor = new MultiCameraMonitor('camera-monitor-container', {
                 layout: 'grid',
@@ -780,6 +786,10 @@ export default class MapBuilder extends BasePage {
 
     async beforeCleanup() {
         // 清理组件
+        if (this.cameraDebugger) {
+            await this.cameraDebugger.cleanup();
+        }
+        
         if (this.cameraMonitor) {
             await this.cameraMonitor.cleanup();
         }

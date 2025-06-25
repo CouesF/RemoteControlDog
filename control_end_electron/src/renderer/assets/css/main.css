@@ -582,13 +582,23 @@ body.modal-open {
     color: #262626;
 }
 
-.camera-section, .robot-control-section, .targets-section {
+.camera-debug-section,
+.camera-section, 
+.robot-control-section, 
+.targets-section {
     background: white;
     border-radius: 8px;
     padding: 20px;
     margin-bottom: 20px;
     box-shadow: 0 2px 8px rgba(0,0,0,0.06);
     border: 1px solid #f0f0f0;
+}
+
+.camera-debug-container {
+    min-height: 200px;
+    border: 1px solid #e8e8e8;
+    border-radius: 6px;
+    background: #fafafa;
 }
 
 .camera-monitor-container, .robot-control-container {

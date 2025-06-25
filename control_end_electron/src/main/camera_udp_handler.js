@@ -195,6 +195,13 @@ class CameraUDPConnection {
         try {
             this.stats.messagesReceived++;
             
+            // 检查是否为二进制帧数据
+            if (data.length > 0 && (data[0] === 0xFF || data[0] === 0xFE)) {
+                this.handleBinaryFrame(data, rinfo);
+                return;
+            }
+            
+            // 处理JSON数据包
             const packet = this.processReceivedPacket(data, rinfo);
             if (!packet) return;
 
@@ -285,6 +292,146 @@ class CameraUDPConnection {
         }
 
         return null; // Still waiting for more fragments
+    }
+
+    handleBinaryFrame(data, rinfo) {
+        try {
+            if (data[0] === 0xFF) {
+                // 完整二进制帧
+                this.processBinaryFrame(data);
+            } else if (data[0] === 0xFE) {
+                // 分片二进制帧
+                this.processBinaryFragment(data);
+            }
+        } catch (error) {
+            console.error(`Error handling binary frame:`, error);
+            this.stats.errors++;
+        }
+    }
+
+    processBinaryFrame(data) {
+        try {
+            // 解析二进制帧头部
+            // 格式: 魔数(1) + 时间戳(8) + 摄像头ID(2) + 宽度(2) + 高度(2) + 质量(1) + 帧ID(8) + 数据长度(4)
+            if (data.length < 28) return;
+
+            let offset = 1; // 跳过魔数
+            
+            // 读取时间戳 (8字节，大端序)
+            const timestamp = data.readBigUInt64BE(offset) / 1000000; // 转换为秒
+            offset += 8;
+            
+            // 读取摄像头ID (2字节)
+            const cameraId = data.readUInt16BE(offset);
+            offset += 2;
+            
+            // 读取分辨率 (4字节)
+            const width = data.readUInt16BE(offset);
+            offset += 2;
+            const height = data.readUInt16BE(offset);
+            offset += 2;
+            
+            // 读取质量 (1字节)
+            const quality = data.readUInt8(offset);
+            offset += 1;
+            
+            // 读取帧ID (8字节)
+            const frameIdBytes = data.slice(offset, offset + 8);
+            const frameId = frameIdBytes.toString('ascii').replace(/\0/g, '');
+            offset += 8;
+            
+            // 读取数据长度 (4字节)
+            const dataLength = data.readUInt32BE(offset);
+            offset += 4;
+            
+            // 读取图像数据
+            if (data.length < offset + dataLength) {
+                console.warn('Incomplete binary frame data');
+                return;
+            }
+            
+            const imageData = data.slice(offset, offset + dataLength);
+            
+            // 转换为Base64用于前端显示
+            const base64Data = imageData.toString('base64');
+            
+            // 通知渲染进程
+            this.manager.notifyRenderer('camera-frame', {
+                connectionId: this.id,
+                cameraId,
+                frameId,
+                timestamp,
+                resolution: [width, height],
+                quality,
+                data: base64Data,
+                dataUrl: `data:image/jpeg;base64,${base64Data}`
+            });
+            
+        } catch (error) {
+            console.error('Error processing binary frame:', error);
+            this.stats.errors++;
+        }
+    }
+
+    processBinaryFragment(data) {
+        try {
+            // 解析分片头部
+            // 格式: 魔数(1) + 分片ID(8) + 分片索引(2) + 总分片数(2) + 数据长度(2)
+            if (data.length < 15) return;
+
+            let offset = 1; // 跳过魔数
+            
+            // 读取分片ID (8字节)
+            const fragmentId = data.slice(offset, offset + 8).toString('ascii');
+            offset += 8;
+            
+            // 读取分片索引 (2字节)
+            const fragmentIndex = data.readUInt16BE(offset);
+            offset += 2;
+            
+            // 读取总分片数 (2字节)
+            const totalFragments = data.readUInt16BE(offset);
+            offset += 2;
+            
+            // 读取数据长度 (2字节)
+            const chunkLength = data.readUInt16BE(offset);
+            offset += 2;
+            
+            // 读取分片数据
+            const chunkData = data.slice(offset, offset + chunkLength);
+            
+            // 初始化分片缓冲区
+            if (!this.fragmentBuffers.has(fragmentId)) {
+                this.fragmentBuffers.set(fragmentId, {
+                    chunks: {},
+                    totalFragments,
+                    timestamp: Date.now()
+                });
+            }
+            
+            // 存储分片
+            const buffer = this.fragmentBuffers.get(fragmentId);
+            buffer.chunks[fragmentIndex] = chunkData;
+            
+            // 检查是否收集完所有分片
+            if (Object.keys(buffer.chunks).length === totalFragments) {
+                // 重组完整数据
+                let completeData = Buffer.alloc(0);
+                for (let i = 0; i < totalFragments; i++) {
+                    completeData = Buffer.concat([completeData, buffer.chunks[i]]);
+                }
+                
+                // 清理缓冲区
+                this.fragmentBuffers.delete(fragmentId);
+                
+                // 处理重组后的完整帧
+                this.processBinaryFrame(completeData);
+            }
+            
+        } catch (error) {
+            console.error('Error processing binary fragment:', error);
+            this.stats.errors++;
+        }
     }
 
     updateConnectionStatus(isConnected, error = null) {

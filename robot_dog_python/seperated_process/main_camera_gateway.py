@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-实时UDP摄像头网关
+优化版实时UDP摄像头网关
 端口：本地8991，FRP远程48991
-功能：多摄像头管理、实时视频流传输、帧缓存清理
+功能：多摄像头管理、实时视频流传输、性能优化
 """
 
 import asyncio
@@ -18,7 +18,6 @@ import cv2
 import numpy as np
 from typing import Dict, Any, Optional, Tuple, List
 from dataclasses import dataclass
-from collections import defaultdict, deque
 import struct
 import threading
 from queue import Queue, Empty
@@ -34,27 +33,28 @@ logger = logging.getLogger(__name__)
 # 安全配置
 SHARED_SECRET_KEY = b"robot_dog_camera_secret_2024"
 SESSION_TIMEOUT = 300  # 5分钟会话超时
-MAX_UDP_SIZE = 1400
-HEADER_SIZE = 64
+MAX_UDP_SIZE = 8192  # 增大UDP包大小，减少分片
+FRAGMENT_THRESHOLD = 7000  # 分片阈值提高
+HEADER_SIZE = 32  # 减小头部大小
 
-# 摄像头配置
+# 摄像头配置 - 优化性能
 CAMERA_CONFIGS = {
     0: {
         "resolution": (640, 480),
-        "fps": 30,
-        "quality": 80,
+        "fps": 20,  # 降低帧率减少CPU占用
+        "quality": 75,  # 适中的质量
         "name": "主摄像头"
     },
     1: {
-        "resolution": (1280, 720),
+        "resolution": (800, 600),  # 降低分辨率
         "fps": 15,
         "quality": 70,
         "name": "高清摄像头"
     },
     2: {
         "resolution": (320, 240),
-        "fps": 60,
-        "quality": 60,
+        "fps": 30,  # 小分辨率可以保持较高帧率
+        "quality": 65,
         "name": "快速摄像头"
     }
 }
@@ -756,7 +756,7 @@ class CameraGateway:
                 await asyncio.sleep(0.1)
     
     async def _send_frames_to_client(self, addr: Tuple[str, int], client_info: Dict):
-        """向客户端发送视频帧"""
+        """向客户端发送视频帧 - 优化版二进制传输"""
         camera_ids = client_info['camera_ids']
         
         for camera_id in camera_ids:
@@ -767,23 +767,72 @@ class CameraGateway:
             frame = camera.get_latest_frame()
             
             if frame:
-                # 将图像数据编码为base64（用于JSON传输）
-                frame_base64 = base64.b64encode(frame.frame_data).decode('utf-8')
-                
-                frame_data = {
-                    'message_type': 'video_frame',
-                    'camera_id': camera_id,
-                    'frame_id': frame.frame_id,
-                    'timestamp': frame.timestamp,
-                    'resolution': frame.resolution,
-                    'quality': frame.quality,
-                    'data': frame_base64
-                }
-                
-                await self._send_response(addr, frame_data)
+                # 直接发送二进制数据，避免Base64编码开销
+                await self._send_binary_frame(addr, frame)
                 self.stats['frames_sent'] += 1
                 camera.stats['frames_sent'] += 1
     
+    async def _send_binary_frame(self, addr: Tuple[str, int], frame: CameraFrame):
+        """发送二进制帧数据 - 优化版"""
+        try:
+            # 构建二进制帧头部
+            frame_header = struct.pack('!BQHHHB', 
+                0xFF,  # 魔数标识二进制帧
+                int(frame.timestamp * 1000000),  # 微秒时间戳
+                frame.camera_id,
+                frame.resolution[0],  # 宽度
+                frame.resolution[1],  # 高度
+                frame.quality
+            )
+            
+            # 帧ID (8字节)
+            frame_id_bytes = frame.frame_id.encode('ascii')[:8].ljust(8, b'\x00')
+            
+            # 数据长度
+            data_length = struct.pack('!I', len(frame.frame_data))
+            
+            # 组合完整数据包
+            full_packet = frame_header + frame_id_bytes + data_length + frame.frame_data
+            
+            # 检查是否需要分片
+            if len(full_packet) <= FRAGMENT_THRESHOLD:
+                # 单包发送
+                self.socket.sendto(full_packet, addr)
+                self.stats['packets_sent'] += 1
+            else:
+                # 分片发送
+                await self._send_fragmented_binary(addr, full_packet)
+                
+        except Exception as e:
+            logger.error(f"发送二进制帧失败: {e}")
+    
+    async def _send_fragmented_binary(self, addr: Tuple[str, int], data: bytes):
+        """发送分片二进制数据"""
+        try:
+            fragment_id = uuid.uuid4().hex[:8].encode('ascii')
+            chunk_size = FRAGMENT_THRESHOLD - 20  # 预留分片头部空间
+            total_fragments = (len(data) + chunk_size - 1) // chunk_size
+            
+            for i in range(0, len(data), chunk_size):
+                chunk = data[i:i + chunk_size]
+                fragment_index = i // chunk_size
+                
+                # 分片头部: 魔数(1) + 分片ID(8) + 分片索引(2) + 总分片数(2) + 数据长度(2)
+                fragment_header = struct.pack('!B8sHHH',
+                    0xFE,  # 分片魔数
+                    fragment_id,
+                    fragment_index,
+                    total_fragments,
+                    len(chunk)
+                )
+                
+                fragment_packet = fragment_header + chunk
+                self.socket.sendto(fragment_packet, addr)
+                self.stats['packets_sent'] += 1
+                
+        except Exception as e:
+            logger.error(f"发送分片二进制数据失败: {e}")
+
     async def _send_response(self, addr: Tuple[str, int], response_data: Dict):
         """发送响应"""
         try:

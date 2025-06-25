@@ -18,12 +18,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     sendUDPMessage: (connectionId, message) => ipcRenderer.invoke('send-udp-message', connectionId, message),
     onUDPMessage: (callback) => ipcRenderer.on('udp-message', (_event, data) => callback(data)),
     onConnectionStatusChange: (callback) => ipcRenderer.on('connection-status-change', (_event, status) => callback(status)),
+    
+    // Camera frame events for binary data
+    onCameraFrame: (callback) => ipcRenderer.on('camera-frame', (_event, frameData) => callback(frameData)),
 
     // Remove listeners if component unmounts to prevent memory leaks
     removeRobotStatusListener: (callback) => ipcRenderer.removeListener('robot-status', callback),
     removeVideoStreamListener: (callback) => ipcRenderer.removeListener('video-stream', callback),
     removeUDPMessageListener: (callback) => ipcRenderer.removeListener('udp-message', callback),
     removeConnectionStatusListener: (callback) => ipcRenderer.removeListener('connection-status-change', callback),
+    removeCameraFrameListener: (callback) => ipcRenderer.removeListener('camera-frame', callback),
 });
 
 // Mock API for frontend development

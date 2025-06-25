@@ -405,6 +405,13 @@ export default class MultiCameraMonitor extends BaseComponent {
                 this.updateConnectionStatus(data.isConnected);
             }
         });
+
+        // 监听二进制摄像头帧事件
+        if (window.electronAPI && window.electronAPI.onCameraFrame) {
+            window.electronAPI.onCameraFrame((frameData) => {
+                this.handleBinaryVideoFrame(frameData);
+            });
+        }
     }
 
     async initializeUDPConnection() {
@@ -659,6 +666,80 @@ export default class MultiCameraMonitor extends BaseComponent {
         } catch (error) {
             Logger.error(`处理摄像头 ${cameraId} 视频帧失败:`, error);
             this.stats.droppedFrames++;
+        }
+    }
+
+    handleBinaryVideoFrame(frameData) {
+        const cameraId = frameData.cameraId;
+        
+        if (!this.cameraElements.has(cameraId)) {
+            return;
+        }
+
+        try {
+            // 更新帧计数和FPS
+            this.updateFrameStats(cameraId);
+
+            // 更新视频显示 - 使用dataUrl直接显示
+            this.updateBinaryVideoDisplay(cameraId, frameData);
+
+            // 更新摄像头信息
+            this.updateBinaryCameraInfo(cameraId, frameData);
+
+            // 更新状态
+            this.updateCameraStatus(cameraId, true);
+
+        } catch (error) {
+            Logger.error(`处理二进制摄像头 ${cameraId} 视频帧失败:`, error);
+            this.stats.droppedFrames++;
+        }
+    }
+
+    updateBinaryVideoDisplay(cameraId, frameData) {
+        const contentElement = document.getElementById(`camera-content-${cameraId}`);
+        if (!contentElement) return;
+
+        // 创建或更新video元素
+        let videoElement = contentElement.querySelector('.camera-video');
+        if (!videoElement) {
+            videoElement = document.createElement('img');
+            videoElement.className = 'camera-video';
+            
+            // 移除placeholder
+            const placeholder = contentElement.querySelector('.camera-placeholder');
+            if (placeholder) {
+                placeholder.remove();
+            }
+            
+            contentElement.appendChild(videoElement);
+            
+            // 显示overlay
+            const overlay = document.getElementById(`camera-overlay-${cameraId}`);
+            if (overlay) {
+                overlay.style.display = 'block';
+            }
+        }
+
+        // 更新图像数据 - 直接使用dataUrl
+        videoElement.src = frameData.dataUrl;
+    }
+
+    updateBinaryCameraInfo(cameraId, frameData) {
+        const resolutionElement = document.getElementById(`resolution-${cameraId}`);
+        const qualityElement = document.getElementById(`quality-${cameraId}`);
+        const frameCountElement = document.getElementById(`frame-count-${cameraId}`);
+
+        if (resolutionElement && frameData.resolution) {
+            resolutionElement.textContent = `${frameData.resolution[0]}x${frameData.resolution[1]}`;
+        }
+
+        if (qualityElement && frameData.quality) {
+            qualityElement.textContent = `${frameData.quality}%`;
+        }
+
+        if (frameCountElement) {
+            const counter = this.frameCounters.get(cameraId);
+            frameCountElement.textContent = counter ? counter.count : 0;
         }
     }
 
