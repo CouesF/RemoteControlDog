@@ -235,7 +235,7 @@ class TTSPlayer:
                 "business": {
                     "aue": "raw",
                     "auf": f"audio/L16;rate={TARGET_SAMPLE_RATE}",
-                    "vcn": "x4_xiaoyan",
+                    "vcn": "x4_yezi",
                     "tte": "utf8"
                 },
                 "data": {
@@ -327,7 +327,7 @@ if __name__ == "__main__":
     )
     
     # 示例文本
-    text = "你好，我是一只狗"
+    text = "我是一只机器狗"
     
     # 播放语音
     try:

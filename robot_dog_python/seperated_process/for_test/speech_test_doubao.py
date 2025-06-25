@@ -664,18 +664,8 @@ async def finish_connection(ws: ClientConnection):
 # --- 主业务逻辑 ---
 
 async def run_demo(appId: str, token: str, speaker: str, text: str, output_path: str):
-    # ===== 1. 初始化延迟统计字典 =====
-    latency_stats = {
-        "connect_setup": 0.0,      # 连接建立耗时
-        "session_start": 0.0,      # 任务启动耗时
-        "text_to_audio_end": 0.0,  # 发送文本至接收完毕耗时
-        "audio_processing": 0.0,    # 播放前解码耗时
-        "audio_duration": 0.0,     # 音频播放时长
-        "total_time": 0.0          # 总耗时
-    }
-    
-    # 记录整体开始时间
-    overall_start = time.perf_counter()
+    # 只关注需要的时间点
+    connection_start_time = time.perf_counter()  # 连接开始时间
     
     url = 'wss://openspeech.bytedance.com/api/v3/tts/bidirection'
     ws_header = {
@@ -685,106 +675,50 @@ async def run_demo(appId: str, token: str, speaker: str, text: str, output_path:
         "X-Api-Connect-Id": str(uuid.uuid4()),
     }
 
-    print(f"Connecting to {url}...")
-    
-    # ===== 2. 记录连接建立耗时 =====
-    connect_start = time.perf_counter()
     async with websockets.connect(url, additional_headers=ws_header, max_size=1000000000) as ws:
-        connect_end = time.perf_counter()
-        latency_stats["connect_setup"] = connect_end - connect_start
-        print(f"WebSocket connection established.")
-        
-        # 1. 发送 Start Connection 请求
+        # ==== 第一步：建立连接 ====
         await start_connection(ws)
         res_bytes = await ws.recv()
         res = parser_response(res_bytes)
         if res.optional.event != EVENT_ConnectionStarted:
-            raise RuntimeError(f"Start connection failed. Response: {res.optional.response_meta_json or res.payload_json or 'Unknown error'}")
-        print("Connection started successfully.")
-
-        # ===== 3. 记录任务启动耗时 =====
-        session_start = time.perf_counter()
+            raise RuntimeError(f"Start connection failed.")
+        
+        # ==== 第二步：开始会话 ====
         session_id = uuid.uuid4().__str__().replace('-', '')
         await start_session(ws, speaker, session_id)
         res = parser_response(await ws.recv())
-        session_end = time.perf_counter()
-        latency_stats["session_start"] = session_end - session_start
-        
         if res.optional.event != EVENT_SessionStarted:
-            raise RuntimeError(f"Start session failed! Response: {res.optional.response_meta_json or res.payload_json or 'Unknown error'}")
-        print(f"Session started successfully (Session ID: {session_id}).")
-
-        # 3. 发送文本 (Task Request)
+            raise RuntimeError(f"Start session failed!")
+        
+        # ==== 第三步：发送文本 ====
         await send_text(ws, speaker, text, session_id)
         
-        # ===== 4. 记录发送文本开始时间 =====
-        text_start = time.perf_counter()
-        
-        # 4. 发送 Finish Session 请求
+        # ==== 第四步：结束会话 ====
         await finish_session(ws, session_id)
-
-        # 5. 循环接收音频数据并写入文件
-        audio_duration = 0.0  # 用于累计音频时长
-        audio_start_time = None  # 用于检测第一个音频包到达时间
         
+        # ==== 第五步：等待第一段文本接收完毕 ====
         async with aiofiles.open(output_path, mode="wb") as output_file:
             while True:
                 res_bytes = await ws.recv()
                 res = parser_response(res_bytes)
                 
-                # ===== 5. 记录播放前解码耗时 =====
+                # 确认是否收到第一段音频
                 if res.optional.event == EVENT_TTSResponse and res.header.message_type == AUDIO_ONLY_RESPONSE:
                     if res.payload:
-                        # 记录第一个音频包到达时间
-                        if audio_start_time is None:
-                            audio_start_time = time.perf_counter()
-                        
-                        # 记录解码/写入开始时间
-                        decode_start = time.perf_counter()
+                        # 记录第一段音频接收完毕时间
+                        first_audio_received_time = time.perf_counter()
+                        # 计算并输出关键时间指标
+                        connection_to_audio_time = first_audio_received_time - connection_start_time
+                        print(f"开始连接到第一段文本接收完毕的时间: {connection_to_audio_time:.3f}秒")
+                        # 继续处理后续音频
                         await output_file.write(res.payload)
-                        decode_end = time.perf_counter()
-                        
-                        # 累计解码耗时
-                        latency_stats["audio_processing"] += (decode_end - decode_start)
-                        
-                        # ===== 6. 记录音频时长 =====
-                        # 在实际应用中，这里应该解析音频数据来获取真实时长
-                        # 为简化，这里使用模拟值，实际应用应该替换为实际计算方法
-                        audio_duration += len(res.payload) * 8.0 / (24000 * 16 / 8)  # 模拟计算时长
-                    else:
-                        print("Warning: Received EVENT_TTSResponse with empty payload.")
                 
                 elif res.optional.event == EVENT_SessionFinished:
-                    # ===== 7. 记录发送文本至接收完毕耗时 =====
-                    text_end = time.perf_counter()
-                    latency_stats["text_to_audio_end"] = text_end - text_start
-                    latency_stats["audio_duration"] = audio_duration
                     break
         
-        print(f"Audio saved to {output_path}")
-
-        # 6. 发送 Finish Connection 请求
+        # 关闭连接
         await finish_connection(ws)
-        res = parser_response(await ws.recv())
-        
-        print('===> Demo finished successfully.')
-    
-    # ===== 8. 记录总耗时 =====
-    overall_end = time.perf_counter()
-    latency_stats["total_time"] = overall_end - overall_start
-    
-    # ===== 9. 打印延迟统计 ====
-    print("\n" + "="*40)
-    print("延迟统计（单位：秒）")
-    print("="*40)
-    print(f"连接建立耗时：{latency_stats['connect_setup']:.3f}")
-    print(f"任务启动耗时：{latency_stats['session_start']:.3f}")
-    print(f"发送文本至接收完毕耗时：{latency_stats['text_to_audio_end']:.3f}")
-    print(f"播放前解码耗时：{latency_stats['audio_processing']:.3f}")
-    print(f"音频播放时长：{latency_stats['audio_duration']:.3f}")
-    print(f"总耗时：{latency_stats['total_time']:.3f}")
-    print("连接已关闭")
-    print("="*40)
+        await ws.recv()  # 等待连接关闭确认
 
 
 # --- 主程序入口 ---
@@ -804,7 +738,7 @@ if __name__ == "__main__":
 
     # 要合成的文本
     text = '火山引擎，让智能增长。欢迎使用火山引擎实时语音合成服务。'
-    text = ('我是松下机器人SuperMAX ジョジョの力は無限大だ！' )
+    text = ('我是机器狗' )
     # 使用的发音人标识
     # 可选的发音人请参考文档: https://www.volcengine.com/docs/6561/1257544
     speaker = 'zh_female_shuangkuaisisi_moon_bigtts' # 示例发音人

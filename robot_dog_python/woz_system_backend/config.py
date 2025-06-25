@@ -25,7 +25,7 @@ UPLOADS_ROOT.mkdir(exist_ok=True)
 
 # API配置
 API_HOST = "0.0.0.0"
-API_PORT = 8000
+API_PORT = 8995
 API_PREFIX = "/api"
 
 # 文件上传配置
