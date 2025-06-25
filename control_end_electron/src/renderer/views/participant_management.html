@@ -1,0 +1,33 @@
+<div class="page-header">
+    <h1>被试管理</h1>
+    <div>
+        <button class="btn btn-outline-secondary" id="refresh-btn" title="刷新数据">
+            <i class="fas fa-sync-alt"></i>
+        </button>
+        <button class="btn btn-primary ml-2" id="add-participant-btn">
+            <i class="fas fa-plus"></i> 添加被试
+        </button>
+        <button class="btn btn-success ml-2" id="start-experiment-btn">
+            <i class="fas fa-play"></i> 开始实验
+        </button>
+    </div>
+</div>
+<div class="table-container">
+    <div class="table-responsive">
+        <table class="table table-hover">
+            <thead class="thead-light">
+                <tr>
+                    <th style="width: 200px;">ID</th>
+                    <th>姓名</th>
+                    <th style="width: 120px;">年龄</th>
+                    <th>家长姓名</th>
+                    <th style="width: 150px;">联系电话</th>
+                    <th style="width: 140px;">操作</th>
+                </tr>
+            </thead>
+            <tbody id="participant-table-body">
+                <!-- 被试数据将通过JS动态插入 -->
+            </tbody>
+        </table>
+    </div>
+</div>

@@ -1,8 +1,14 @@
-# Python package requirements for Robot Dog (RD)
+# Python package requirements for Robot Dog (RD) and WOZ System Backend
 
+# Robot Dog dependencies
 protobuf
 python-dotenv
 unitree_sdk2py
+
+# WOZ System Backend dependencies
+fastapi
+uvicorn[standard]
+python-multipart
 
 # To install these requirements:
 # pip install -r requirements.txt
@@ -14,4 +20,6 @@ unitree_sdk2py
 # Example of pinned versions (your versions might differ):
 # protobuf==3.20.1
 # python-dotenv==0.21.0
-
+# fastapi==0.104.1
+# uvicorn==0.24.0
+# python-multipart==0.0.6

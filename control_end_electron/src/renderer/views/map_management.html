@@ -1,0 +1,30 @@
+<div class="page-header">
+    <h1>地图管理</h1>
+    <button class="btn btn-primary" id="create-map-btn">创建地图</button>
+</div>
+<div class="table-container">
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>地图名称</th>
+                <th>描述</th>
+                <th>目标点数量</th>
+                <th>操作</th>
+            </tr>
+        </thead>
+        <tbody id="map-table-body">
+            <!-- 地图数据将通过JS动态插入 -->
+            <tr>
+                <td>M001</td>
+                <td>公园北区</td>
+                <td>适合初级训练的开阔草地</td>
+                <td>6</td>
+                <td>
+                    <button class="btn">构建/编辑</button>
+                    <button class="btn btn-danger">删除</button>
+                </td>
+            </tr>
+        </tbody>
+    </table>
+</div>

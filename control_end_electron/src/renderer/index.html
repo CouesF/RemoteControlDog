@@ -2,173 +2,157 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;">
-    <title>RJA Control End</title>
-    <style>
-        body, html {
-            margin: 0;
-            padding: 0;
-            width: 100%;
-            height: 100%;
-            overflow: hidden;
-            background-color: #333;
-            color: white;
-            font-family: Arial, sans-serif;
-            display: flex;
-            flex-direction: column; /* Changed from row to column */
-        }
-        #main-content { /* New wrapper for video and status */
-            display: flex;
-            flex-grow: 1; /* Allows this to take up space */
-            height: calc(100% - 180px); /* Adjust 180px based on controls height */
-        }
-        #video-container {
-            position: relative; /* Keep relative for status overlay */
-            flex-grow: 1; /* Video takes available space */
-            height: 100%;
-            background-color: #000;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-        }
-        #video-stream {
-            max-width: 100%;
-            max-height: 100%;
-            object-fit: contain;
-        }
-        #status-overlay {
-            position: absolute;
-            top: 10px;
-            left: 10px;
-            background-color: rgba(0, 0, 0, 0.7);
-            padding: 10px;
-            border-radius: 8px;
-            border: 1px solid #555;
-            min-width: 220px; /* Reduced min-width */
-            box-shadow: 0 0 10px rgba(0,0,0,0.5);
-            font-size: 0.8em; /* Smaller font for status */
-        }
-        #status-overlay h3 {
-            margin-top: 0;
-            margin-bottom: 5px;
-            color: #00aaff;
-            font-size: 1.2em;
-        }
-        #status-overlay p {
-            margin: 3px 0;
-        }
-        #controls-area { /* Container for all controls */
-            background-color: #2a2a2a;
-            padding: 10px;
-            border-top: 1px solid #555;
-            display: flex;
-            justify-content: space-around; /* Distribute control groups */
-            align-items: flex-start; /* Align groups to the top */
-            flex-wrap: wrap; /* Allow wrapping if not enough space */
-            height: auto; /* Auto height based on content */
-            min-height: 150px; /* Minimum height for the controls area */
-        }
-        .control-group {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 8px;
-            margin: 5px;
-        }
-        .control-group h4 {
-            margin-top: 0;
-            margin-bottom: 5px;
-            color: #00aaff;
-            font-size: 1em;
-            text-align: center;
-        }
-        .control-row {
-            display: flex;
-            gap: 8px;
-            justify-content: center;
-        }
-        .control-group button, .joystick-grid button {
-            padding: 8px 10px;
-            background-color: #4CAF50; /* Green */
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            min-width: 70px;
-            font-size: 0.9em;
-        }
-        .control-group button:hover, .joystick-grid button:hover {
-            background-color: #45a049;
-        }
-        #btn-e-stop {
-            background-color: #f44336; /* Red */
-        }
-        #btn-e-stop:hover {
-            background-color: #da190b;
-        }
-        .joystick-grid {
-            display: grid;
-            grid-template-areas:
-                ". up ."
-                "left stop right"
-                ". down ."
-                "rotl . rotr";
-            gap: 5px;
-            justify-items: center;
-        }
-        .joystick-grid button { width: 55px; height: 35px; background-color: #007bff; } /* Blue */
-        .joystick-grid button:hover { background-color: #0056b3; }
-        #btn-forward { grid-area: up; }
-        #btn-backward { grid-area: down; }
-        #btn-left { grid-area: left; }
-        #btn-right { grid-area: right; }
-        #btn-stop-move { grid-area: stop; background-color: #ffc107; color: #333; } /* Yellow */
-        #btn-stop-move:hover { background-color: #e0a800; }
-        #btn-rotate-left { grid-area: rotl; }
-        #btn-rotate-right { grid-area: rotr; }
-    </style>
+    <title>WOZ 训练系统</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+    <link rel="stylesheet" href="./assets/css/main.css">
 </head>
 <body>
-    <div id="main-content">
-        <div id="video-container">
-            <img id="video-stream" src="" alt="Video Stream">
-            <div id="status-overlay">
-                <h3>Robot Status</h3>
-                <p>Battery: <span id="status-battery">N/A</span>%</p>
-                <p>Position: X=<span id="status-pos-x">N/A</span>, Y=<span id="status-pos-y">N/A</span>, Z=<span id="status-pos-z">N/A</span></p>
-                <p>Nav State: <span id="status-nav">N/A</span></p>
-                <p>Human: <span id="status-human">N/A</span></p>
-                <p>Health: <span id="status-health">N/A</span></p>
+    <div class="main-container">
+        <div class="sidebar">
+            <div class="logo">
+                <i class="fas fa-robot"></i>
+                WOZ 系统
+            </div>
+            <ul class="nav-menu">
+                <li>
+                    <a href="#" data-page="participant_management">
+                        <i class="fas fa-users"></i> 被试管理
+                    </a>
+                </li>
+                <li>
+                    <a href="#" data-page="map_management">
+                        <i class="fas fa-map"></i> 地图管理
+                    </a>
+                </li>
+                <li>
+                    <a href="#" data-page="experiment_control">
+                        <i class="fas fa-gamepad"></i> 实验控制
+                    </a>
+                </li>
+                <li>
+                    <a href="#" data-page="session_results">
+                        <i class="fas fa-chart-bar"></i> 实验结果
+                    </a>
+                </li>
+            </ul>
+        </div>
+        <div class="content-area" id="content-area">
+            <!-- 页面内容将在这里动态加载 -->
+        </div>
+    </div>
+    <!-- 使用ES6模块 -->
+    <script type="module" src="./renderer.js"></script>
+    <!-- 实验开始模态框 -->
+    <div id="experiment-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">开始新的实验</h5>
+                <span class="close-button">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="participant-select">选择被试:</label>
+                    <select id="participant-select" class="form-control">
+                        <!-- 选项将动态填充 -->
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="map-select">选择场地:</label>
+                    <select id="map-select" class="form-control">
+                        <!-- 选项将动态填充 -->
+                    </select>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" data-confirm="modal">确认开始</button>
             </div>
         </div>
     </div>
-
-    <div id="controls-area">
-        <div class="control-group">
-            <h4>System</h4>
-            <button id="btn-e-stop">E-STOP</button>
-        </div>
-        <div class="control-group">
-            <h4>Posture</h4>
-            <div class="control-row">
-                <button id="btn-stand">Stand</button>
-                <button id="btn-lie-down">Lie Down</button>
+    <!-- 创建地图模态框 -->
+    <div id="create-map-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">创建新地图</h5>
+                <span class="close-button">&times;</span>
             </div>
-        </div>
-        <div class="control-group">
-            <h4>Movement (Joystick)</h4>
-            <div class="joystick-grid">
-                <button id="btn-forward">▲</button>
-                <button id="btn-left">◄</button>
-                <button id="btn-stop-move">■</button>
-                <button id="btn-right">►</button>
-                <button id="btn-backward">▼</button>
-                <button id="btn-rotate-left">↺</button>
-                <button id="btn-rotate-right">↻</button>
+            <div class="modal-body">
+                <form id="create-map-form">
+                    <div class="form-group">
+                        <label for="map-name-input">地图名称:</label>
+                        <input type="text" id="map-name-input" class="form-control" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="map-desc-input">地图描述:</label>
+                        <textarea id="map-desc-input" class="form-control" rows="3"></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" data-confirm="modal">确认创建</button>
             </div>
         </div>
     </div>
-
-    <script src="./renderer.js"></script>
+    <!-- 添加被试模态框 -->
+    <div id="add-participant-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">添加新被试</h5>
+                <span class="close-button">&times;</span>
+            </div>
+            <div class="modal-body">
+                <form id="add-participant-form">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label for="participant-name-input">姓名: <span class="text-danger">*</span></label>
+                                <input type="text" id="participant-name-input" class="form-control" required>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="form-group">
+                                <label for="participant-year-input">年龄 (岁): <span class="text-danger">*</span></label>
+                                <input type="number" id="participant-year-input" class="form-control" min="0" max="18" required>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="form-group">
+                                <label for="participant-month-input">年龄 (月): <span class="text-danger">*</span></label>
+                                <input type="number" id="participant-month-input" class="form-control" min="0" max="11" required>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label for="parent-name-input">家长姓名: <span class="text-danger">*</span></label>
+                                <input type="text" id="parent-name-input" class="form-control" required>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label for="parent-phone-input">联系电话: <span class="text-danger">*</span></label>
+                                <input type="tel" id="parent-phone-input" class="form-control" required>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="diagnostic-info-input">诊断信息:</label>
+                        <textarea id="diagnostic-info-input" class="form-control" rows="2"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label for="preference-info-input">偏好信息:</label>
+                        <textarea id="preference-info-input" class="form-control" rows="2"></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" data-confirm="modal">确认添加</button>
+            </div>
+        </div>
+    </div>
 </body>
 </html>
