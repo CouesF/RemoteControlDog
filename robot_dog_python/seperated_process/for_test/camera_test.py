@@ -1,146 +1,101 @@
+#!/usr/bin/env python3
+import subprocess
+import numpy as np
 import cv2
-import threading
 import time
+import os
 
-# --- GStreamer Pipeline Function ---
-# This function generates the GStreamer pipeline string for a CSI camera.
-# It's highly recommended to use this for consistent and correct setup.
-def gstreamer_pipeline(
-    sensor_id=0,
-    capture_width=1920,
-    capture_height=1080,
-    display_width=960,
-    display_height=540,
-    framerate=30,
-    flip_method=0, # 0 = none, 1 = counterclockwise, 2 = 180, 3 = clockwise, 4 = horizontal flip, 5 = vertical flip
-):
-    """
-    Returns a GStreamer pipeline string for capturing from a CSI camera.
+class CSICameraCommandLine:
+    """使用命令行GStreamer的CSI摄像头类"""
     
-    Args:
-        sensor_id (int): ID of the CSI camera (0, 1, etc.).
-        capture_width (int): Native resolution width of the camera sensor.
-        capture_height (int): Native resolution height of the camera sensor.
-        display_width (int): Width for the displayed/processed frame.
-        display_height (int): Height for the displayed/processed frame.
-        framerate (int): Frame rate of the camera.
-        flip_method (int): Method to flip the captured image.
-    """
-    return (
-        f"nvarguscamerasrc sensor-id={sensor_id} ! "
-        f"video/x-raw(memory:NVMM), width=(int){capture_width}, height=(int){capture_height}, "
-        f"format=(string)NV12, framerate=(fraction){framerate}/1 ! "
-        f"nvvidconv flip-method={flip_method} ! "
-        f"video/x-raw, width=(int){display_width}, height=(int){display_height}, format=(string)BGRx ! "
-        "videoconvert ! "
-        "video/x-raw, format=(string)BGR ! appsink drop=true"
-    )
-
-# --- Camera Capture Class (Optional but recommended for multiple cameras) ---
-# This class encapsulates camera reading in a separate thread to prevent blocking
-# and improve frame rate consistency, especially for multiple cameras.
-class CameraStream:
-    def __init__(self, pipeline_string):
-        self.pipeline_string = pipeline_string
-        self.cap = None
-        self.frame = None
-        self.ret = False
-        self.stopped = False
-        self.thread = None
-
-    def start(self):
-        print(f"Opening camera with pipeline: {self.pipeline_string}")
-        self.cap = cv2.VideoCapture(self.pipeline_string, cv2.CAP_GSTREAMER)
-        if not self.cap.isOpened():
-            print(f"Error: Failed to open camera with pipeline: {self.pipeline_string}")
-            self.stop()
-            return False
-        self.ret, self.frame = self.cap.read()
-        self.thread = threading.Thread(target=self._update, args=())
-        self.thread.daemon = True
-        self.thread.start()
-        print(f"Camera opened successfully.")
-        return True
-
-    def _update(self):
-        while not self.stopped:
-            if self.cap.isOpened():
-                self.ret, self.frame = self.cap.read()
-                if not self.ret:
-                    print("Warning: Failed to read frame, stopping camera.")
-                    self.stopped = True
+    def __init__(self, sensor_id=0, width=1280, height=720, fps=30):
+        self.sensor_id = sensor_id
+        self.width = width
+        self.height = height
+        self.fps = fps
+        self.temp_file = f"/tmp/csi_frame_{sensor_id}.jpg"
+        
+    def capture_frame(self):
+        """捕获一帧"""
+        try:
+            # 使用gst-launch捕获一帧到文件
+            cmd = [
+                "gst-launch-1.0",
+                "nvarguscamerasrc",
+                f"sensor-id={self.sensor_id}",
+                "num-buffers=1",
+                "!",
+                f"video/x-raw(memory:NVMM),width={self.width},height={self.height},framerate={self.fps}/1",
+                "!",
+                "nvvidconv",
+                "!",
+                "nvjpegenc",
+                "!",
+                "filesink",
+                f"location={self.temp_file}"
+            ]
+            
+            # 运行命令（隐藏输出）
+            result = subprocess.run(cmd, capture_output=True, timeout=5)
+            
+            if result.returncode == 0 and os.path.exists(self.temp_file):
+                # 读取图像
+                frame = cv2.imread(self.temp_file)
+                os.remove(self.temp_file)  # 删除临时文件
+                return True, frame
             else:
-                self.stopped = True
-            time.sleep(0.001) # Small sleep to prevent busy-waiting
+                return False, None
+                
+        except Exception as e:
+            print(f"捕获失败: {e}")
+            return False, None
+    
+    def capture_continuous(self, duration=10):
+        """连续捕获测试"""
+        print(f"开始连续捕获 {duration} 秒...")
+        start_time = time.time()
+        frame_count = 0
+        
+        while time.time() - start_time < duration:
+            ret, frame = self.capture_frame()
+            if ret:
+                frame_count += 1
+                print(f"捕获帧 {frame_count}: {frame.shape}")
+                
+                # 保存第一帧
+                if frame_count == 1:
+                    cv2.imwrite(f"csi_continuous_test_{self.sensor_id}.jpg", frame)
+                    print(f"已保存第一帧")
+            else:
+                print("捕获失败")
+            
+            time.sleep(1)  # 每秒一帧
+        
+        print(f"完成，总共捕获 {frame_count} 帧")
 
-    def read(self):
-        return self.ret, self.frame
-
-    def stop(self):
-        self.stopped = True
-        if self.thread is not None:
-            self.thread.join()
-        if self.cap is not None:
-            self.cap.release()
-        print("Camera stream stopped.")
-
-# --- Main Program ---
+# 测试
 if __name__ == "__main__":
-    # Define parameters for Camera 0
-    cam0_pipeline = gstreamer_pipeline(
-        sensor_id=0,
-        capture_width=1920,   # Sensor's native resolution
-        capture_height=1080,
-        display_width=640,    # Desired display/processing resolution
-        display_height=360,
-        framerate=30,
-        flip_method=0
-    )
-
-    # Define parameters for Camera 1
-    cam1_pipeline = gstreamer_pipeline(
-        sensor_id=1,
-        capture_width=1920,   # Sensor's native resolution
-        capture_height=1080,
-        display_width=640,    # Desired display/processing resolution
-        display_height=360,
-        framerate=30,
-        flip_method=0
-    )
-
-    # Create and start camera streams
-    camera0 = CameraStream(cam0_pipeline)
-    camera1 = CameraStream(cam1_pipeline)
-
-    if not camera0.start():
-        print("Exiting: Camera 0 failed to start.")
-        exit()
-    if not camera1.start():
-        print("Exiting: Camera 1 failed to start.")
-        camera0.stop() # Ensure camera0 is stopped if camera1 fails
-        exit()
-
-    try:
-        while True:
-            ret0, frame0 = camera0.read()
-            ret1, frame1 = camera1.read()
-
-            if not ret0 or not ret1:
-                print("Failed to retrieve frames from one or both cameras. Exiting.")
-                break
-
-            # Process or display frames
-            cv2.imshow('Camera 0 Feed', frame0)
-            cv2.imshow('Camera 1 Feed', frame1)
-
-            # Press 'q' to quit
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                break
-
-    except KeyboardInterrupt:
-        print("Interrupted by user.")
-    finally:
-        # Release resources
-        camera0.stop()
-        camera1.stop()
-        cv2.destroyAllWindows()
+    print("=== CSI摄像头命令行方案测试 ===")
+    
+    # 测试CSI-0
+    camera0 = CSICameraCommandLine(sensor_id=0)
+    ret, frame = camera0.capture_frame()
+    
+    if ret:
+        print(f"✅ CSI-0 成功: {frame.shape}")
+        cv2.imwrite("csi0_cmdline_test.jpg", frame)
+        
+        # 连续捕获测试
+        camera0.capture_continuous(5)
+    else:
+        print("❌ CSI-0 失败")
+    
+    # 测试CSI-1
+    camera1 = CSICameraCommandLine(sensor_id=1)
+    ret, frame = camera1.capture_frame()
+    
+    if ret:
+        print(f"✅ CSI-1 成功: {frame.shape}")
+        cv2.imwrite("csi1_cmdline_test.jpg", frame)
+    else:
+        print("❌ CSI-1 失败")

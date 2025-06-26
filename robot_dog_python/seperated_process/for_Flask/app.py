@@ -211,23 +211,23 @@ def handle_head_command(data):
 
 
 if __name__ == '__main__':
-    try:
-        print(f"Initializing DDS factory on network interface: {DDS_NETWORK_INTERFACE}")
-        ChannelFactoryInitialize(networkInterface=DDS_NETWORK_INTERFACE)
+    # try:
+    print(f"Initializing DDS factory on network interface: {DDS_NETWORK_INTERFACE}")
+    ChannelFactoryInitialize(networkInterface=DDS_NETWORK_INTERFACE)
         
         # Initialize Speech Publisher
         # speech_control_pub = ChannelPublisher(SPEECH_CONTROL_TOPIC, SpeechControl)
         # speech_control_pub.Init()
-        print(f"DDS Publisher for '{SPEECH_CONTROL_TOPIC}' initialized.")
+        # print(f"DDS Publisher for '{SPEECH_CONTROL_TOPIC}' initialized.")
 
         # NEW: Initialize Head Control Publisher
-        head_control_pub = ChannelPublisher(HEAD_CONTROL_TOPIC, HeadControl)
-        head_control_pub.Init()
-        print(f"DDS Publisher for '{HEAD_CONTROL_TOPIC}' initialized.")
+    head_control_pub = ChannelPublisher(HEAD_CONTROL_TOPIC, HeadControl)
+    head_control_pub.Init()
+    print(f"DDS Publisher for '{HEAD_CONTROL_TOPIC}' initialized.")
 
-    except Exception as e:
-        print(f"FATAL: DDS initialization failed: {e}. The application cannot start.")
-        sys.exit(1)
+    # except Exception as e:
+    #    print(f"FATAL: DDS initialization failed: {e}. The application cannot start.")
+    #    sys.exit(1)
         
     subscriber_thread = threading.Thread(target=dds_subscriber_thread, daemon=True)
     subscriber_thread.start()

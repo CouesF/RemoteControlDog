@@ -4,17 +4,16 @@ from enum import IntEnum
 import sys
 import os
 
-from unitree_sdk2py.core.channel import ChannelFactoryInitialize, ChannelSubscriber
+from unitree_sdk2py.core.channel import ChannelFactoryInitialize, ChannelSubscriber, ChannelPublisher
 
 # 添加路径
 sys.path.append("/home/d3lab/Projects/RemoteControlDog/robot_dog_python/communication")
-from dds_data_structure import MotionCommand
+from dds_data_structure import MyMotionCommand
 
 # 控制模块
 from control.high_level_controller import run_highlevel_behavior, run_damp
 from control.low_level_controller import run_lowlevel_leg_control, lie_down_and_switch_to_ai
 from control.low_level_stand_controller import run_lowlevel_stand_hold
-
 
 class FSMStateEnum(IntEnum):
     HIGH_LEVEL = 5
@@ -63,7 +62,7 @@ def switch_state(state_enum: int):
             print(f"[FSM] 当前状态 {current_state.name} 不支持切换到 {state_enum}")
 
 def listener_loop():
-    subscriber = ChannelSubscriber("rt/keyboard_control", MotionCommand)
+    subscriber = ChannelSubscriber("rt/keyboard_control", MyMotionCommand)
     subscriber.Init()
 
     while True:
@@ -107,5 +106,10 @@ def main_loop():
 
 if __name__ == "__main__":
     ChannelFactoryInitialize(0, "enP8p1s0")
+
+    #使用 ChannelPublisher 注册 MyMotionCommand 类型
+    dummy_publisher = ChannelPublisher("rt/keyboard_control", MyMotionCommand)
+    dummy_publisher.Init()
+
     threading.Thread(target=listener_loop, daemon=True).start()
     main_loop()

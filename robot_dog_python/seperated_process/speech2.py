@@ -11,17 +11,24 @@ import aiofiles
 import websockets
 from websockets.asyncio.client import ClientConnection
 import pyaudio
-from pydub import AudioSegment
-from pydub.playback import play
 import io
-import pyaudio
 import os
 import sys
 import time
 import threading
-import queue
 import struct
 import traceback
+import wave
+import numpy as np
+import base64
+import hashlib
+import hmac
+import ssl
+from datetime import datetime
+from urllib.parse import urlencode
+import websocket
+import queue
+from dataclasses import dataclass
 
 # ==== 添加DDS相关导入和数据结构 ====
 # --- FIX FOR CROSS-DIRECTORY IMPORT ---
@@ -70,36 +77,138 @@ EVENT_TTSSentenceStart = 350
 EVENT_TTSSentenceEnd = 351
 EVENT_TTSResponse = 352
 
-class RealtimeAudioPlayer:
-    def __init__(self):
-        self.buffer = b""
-        self.buffer_size = 3  # 积累几个片段后播放
-        self.is_playing = False
+# 音频播放器类
+class AudioPlayer:
+    def __init__(self, device_index=0):
+        self.p = pyaudio.PyAudio()
+        self.stream = None
+        self.device_index = device_index
+        self.TARGET_SAMPLE_RATE = 48000
         
-    def add_audio(self, audio_bytes):
-        """添加音频片段"""
-        self.buffer += audio_bytes
-        if len(self.buffer) > 1024 * self.buffer_size and not self.is_playing:
-            self._play()
-    
-    def _play(self):
-        """在后台线程播放音频"""
-        self.is_playing = True
-        import threading
-        
-        def play_background():
+        # 打印可用音频设备（调试信息）
+        print("可用音频设备:")
+        for i in range(self.p.get_device_count()):
             try:
-                # 创建临时音频文件
-                with io.BytesIO(self.buffer) as audio_file:
-                    audio = AudioSegment.from_file(audio_file, format="mp3")
-                    play(audio)
-            except Exception as e:
-                print(f"播放失败: {e}")
-            finally:
-                self.buffer = b""
-                self.is_playing = False
+                info = self.p.get_device_info_by_index(i)
+                if info['maxOutputChannels'] > 0:
+                    print(f"  设备 {i}: {info['name']} (最大采样率: {int(info['defaultSampleRate'])} Hz)")
+            except:
+                continue
         
-        threading.Thread(target=play_background, daemon=True).start()
+        # 打开音频流
+        self.stream = self.p.open(
+            format=pyaudio.paInt16,
+            channels=1,
+            rate=self.TARGET_SAMPLE_RATE,
+            output=True,
+            output_device_index=self.device_index,
+            frames_per_buffer=2048
+        )
+        print(f"▶ 已打开音频设备: 索引 {self.device_index}")
+        
+        # 当前音量 (0-100)
+        self.current_volume = 70
+        self.set_system_volume(self.current_volume)
+    
+    def set_system_volume(self, volume_percent: int):
+        """设置 USB 声卡的系统音量（通过 ALSA）"""
+        volume = max(0, min(100, volume_percent))  # 限制在 0-100 之间
+        self.current_volume = volume
+        cmd = f"amixer -D hw:0 sset 'PCM' {volume}%"
+        print(f"[系统音量控制] 执行命令: {cmd}")
+        os.system(cmd)
+    
+    def amplify_audio(self, audio_data):
+        """放大音频音量"""
+        if not audio_data or len(audio_data) < 2:
+            return audio_data
+        
+        try:
+            audio_array = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32)
+            
+            # 根据当前音量调整增益
+            volume_factor = self.current_volume / 100.0 * 1.5 + 0.5  # 音量越大，增益越大
+            
+            # 基础放大倍数
+            VOLUME_BOOST_1 = 2.8 * volume_factor
+            amplified = audio_array * VOLUME_BOOST_1
+            
+            # 硬限幅处理
+            MAX_AMPLITUDE = 32767 * 0.98
+            compressed = np.where(np.abs(amplified) > MAX_AMPLITUDE, 
+                                  np.sign(amplified) * MAX_AMPLITUDE, 
+                                  amplified)
+            
+            # 二次增益提升
+            VOLUME_BOOST_2 = 1.5
+            boosted = compressed * VOLUME_BOOST_2
+            
+            # 最终限幅保证不削波
+            final_audio = np.clip(boosted, -32768, 32767).astype(np.int16)
+            
+            return final_audio.tobytes()
+        except Exception as e:
+            print(f"多级音量放大失败: {e}")
+            return audio_data
+    
+    def play_audio(self, audio_data):
+        """播放音频数据"""
+        if self.stream and self.stream.is_active():
+            try:
+                # 音量放大
+                amplified_audio = self.amplify_audio(audio_data)
+                self.stream.write(amplified_audio)
+            except Exception as e:
+                print(f"PyAudio 播放错误: {e}")
+        else:
+            print("音频流未准备好，无法播放")
+    
+    def close(self):
+        """释放音频资源"""
+        if self.stream:
+            self.stream.stop_stream()
+            self.stream.close()
+            print("音频流已关闭")
+        self.p.terminate()
+        print("PyAudio 资源已释放")
+
+# 语音控制处理器类
+class SpeechControlHandler:
+    def __init__(self, audio_player):
+        self.audio_player = audio_player
+        self.command_queue = queue.Queue()
+        self.running = True
+        self.handler_thread = threading.Thread(target=self._process_queue, daemon=True)
+        self.handler_thread.start()
+    
+    def add_command(self, control_msg):
+        self.command_queue.put(control_msg)
+    
+    def _process_queue(self):
+        while self.running:
+            try:
+                control_msg = self.command_queue.get(timeout=0.5)
+                
+                # 处理音量设置
+                if hasattr(control_msg, 'volume'):
+                    print(f"收到音量设置请求: {control_msg.volume}%")
+                    self.audio_player.set_system_volume(control_msg.volume)
+                
+                # 处理语音播放
+                if control_msg.text_to_speak and control_msg.text_to_speak.strip():
+                    print(f"收到语音命令: {control_msg.text_to_speak[:20]}...")
+                    # 在实际应用中，这里应该触发语音合成
+                    # 但在本程序中，实际合成在run_tts函数中完成
+                
+            except queue.Empty:
+                continue
+            except Exception as e:
+                print(f"处理命令时出错: {e}")
+    
+    def stop(self):
+        self.running = False
+        self.handler_thread.join(timeout=1.0)
+
 class Header:
     def __init__(self,
                  protocol_version=PROTOCOL_VERSION,
@@ -335,7 +444,7 @@ async def finish_connection(ws: ClientConnection):
     await send_event(ws, header, optional, payload)
     print("===> Sent Finish Connection event")
 
-async def run_demo(appId: str, token: str, speaker: str, text: str, output_path: str):
+async def run_tts(appId: str, token: str, speaker: str, text: str, output_path: str, audio_player: AudioPlayer):
     url = 'wss://openspeech.bytedance.com/api/v3/tts/bidirection'
     ws_header = {
         "X-Api-App-Key": appId,
@@ -343,35 +452,6 @@ async def run_demo(appId: str, token: str, speaker: str, text: str, output_path:
         "X-Api-Resource-Id": 'volc.service_type.10029',
         "X-Api-Connect-Id": str(uuid.uuid4()),
     }
-
-    
-    p = pyaudio.PyAudio()
-    
-    # 打印可用音频设备（调试信息）
-    print("可用音频设备:")
-    for i in range(p.get_device_count()):
-        try:
-            info = p.get_device_info_by_index(i)
-            if info['maxOutputChannels'] > 0:
-                print(f"  设备 {i}: {info['name']} (最大采样率: {int(info['defaultSampleRate'])} Hz)")
-        except:
-            continue
-    
-    # 使用设备索引0（与科大讯飞代码相同）
-    DOG_DEVICE_INDEX = 0
-    TARGET_SAMPLE_RATE = 48000  # 与科大讯飞相同的采样率
-    
-    # 打开音频流
-    stream = p.open(
-        format=pyaudio.paInt16,
-        channels=1,
-        rate=TARGET_SAMPLE_RATE,
-        output=True,
-        output_device_index=DOG_DEVICE_INDEX,
-        frames_per_buffer=2048
-    )
-    
-    print(f"▶ 已打开音频设备: 索引 {DOG_DEVICE_INDEX}")
    
     async with websockets.connect(url, additional_headers=ws_header, max_size=1000000000) as ws:
             print("WebSocket connection established.")
@@ -383,10 +463,9 @@ async def run_demo(appId: str, token: str, speaker: str, text: str, output_path:
                 raise RuntimeError(f"Start connection failed. Response: {res.optional.response_meta_json or res.payload_json or 'Unknown error'}")
             print("Connection started successfully.")
             
-
             session_id = uuid.uuid4().__str__().replace('-', '')
         
-            await start_session(ws, speaker, session_id, audio_format='pcm', audio_sample_rate=TARGET_SAMPLE_RATE)
+            await start_session(ws, speaker, session_id, audio_format='pcm', audio_sample_rate=audio_player.TARGET_SAMPLE_RATE)
         
             res = parser_response(await ws.recv())
             print_response(res, 'start_session response:')
@@ -394,7 +473,7 @@ async def run_demo(appId: str, token: str, speaker: str, text: str, output_path:
                     raise RuntimeError(f"Start session failed! Response: {res.optional.response_meta_json or res.payload_json or 'Unknown error'}")
             print(f"Session started successfully (Session ID: {session_id}).")
 
-            await send_text(ws, speaker, text, session_id, audio_format='pcm', audio_sample_rate=TARGET_SAMPLE_RATE)
+            await send_text(ws, speaker, text, session_id, audio_format='pcm', audio_sample_rate=audio_player.TARGET_SAMPLE_RATE)
             await finish_session(ws, session_id)
         
             async with aiofiles.open(output_path, mode="wb") as output_file:
@@ -407,10 +486,7 @@ async def run_demo(appId: str, token: str, speaker: str, text: str, output_path:
                             if res.payload:
                         # 保存到文件
                                 await output_file.write(res.payload)
-                                try:
-                                    stream.write(res.payload)
-                                except Exception as e:
-                                    print(f"PyAudio 播放错误: {e}")
+                                audio_player.play_audio(res.payload)
                     
                             else:
                                 print("Warning: Received EVENT_TTSResponse with empty payload.")
@@ -433,39 +509,87 @@ async def run_demo(appId: str, token: str, speaker: str, text: str, output_path:
             await finish_connection(ws)
             res = parser_response(await ws.recv())
             print_response(res, 'finish_connection response:')
-            print('===> Demo finished successfully.')
-        
-    stream.stop_stream()
-    stream.close()
-    p.terminate()
-    print("PyAudio 资源已释放")
+            print('===> TTS finished successfully.')
 
-if __name__ == "__main__":
+# 主功能
+async def main():
     appId = "2657638375"
     token = "NHt65iYV2xQ-0Uv6VfO97BletTaOMtAn"
-
+    
     if not appId or not token:
         print("错误：请在代码中设置您的 appId 和 token。")
         print("请访问 https://console.volcengine.com/iam/keymanage/ 获取。")
-        exit(1)
-
-    text = '火山引擎，让智能增长。欢迎使用火山引擎实时语音合成服务。'
-    speaker = 'zh_female_shuangkuaisisi_moon_bigtts'
-    output_path = './tts_output.pcm'
-
-    print("Starting TTS demo...")
-    print(f"  App ID: {appId[:4]}...")
-    print(f"  Speaker: {speaker}")
-    print(f"  Text: {text}")
-    print(f"  Output Path: {output_path}")
-
+        return
+    
+    # ==== 初始化DDS通信 ====
+    print(f"正在初始化DDS通信，网络接口: {DDS_NETWORK_INTERFACE}")
+    ChannelFactoryInitialize(networkInterface=DDS_NETWORK_INTERFACE)
+    
+    # 创建语音控制订阅器
+    speech_control_sub = ChannelSubscriber("SpeechControl", SpeechControl)
+    speech_control_sub.Init()
+    print("DDS初始化完成，准备接收语音控制命令")
+    
+    # 创建音频播放器和语音处理器
+    audio_player = AudioPlayer()
+    speech_handler = SpeechControlHandler(audio_player)
+    
     try:
-        asyncio.run(run_demo(appId, token, speaker, text, output_path))
-    except RuntimeError as e:
-        print(f"\nAn error occurred: {e}")
-    except websockets.exceptions.ConnectionClosedError as e:
-        print(f"\nWebSocket connection closed unexpectedly: {e}")
+        # 主循环：监听DDS消息并处理
+        exit_requested = False
+        print("等待语音控制指令... (输入Ctrl+C退出)")
+        
+        while not exit_requested:
+            try:
+                # 读取DDS消息
+                control_msg = speech_control_sub.Read(1)
+                if control_msg is not None:
+                    # 打印接收到的DDS消息详情
+                    print(f"收到DDS语音控制消息: "
+                          f"text_to_speak='{control_msg.text_to_speak[:20]}...', "
+                          f"stop_speaking={control_msg.stop_speaking}, "
+                          f"volume={control_msg.volume}%")
+                          
+                    # 将消息添加到处理器队列
+                    speech_handler.add_command(control_msg)
+                    
+                    # 如果有文本需要合成
+                    if control_msg.text_to_speak and control_msg.text_to_speak.strip():
+                        print(f"合成文本: '{control_msg.text_to_speak[:20]}...'")
+                        output_path = f"./tts_output_{int(time.time())}.pcm"
+                        
+                        # 启动语音合成任务
+                        await run_tts(
+                            appId, token, "zh_female_shuangkuaisisi_moon_bigtts", 
+                            control_msg.text_to_speak, output_path, audio_player
+                        )
+                    
+                # 短暂休眠避免CPU占用过高
+                await asyncio.sleep(DDS_SLEEP_INTERVAL)
+                
+            except Exception as e:
+                if "take sample error" not in str(e) and "SampleState" not in str(e):
+                    print(f"DDS读取失败: {e}")
+                elif "Operation not permitted" in str(e):
+                    continue  # 临时跳过权限错误
+                else:
+                    print(f"主循环错误: {e}")
+                    exit_requested = True
+    
+    except KeyboardInterrupt:
+        print("收到 Ctrl+C 信号，准备退出程序...")
+    
     except Exception as e:
-        import traceback
-        print(f"\nAn unexpected error occurred: {e}")
+        print(f"主程序发生错误: {e}")
         traceback.print_exc()
+    
+    finally:
+        # 清理资源
+        print("正在关闭所有资源...")
+        speech_handler.stop()
+        audio_player.close()
+        speech_control_sub.Close()
+        print("程序已关闭")
+
+if __name__ == "__main__":
+    asyncio.run(main())

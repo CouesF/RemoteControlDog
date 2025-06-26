@@ -60,9 +60,9 @@ CAMERA_CONFIGS = {
     },
     2: {
         "type": "usb",
-        "resolution": (1280, 720),
+        "resolution": (640, 480),
         "fps": 15,
-        "quality": 50,
+        "quality": 70,
         "name": "USB摄像头-2"
     },
 }

@@ -12,7 +12,7 @@ from unitree_sdk2py.comm.motion_switcher.motion_switcher_client import MotionSwi
 from unitree_sdk2py.go2.sport.sport_client import SportClient
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../communication")))
-from dds_data_structure import MotionCommand
+from dds_data_structure import MyMotionCommand
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../unitree_example/go2/low_level")))
 import unitree_legged_const as go2
@@ -122,13 +122,13 @@ def run_lowlevel_leg_control():
     pose_buffer = prev[:]
 
     adjusting = {"running": True}
-    subscriber = ChannelSubscriber("rt/keyboard_control", MotionCommand); subscriber.Init()
+    subscriber = ChannelSubscriber("rt/keyboard_control", MyMotionCommand); subscriber.Init()
 
     def receive_command_with_target():
         while adjusting["running"]:
             msg = subscriber.Read()
             if msg is None: time.sleep(0.01); continue
-            if msg.command_type == 0 and msg.state_char == 's':
+            if msg.command_type == 0 and msg.state_enum == 7:
                 print("[DDS] 收到退出指令"); adjusting["running"] = False; break
             if clamp_warning(1, msg.angle1, -1.5, 3.4): move_joint(1, msg.angle1)
             if clamp_warning(2, msg.angle2, -2.7, -0.8): move_joint(2, msg.angle2)
