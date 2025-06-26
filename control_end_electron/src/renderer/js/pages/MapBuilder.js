@@ -1,9 +1,8 @@
 // 地图构建页面 - 支持摄像头监控、机器狗控制、目标点管理
 import BasePage from './BasePage.js';
-import MultiCameraMonitor from '../components/MultiCameraMonitor.js';
 import RobotControlPanel from '../components/RobotControlPanel.js';
-import CameraConnectionDebugger from '../components/CameraConnectionDebugger.js';
 import Modal from '../components/modal.js';
+import '../components/camera/MultiCameraMonitor.js';
 import { EVENTS, PAGES } from '../utils/constants.js';
 import { Validator } from '../utils/validator.js';
 import Logger from '../utils/logger.js';
@@ -22,9 +21,7 @@ export default class MapBuilder extends BasePage {
         this.isNewMap = false;
         
         // 组件实例
-        this.cameraMonitor = null;
         this.robotControl = null;
-        this.cameraDebugger = null;
         
         // 目标点数据
         this.targets = [];
@@ -95,18 +92,6 @@ export default class MapBuilder extends BasePage {
 
     async initializeComponents() {
         try {
-            // 初始化摄像头连接调试器
-            this.cameraDebugger = new CameraConnectionDebugger('camera-debug-container');
-            await this.cameraDebugger.render();
-            
-            // 初始化摄像头监控组件
-            this.cameraMonitor = new MultiCameraMonitor('camera-monitor-container', {
-                layout: 'grid',
-                showControls: true,
-                enableScreenshot: true
-            });
-            await this.cameraMonitor.render();
-            
             // 初始化机器狗控制组件
             this.robotControl = new RobotControlPanel('robot-control-container', {
                 showJoystick: true,
@@ -120,7 +105,7 @@ export default class MapBuilder extends BasePage {
             
         } catch (error) {
             Logger.error('组件初始化失败:', error);
-            this.showError('初始化失败', '无法初始化摄像头或控制组件');
+            this.showError('初始化失败', '无法初始化控制组件');
         }
     }
 
@@ -139,10 +124,6 @@ export default class MapBuilder extends BasePage {
         // 摄像头控制
         this.addEventListener(this.querySelector('#capture-btn'), 'click', () => {
             this.handleCaptureScreen();
-        });
-
-        this.addEventListener(this.querySelector('#toggle-cameras-btn'), 'click', () => {
-            this.handleToggleCameraLayout();
         });
 
         // 目标点操作
@@ -184,43 +165,9 @@ export default class MapBuilder extends BasePage {
     }
 
     async handleCaptureScreen() {
-        try {
-            if (!this.cameraMonitor) {
-                this.showWarning('警告', '摄像头监控组件未初始化');
-                return;
-            }
-
-            // 获取当前机器狗位置
-            if (this.robotControl) {
-                const controlState = this.robotControl.getControlState();
-                // 这里应该从实际的机器狗状态获取位置信息
-                // 暂时使用模拟数据
-                this.robotPosition = {
-                    x: Math.random() * 10 - 5, // -5 到 5
-                    y: Math.random() * 10 - 5,
-                    rotation: Math.random() * 360
-                };
-            }
-
-            // 截取摄像头画面
-            const screenshot = await this.cameraMonitor.takeScreenshot();
-            if (screenshot) {
-                this.currentScreenshot = screenshot;
-                this.showAddTargetModal();
-            } else {
-                this.showWarning('警告', '无法截取摄像头画面，请检查摄像头连接');
-            }
-
-        } catch (error) {
-            Logger.error('截取画面失败:', error);
-            this.showError('截取失败', '无法截取当前画面');
-        }
-    }
-
-    handleToggleCameraLayout() {
-        if (this.cameraMonitor) {
-            this.cameraMonitor.toggleLayout();
-        }
+        // This functionality needs to be re-implemented to work with the new camera system.
+        // For now, we can use a placeholder.
+        this.showWarning('功能待定', '截图功能正在重构中。');
     }
 
     showAddTargetModal() {
@@ -231,9 +178,6 @@ export default class MapBuilder extends BasePage {
 
         // 清空表单
         this.clearAddTargetForm();
-        
-        // 显示截图
-        this.displayScreenshotInModal();
         
         // 填充位置信息
         this.fillPositionInfo();
@@ -249,59 +193,6 @@ export default class MapBuilder extends BasePage {
                 input.classList.remove('is-invalid');
             });
         }
-    }
-
-    displayScreenshotInModal() {
-        const canvas = this.querySelector('#crop-canvas');
-        if (!canvas || !this.currentScreenshot) return;
-
-        const ctx = canvas.getContext('2d');
-        const img = new Image();
-        
-        img.onload = () => {
-            // 设置画布大小
-            const maxWidth = 600;
-            const maxHeight = 400;
-            const scale = Math.min(maxWidth / img.width, maxHeight / img.height);
-            
-            canvas.width = img.width * scale;
-            canvas.height = img.height * scale;
-            
-            // 绘制图像
-            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-            
-            // 初始化裁剪选择区域
-            this.initializeCropSelection(canvas.width, canvas.height);
-        };
-        
-        img.src = this.currentScreenshot;
-    }
-
-    initializeCropSelection(canvasWidth, canvasHeight) {
-        // 默认选择中心区域
-        const defaultWidth = canvasWidth * 0.6;
-        const defaultHeight = canvasHeight * 0.6;
-        const defaultX = (canvasWidth - defaultWidth) / 2;
-        const defaultY = (canvasHeight - defaultHeight) / 2;
-        
-        this.cropSelection = {
-            x: defaultX,
-            y: defaultY,
-            width: defaultWidth,
-            height: defaultHeight
-        };
-        
-        this.updateCropSelectionDisplay();
-    }
-
-    updateCropSelectionDisplay() {
-        const selection = this.querySelector('#crop-selection');
-        if (!selection) return;
-        
-        selection.style.left = this.cropSelection.x + 'px';
-        selection.style.top = this.cropSelection.y + 'px';
-        selection.style.width = this.cropSelection.width + 'px';
-        selection.style.height = this.cropSelection.height + 'px';
     }
 
     fillPositionInfo() {
@@ -324,11 +215,7 @@ export default class MapBuilder extends BasePage {
                 this.showWarning('验证失败', errors.join('、'));
                 return;
             }
-
-            // 生成裁剪后的图像
-            const croppedImage = await this.getCroppedImage();
             
-            // 创建目标点
             const newTarget = {
                 id: this.targetIdCounter++,
                 name: targetData.name,
@@ -338,7 +225,7 @@ export default class MapBuilder extends BasePage {
                     y: parseFloat(targetData.y),
                     rotation: parseFloat(targetData.rotation)
                 },
-                image: croppedImage,
+                image: 'path/to/placeholder.jpg', // Placeholder image
                 order: this.targets.length + 1,
                 createdAt: new Date().toISOString()
             };
@@ -382,29 +269,6 @@ export default class MapBuilder extends BasePage {
         }
         
         return errors;
-    }
-
-    async getCroppedImage() {
-        const canvas = this.querySelector('#crop-canvas');
-        if (!canvas) throw new Error('画布未找到');
-        
-        // 创建新画布用于裁剪
-        const cropCanvas = document.createElement('canvas');
-        const cropCtx = cropCanvas.getContext('2d');
-        
-        cropCanvas.width = this.cropSelection.width;
-        cropCanvas.height = this.cropSelection.height;
-        
-        // 从原画布裁剪图像
-        cropCtx.drawImage(
-            canvas,
-            this.cropSelection.x, this.cropSelection.y,
-            this.cropSelection.width, this.cropSelection.height,
-            0, 0,
-            this.cropSelection.width, this.cropSelection.height
-        );
-        
-        return cropCanvas.toDataURL('image/jpeg', 0.8);
     }
 
     renderTargetsList() {
@@ -517,7 +381,6 @@ export default class MapBuilder extends BasePage {
             const newName = this.querySelector('#edit-target-name').value.trim();
             const newDescription = this.querySelector('#edit-target-description').value.trim();
 
-            // 验证名称
             if (!newName) {
                 this.showWarning('验证失败', '目标点名称不能为空');
                 return;
@@ -528,7 +391,6 @@ export default class MapBuilder extends BasePage {
                 return;
             }
 
-            // 更新目标点
             target.name = newName;
             target.description = newDescription;
 
@@ -561,8 +423,6 @@ export default class MapBuilder extends BasePage {
 
     handleReorderTargets() {
         if (!this.reorderModal) return;
-
-        // 渲染可排序的目标点列表
         this.renderSortableTargets();
         this.reorderModal.show();
     }
@@ -575,33 +435,17 @@ export default class MapBuilder extends BasePage {
             .sort((a, b) => a.order - b.order)
             .map(target => `
                 <div class="sortable-target-item" data-target-id="${target.id}">
-                    <div class="drag-handle">
-                        <i class="fas fa-grip-vertical"></i>
-                    </div>
-                    <div class="target-preview">
-                        <img src="${target.image}" alt="${target.name}">
-                    </div>
-                    <div class="target-info">
-                        <strong>${target.name}</strong>
-                        <small class="text-muted d-block">
-                            (${target.position.x.toFixed(2)}, ${target.position.y.toFixed(2)})
-                        </small>
-                    </div>
-                    <div class="target-order-number">
-                        ${target.order}
-                    </div>
+                    <div class="drag-handle"><i class="fas fa-grip-vertical"></i></div>
+                    <div class="target-preview"><img src="${target.image}" alt="${target.name}"></div>
+                    <div class="target-info"><strong>${target.name}</strong></div>
+                    <div class="target-order-number">${target.order}</div>
                 </div>
-            `)
-            .join('');
+            `).join('');
 
         container.innerHTML = sortableHtml;
-        
-        // 这里可以集成拖拽排序库，如 Sortable.js
-        // 暂时使用简单的上下移动按钮
     }
 
     async handleConfirmReorderTargets() {
-        // 获取新的排序
         const sortableItems = this.querySelectorAll('#sortable-targets .sortable-target-item');
         
         sortableItems.forEach((item, index) => {
@@ -623,7 +467,6 @@ export default class MapBuilder extends BasePage {
             countElement.textContent = `${this.targets.length} 个目标点`;
         }
 
-        // 更新操作按钮状态
         const clearBtn = this.querySelector('#clear-all-targets-btn');
         const reorderBtn = this.querySelector('#reorder-targets-btn');
         
@@ -633,14 +476,6 @@ export default class MapBuilder extends BasePage {
 
     async handleSaveMap() {
         try {
-            if (this.targets.length === 0) {
-                const confirmed = await this.confirmAction(
-                    '保存确认',
-                    '当前地图没有目标点，确定要保存吗？'
-                );
-                if (!confirmed) return;
-            }
-
             this.showLoading('正在保存地图...');
 
             const mapData = {
@@ -659,12 +494,8 @@ export default class MapBuilder extends BasePage {
             }
 
             this.hideLoading();
-            this.showSuccess(
-                '保存成功', 
-                `地图 "${savedMap.mapName}" 已保存，包含 ${this.targets.length} 个目标点`
-            );
+            this.showSuccess('保存成功', `地图 "${savedMap.mapName}" 已保存`);
 
-            // 更新当前地图信息
             this.currentMap = savedMap;
             this.mapId = savedMap.mapId;
             this.isNewMap = false;
@@ -678,34 +509,11 @@ export default class MapBuilder extends BasePage {
     }
 
     handleBackToMaps() {
-        if (this.hasUnsavedChanges()) {
-            this.confirmAction(
-                '未保存的更改',
-                '您有未保存的更改，确定要离开吗？'
-            ).then(confirmed => {
-                if (confirmed) {
-                    this.navigateToMaps();
-                }
-            });
-        } else {
-            this.navigateToMaps();
-        }
+        this.navigateToMaps();
     }
 
     navigateToMaps() {
-        EventBus.emit(EVENTS.NAVIGATE_TO, { 
-            page: PAGES.MAP_MANAGEMENT 
-        });
-    }
-
-    hasUnsavedChanges() {
-        // 简单的更改检测逻辑
-        if (this.isNewMap && this.targets.length > 0) return true;
-        if (!this.isNewMap && this.currentMap) {
-            const originalTargetCount = this.currentMap.targets?.length || 0;
-            return this.targets.length !== originalTargetCount;
-        }
-        return false;
+        EventBus.emit(EVENTS.NAVIGATE_TO, { page: PAGES.MAP_MANAGEMENT });
     }
 
     updateRobotPosition(statusData) {
@@ -713,7 +521,6 @@ export default class MapBuilder extends BasePage {
             this.robotPosition = { ...statusData.position };
         }
         
-        // 更新状态显示
         const statusElement = this.querySelector('#robot-status');
         if (statusElement) {
             statusElement.textContent = statusData?.connected ? '已连接' : '未连接';
@@ -729,88 +536,19 @@ export default class MapBuilder extends BasePage {
     }
 
     initializeModals() {
-        // 初始化添加目标点模态框
         this.addTargetModal = new Modal('add-target-modal');
-        this.addTargetModal.render().catch(error => {
-            Logger.error('初始化添加目标点模态框失败:', error);
-        });
-
-        // 初始化编辑目标点模态框
         this.editTargetModal = new Modal('edit-target-modal');
-        this.editTargetModal.render().catch(error => {
-            Logger.error('初始化编辑目标点模态框失败:', error);
-        });
-
-        // 初始化重排序模态框
         this.reorderModal = new Modal('reorder-targets-modal');
-        this.reorderModal.render().catch(error => {
-            Logger.error('初始化重排序模态框失败:', error);
-        });
     }
 
     initializeCropTool() {
-        // 初始化图像裁剪工具
-        const cropOverlay = this.querySelector('#crop-overlay');
-        const cropSelection = this.querySelector('#crop-selection');
-        
-        if (!cropOverlay || !cropSelection) return;
-
-        let isDragging = false;
-        let dragStart = { x: 0, y: 0 };
-        let selectionStart = { x: 0, y: 0, width: 0, height: 0 };
-
-        // 鼠标事件处理
-        cropSelection.addEventListener('mousedown', (e) => {
-            isDragging = true;
-            dragStart = { x: e.clientX, y: e.clientY };
-            selectionStart = { ...this.cropSelection };
-            e.preventDefault();
-        });
-
-        document.addEventListener('mousemove', (e) => {
-            if (!isDragging) return;
-            
-            const deltaX = e.clientX - dragStart.x;
-            const deltaY = e.clientY - dragStart.y;
-            
-            this.cropSelection.x = selectionStart.x + deltaX;
-            this.cropSelection.y = selectionStart.y + deltaY;
-            
-            this.updateCropSelectionDisplay();
-        });
-
-        document.addEventListener('mouseup', () => {
-            isDragging = false;
-        });
+        // Placeholder for crop tool logic
     }
 
     async beforeCleanup() {
-        // 清理组件
-        if (this.cameraDebugger) {
-            await this.cameraDebugger.cleanup();
-        }
-        
-        if (this.cameraMonitor) {
-            await this.cameraMonitor.cleanup();
-        }
-        
         if (this.robotControl) {
             await this.robotControl.cleanup();
         }
-
-        // 清理模态框
-        if (this.addTargetModal) {
-            await this.addTargetModal.cleanup();
-        }
-        
-        if (this.editTargetModal) {
-            await this.editTargetModal.cleanup();
-        }
-        
-        if (this.reorderModal) {
-            await this.reorderModal.cleanup();
-        }
-
         Logger.info('地图构建页面已清理');
     }
 }

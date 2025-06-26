@@ -337,18 +337,13 @@ class UDPConnection {
      */
     async connect() {
         try {
-            // 尝试新的API命名方式
-            if (window.electronAPI?.connectUDP) {
-                const result = await window.electronAPI.connectUDP(this.id, this.config);
-                if (!result.success) {
-                    throw new Error(result.error || '连接失败');
-                }
-                this.isConnected = true;
-                this.lastActivity = Date.now();
-                Logger.info(`UDP连接 ${this.id} 已建立`);
-            } else if (window.electronAPI?.['connect-udp']) {
-                // 尝试旧的API命名方式
-                const result = await window.electronAPI['connect-udp'](this.id, this.config);
+            if (window.api?.connectUDP) {
+                const options = {
+                    connectionId: this.id,
+                    host: this.config.host,
+                    port: this.config.port
+                };
+                const result = await window.api.connectUDP(options);
                 if (!result.success) {
                     throw new Error(result.error || '连接失败');
                 }
@@ -356,7 +351,7 @@ class UDPConnection {
                 this.lastActivity = Date.now();
                 Logger.info(`UDP连接 ${this.id} 已建立`);
             } else {
-                throw new Error('UDP连接API不可用 (connectUDP 或 connect-udp)');
+                throw new Error('UDP连接API不可用 (api.connectUDP)');
             }
         } catch (error) {
             this.stats.errors++;
@@ -371,13 +366,11 @@ class UDPConnection {
      */
     async disconnect() {
         try {
-            if (window.electronAPI?.disconnectUDP) {
-                await window.electronAPI.disconnectUDP(this.id);
-            } else if (window.electronAPI?.['disconnect-udp']) {
-                await window.electronAPI['disconnect-udp'](this.id);
+            if (window.api?.disconnectUDP) {
+                await window.api.disconnectUDP(this.id);
+                this.isConnected = false;
+                Logger.info(`UDP连接 ${this.id} 已断开`);
             }
-            this.isConnected = false;
-            Logger.info(`UDP连接 ${this.id} 已断开`);
         } catch (error) {
             Logger.error(`断开连接 ${this.id} 失败:`, error);
         }
@@ -395,27 +388,12 @@ class UDPConnection {
         }
 
         try {
-            if (window.electronAPI?.sendUDPMessage) {
-                const result = await window.electronAPI.sendUDPMessage(this.id, message);
-                if (!result.success) {
-                    throw new Error(result.error || '发送失败');
-                }
-                this.stats.messagesSent++;
-                this.lastActivity = Date.now();
-                this.manager.stats.packetsSent++;
-                return true;
-            } else if (window.electronAPI?.['send-udp-message']) {
-                const result = await window.electronAPI['send-udp-message'](this.id, message);
-                if (!result.success) {
-                    throw new Error(result.error || '发送失败');
-                }
-                this.stats.messagesSent++;
-                this.lastActivity = Date.now();
-                this.manager.stats.packetsSent++;
-                return true;
-            } else {
-                throw new Error('UDP消息发送API不可用 (sendUDPMessage 或 send-udp-message)');
-            }
+            // Sending is now handled by the main process after connection.
+            // We can't directly send from renderer, but we can ask main to do it.
+            // For now, we assume the main process handles sending after connection.
+            // This method can be extended if direct sending from renderer is needed.
+            Logger.warn(`sendMessage is not fully implemented in the new architecture.`);
+            return false;
         } catch (error) {
             this.stats.errors++;
             this.stats.lastError = error.message;
