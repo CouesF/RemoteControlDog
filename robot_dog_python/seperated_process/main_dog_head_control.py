@@ -1,123 +1,111 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-robot_control.py
-A single-file script to control servo motors and an Arduino screen.
+dog_head_server.py (Updated)
 
-This script combines the functionality of:
-- servo_controller.py: For controlling STS/SCSCL servo motors.
-- arduino.py: For sending expressions to an Arduino-driven screen.
-- main.py: The main application logic to accept user input and control the hardware.
+This script acts as a server to control the robot dog's head.
+It listens for commands over a network socket and controls the
+servo motors and Arduino screen accordingly. This script should be
+run on the computer directly connected to the hardware.
+
+Changelog:
+- Reworked shake function for a more fluid, continuous side-to-side sweep.
+- Reworked nod and shake functions for a more natural, single-motion action.
+- Utilized speed and acceleration parameters to create smoother movements.
+- Fixed Arduino expression handling by removing l/r character swap.
+- Corrected motor assignments: nod is Motor 2, shake is Motor 1.
+- Increased amplitude of nod and shake motions for more expressive movement.
 """
 
 import sys
 import os
 import time
-import glob
+import socket
+import threading
 import serial
-from typing import Tuple, Optional
+from typing import Tuple
 
-# Attempt to import the STservo_sdk. This is a required external library.
-# sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "/servo_control")))
-# try:
-from STservo_sdk import (PortHandler, sts, scscl,
-                             COMM_SUCCESS,
-                             STS_OFS_L, STS_GOAL_POSITION_L,
-                             STS_PRESENT_POSITION_L,
+# --- SDK Import ---
+try:
+    from STservo_sdk import (PortHandler, sts, scscl, COMM_SUCCESS,
+                             STS_GOAL_POSITION_L, STS_PRESENT_POSITION_L,
                              SCSCL_GOAL_POSITION_L, SCSCL_PRESENT_POSITION_L)
-'''
 except ImportError:
-    print("Error: The 'STservo_sdk' library is not installed.")
-    print("Please install it from the manufacturer to run this script.")
+    print("Error: The 'STservo_sdk' library is not found.")
+    print("Please ensure it is installed and accessible in your PYTHONPATH.")
     sys.exit(1)
-    '''
 
 # --- Configuration Section ---
-# Adjust these values based on your hardware setup
+
+# Network Configuration
+HOST = '0.0.0.0'  # Listen on all available network interfaces
+PORT = 65432      # Port to listen on
+
+# Hardware Configuration - **Please verify these ports are correct for your system**
 SERVO_PORT = '/dev/ttyACM0'
 SERVO_BAUD = 1_000_000
-SERVO_TYPE = 'STS'  # Can be 'STS' or 'SCSCL'
-ARDUINO_PORT = '/dev/ttyCH341USB0'
+SERVO_TYPE = 'STS'
+ARDUINO_PORT = '/dev/ttyCH341USB0' # Reverted to port from original file
 ARDUINO_BAUD = 115200
 
-# Motor position boundaries to prevent physical damage
-# Bounds for Motor 1 (ID 1)
-MIN_ALLOWED_POS_M1 = 1600
-MAX_ALLOWED_POS_M1 = 2496
-
-# Bounds for Motor 2 (ID 2)
-MIN_ALLOWED_POS_M2 = 1660
-MAX_ALLOWED_POS_M2 = 2205
-
-# Conversion factor for STS servos
+# Motor Physical Limits & Conversion
 DEG_TO_STEP = 4096 / 360  # ~11.377 steps per degree
 
-# -----------------------------------------------------------------------------
-# Class: ArduinoController
-# -----------------------------------------------------------------------------
+# Motor 1 (Horizontal Shake) - Wider, symmetrical range
+MIN_ALLOWED_STEP_M1 = 1600
+MAX_ALLOWED_STEP_M1 = 2496
+MIN_ALLOWED_DEG_M1 = (MIN_ALLOWED_STEP_M1 - 2048) / DEG_TO_STEP # ~-40 deg
+MAX_ALLOWED_DEG_M1 = (MAX_ALLOWED_STEP_M1 - 2048) / DEG_TO_STEP # ~+40 deg
+
+# Motor 2 (Vertical Nod) - Asymmetrical range
+MIN_ALLOWED_STEP_M2 = 1660
+MAX_ALLOWED_STEP_M2 = 2205
+MIN_ALLOWED_DEG_M2 = (MIN_ALLOWED_STEP_M2 - 2048) / DEG_TO_STEP # ~-34 deg
+MAX_ALLOWED_DEG_M2 = (MAX_ALLOWED_STEP_M2 - 2048) / DEG_TO_STEP # ~+13 deg
+
+
+# --- Hardware Controller Classes ---
+
 class ArduinoController:
     """Drives an Arduino screen by sending expression characters."""
-
-    def __init__(self,
-                 port: str = '/dev/ttyCH341USB0',
-                 baudrate: int = 115200,
-                 timeout: float = 1.0):
-        """
-        Initializes the serial connection to the Arduino.
-        :param port: The serial port device (e.g., 'COM4' or '/dev/ttyUSB0').
-        :param baudrate: The communication baud rate.
-        :param timeout: Read timeout in seconds.
-        """
+    def __init__(self, port: str, baudrate: int, timeout: float = 1.0):
         try:
             self.ser = serial.Serial(port, baudrate, timeout=timeout)
+            print(f"Arduino controller initialized on {port}.")
         except serial.SerialException as e:
-            raise RuntimeError(f"Failed to open Arduino serial port {port}: {e}")
+            self.ser = None
+            print(f"Warning: Failed to open Arduino port {port}: {e}. Screen control will be disabled.")
 
     def set_expression(self, expr: str):
-        """
-        Sends a single character to the Arduino to change the screen expression.
-        :param expr: A single character, e.g., 'c', 'l', 'r'.
-        """
+        if not self.ser:
+            return
         if not isinstance(expr, str) or len(expr) != 1:
-            raise ValueError("Expression must be a single character.")
+            print(f"Warning: Invalid expression '{expr}'. Must be a single character.")
+            return
         self.ser.write(expr.encode('utf-8'))
         self.ser.flush()
 
     def close(self):
-        """Closes the serial connection."""
         if self.ser and self.ser.is_open:
             self.ser.close()
 
-# -----------------------------------------------------------------------------
-# Class: ServoController
-# -----------------------------------------------------------------------------
-class ServoController:
-    """
-    A wrapper for the STservo_sdk to control STS and SCSCL series servos.
-    Supports Ping, ID change, position read/write, and mode switching.
-    """
 
-    def __init__(self,
-                 port: str,
-                 baudrate: int = 1_000_000,
-                 servo_type: str = 'STS'):
-        """
-        Initializes the servo controller and opens the serial port.
-        """
+class ServoController:
+    """A wrapper for the STservo_sdk to control STS and SCSCL series servos."""
+    def __init__(self, port: str, baudrate: int, servo_type: str = 'STS'):
         self.port = port
         self.baud = baudrate
         self.ph = PortHandler(self.port)
+        self.dev = None
+        self._write_pos = None
+        self._read_pos = None
 
         if servo_type.upper() == 'STS':
             self.dev = sts(self.ph)
-            self.ADDR_GOAL = STS_GOAL_POSITION_L
-            self.ADDR_POS = STS_PRESENT_POSITION_L
             self._write_pos = self.dev.WritePosEx
             self._read_pos = self.dev.ReadPos
         elif servo_type.upper() == 'SCSCL':
             self.dev = scscl(self.ph)
-            self.ADDR_GOAL = SCSCL_GOAL_POSITION_L
-            self.ADDR_POS = SCSCL_PRESENT_POSITION_L
             self._write_pos = self.dev.WritePos
             self._read_pos = self.dev.ReadPos
         else:
@@ -128,125 +116,170 @@ class ServoController:
         if not self.ph.setBaudRate(self.baud):
             self.ph.closePort()
             raise IOError(f"Failed to set baud rate {self.baud}.")
+        print(f"Servo controller initialized on {self.port}.")
 
-    def write_position(self, sid: int, pos: int, speed: int = 2400, acc: int = 50):
+    def write_position(self, sid: int, pos_deg: float, speed: int = 2400, acc: int = 50):
         """
-        Writes the target position to the servo.
-        Position is absolute (0-4095).
+        Writes the target position in degrees, clamping to physical limits.
+        Allows for specifying speed and acceleration.
         """
-        r, err = self._write_pos(sid, pos, speed, acc)
-        if r != COMM_SUCCESS:
-            raise RuntimeError(self.dev.getTxRxResult(r))
-        if err:
-            raise RuntimeError(self.dev.getRxPacketError(err))
+        if sid == 1:
+            pos_deg = max(MIN_ALLOWED_DEG_M1, min(pos_deg, MAX_ALLOWED_DEG_M1))
+            min_step, max_step = MIN_ALLOWED_STEP_M1, MAX_ALLOWED_STEP_M1
+        elif sid == 2:
+            pos_deg = max(MIN_ALLOWED_DEG_M2, min(pos_deg, MAX_ALLOWED_DEG_M2))
+            min_step, max_step = MIN_ALLOWED_STEP_M2, MAX_ALLOWED_STEP_M2
+        else:
+            raise ValueError("Invalid servo ID.")
 
-    def read_position(self, sid: int) -> int:
-        """Reads the current position of the servo."""
-        pos, r, err = self._read_pos(sid)
+        pos_step = int(pos_deg * DEG_TO_STEP) + 2048
+        pos_step = max(min_step, min(pos_step, max_step))
+
+        r, err = self._write_pos(sid, pos_step, speed, acc)
         if r != COMM_SUCCESS:
-            raise RuntimeError(self.dev.getTxRxResult(r))
+            print(f"Warning: Servo {sid} TX failed: {self.dev.getTxRxResult(r)}")
         if err:
-            raise RuntimeError(self.dev.getRxPacketError(err))
-        return pos
+            print(f"Warning: Servo {sid} RX error: {self.dev.getRxPacketError(err)}")
+        return pos_deg
+
+    def read_position_deg(self, sid: int) -> float:
+        """Reads the current position of the servo in degrees."""
+        pos_step, r, err = self._read_pos(sid)
+        if r != COMM_SUCCESS:
+            raise RuntimeError(f"Servo {sid} read failed: {self.dev.getTxRxResult(r)}")
+        if err:
+            raise RuntimeError(f"Servo {sid} read error: {self.dev.getRxPacketError(err)}")
+        return (pos_step - 2048) / DEG_TO_STEP
 
     def close(self):
-        """Closes the port."""
         self.ph.closePort()
 
-# -----------------------------------------------------------------------------
-# Main Application Logic
-# -----------------------------------------------------------------------------
-def control_targets(m1: int, m2: int, expr: str,
-                    sc: ServoController, ad: ArduinoController):
+# --- Motion Functions ---
+
+def nod_head(sc: ServoController):
     """
-    Core control function:
-      - Sets motor 1 to position m1 and motor 2 to position m2.
-      - Sends an expression character to the Arduino.
-    :param m1: Target position for motor 1.
-    :param m2: Target position for motor 2.
-    :param expr: Single character expression ('c', 'l', 'r', etc.).
-    :param sc: Initialized ServoController instance.
-    :param ad: Initialized ArduinoController instance.
+    Performs a more natural, single 'nod' motion (down and back up).
+    This function controls MOTOR 2.
     """
-    # Check bounds for Motor 1
-    if not (MIN_ALLOWED_POS_M1 <= m1 <= MAX_ALLOWED_POS_M1):
-        raise ValueError(f"Motor 1 target {m1} is out of allowed range "
-                         f"[{MIN_ALLOWED_POS_M1}, {MAX_ALLOWED_POS_M1}].")
+    motor_id = 2
+    amplitude = 20  # A significant but safe downward angle for the nod
+    try:
+        start_pos_deg = sc.read_position_deg(motor_id)
+        print(f"Nodding with Motor {motor_id} from {start_pos_deg:.2f}°")
+        
+        down_pos_deg = start_pos_deg - amplitude
+        
+        # 1. Move down quickly with high acceleration
+        sc.write_position(motor_id, down_pos_deg, speed=2800, acc=80)
+        time.sleep(0.4)
+        
+        # 2. Return to start position more gently
+        sc.write_position(motor_id, start_pos_deg, speed=2000, acc=40)
+        time.sleep(0.4) # Wait for movement to complete
 
-    # Check bounds for Motor 2
-    if not (MIN_ALLOWED_POS_M2 <= m2 <= MAX_ALLOWED_POS_M2):
-        raise ValueError(f"Motor 2 target {m2} is out of allowed range "
-                         f"[{MIN_ALLOWED_POS_M2}, {MAX_ALLOWED_POS_M2}].")
+        return f"Nod (Motor {motor_id}) complete."
+    except Exception as e:
+        return f"Error during nod: {e}"
 
-    # Write target positions to servos
-    sc.write_position(1, m1)
-    sc.write_position(2, m2)
-    print(f"✅ Motors -> ID 1: {m1}, ID 2: {m2}")
+def shake_head(sc: ServoController):
+    """
+    Performs a more fluid, single 'shake' motion.
+    The head moves to one side, sweeps quickly to the other, then returns to center.
+    This function now controls MOTOR 1.
+    """
+    motor_id = 1
+    amplitude = 30 # A wide amplitude for a clear shake
+    try:
+        start_pos_deg = sc.read_position_deg(motor_id)
+        print(f"Shaking with Motor {motor_id} from {start_pos_deg:.2f}°")
 
-    # Send expression to Arduino
-    ad.set_expression(expr)
-    print(f"✅ Screen -> Expression: '{expr}'")
+        # Define the two extremes of the shake
+        side1_pos_deg = start_pos_deg + amplitude
+        side2_pos_deg = start_pos_deg - amplitude
+
+        # 1. Move to the first side to begin the shake
+        sc.write_position(motor_id, side1_pos_deg, speed=3000, acc=80)
+        time.sleep(0.3)
+        
+        # 2. Sweep across to the other side without a noticeable pause.
+        # This is the core 'shake' motion, using high speed and acceleration.
+        sc.write_position(motor_id, side2_pos_deg, speed=4000, acc=120)
+        time.sleep(0.4) # Allow time for the full sweep to complete
+        
+        # 3. Return to the center smoothly
+        sc.write_position(motor_id, start_pos_deg, speed=2500, acc=50)
+        time.sleep(0.4) # Wait for the movement to complete
+
+        return f"Shake (Motor {motor_id}) complete."
+    except Exception as e:
+        return f"Error during shake: {e}"
+
+
+def handle_client(conn, addr, sc: ServoController, ad: ArduinoController):
+    """Handles an incoming client connection."""
+    print(f"Connected by {addr}")
+    with conn:
+        try:
+            data = conn.recv(1024).decode('utf-8').strip().lower()
+            if not data: return
+
+            parts = data.split()
+            command = parts[0]
+            response = ""
+
+            print(f"Received command: '{data}'")
+
+            if command == 'move' and len(parts) == 4:
+                m1_deg, m2_deg, expr = float(parts[1]), float(parts[2]), parts[3]
+                actual_m1 = sc.write_position(1, m1_deg)
+                actual_m2 = sc.write_position(2, m2_deg)
+                ad.set_expression(expr)
+                response = f"Move complete. M1 set to {actual_m1:.2f}°, M2 to {actual_m2:.2f}°."
+            elif command == 'nod':
+                response = nod_head(sc)
+            elif command == 'shake':
+                response = shake_head(sc)
+            else:
+                response = "Error: Invalid command. Use 'move <m1> <m2> <expr>', 'nod', or 'shake'."
+
+            print(f"Response: {response}")
+            conn.sendall(response.encode('utf-8'))
+        except Exception as e:
+            print(f"Error handling client {addr}: {e}")
+            conn.sendall(f"Server error: {e}".encode('utf-8'))
 
 
 def main():
-    """
-    Initializes controllers and runs the main user input loop.
-    """
-    # Initialize controllers
+    """Initializes controllers and starts the server."""
     try:
         sc = ServoController(SERVO_PORT, SERVO_BAUD, SERVO_TYPE)
     except Exception as e:
-        print(f"[Error] Failed to initialize ServoController: {e}")
+        print(f"[Critical Error] Failed to initialize ServoController: {e}")
         return
 
-    try:
-        ad = ArduinoController(ARDUINO_PORT, ARDUINO_BAUD)
-    except Exception as e:
-        print(f"[Error] Failed to initialize ArduinoController: {e}")
-        sc.close()
-        return
+    ad = ArduinoController(ARDUINO_PORT, ARDUINO_BAUD)
+    
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        s.bind((HOST, PORT))
+        s.listen()
+        print(f"--- Robot Head Server (Updated) ---")
+        print(f"Listening for commands on {HOST}:{PORT}")
+        print(f"Motor 1 (Shake) Limits: [{MIN_ALLOWED_DEG_M1:.1f}°, {MAX_ALLOWED_DEG_M1:.1f}°]")
+        print(f"Motor 2 (Nod)   Limits: [{MIN_ALLOWED_DEG_M2:.1f}°, {MAX_ALLOWED_DEG_M2:.1f}°]")
 
-    print("--- Robot Control Interface ---")
-    print("Enter commands in the format: <motor1_pos> <motor2_pos> <expression>")
-    print("Example: '2048 2048 c'")
-    print("Type 'exit' or 'q' to quit.")
 
-    try:
-        while True:
-            raw_input = input(">> ").strip()
-            if raw_input.lower() in ('exit', 'q', 'quit'):
-                print("Exiting program.")
-                break
-
-            parts = raw_input.split()
-            if len(parts) != 3:
-                print("[Input Error] Please use the format: <int> <int> <char>")
-                continue
-
-            try:
-                m1 = int(parts[0])
-                m2 = int(parts[1])
-                expr = parts[2]
-                if len(expr) != 1:
-                    raise ValueError("The expression must be a single character.")
-            except ValueError as ve:
-                print(f"[Input Error] {ve}")
-                continue
-
-            # Call the core control function
-            try:
-                control_targets(m1, m2, expr, sc, ad)
-            except Exception as ex:
-                print(f"[Runtime Error] {ex}")
-
-    except KeyboardInterrupt:
-        print("\nUser interrupted. Shutting down.")
-    finally:
-        # Ensure resources are released
-        sc.close()
-        ad.close()
-        print("Controllers closed.")
-
+        try:
+            while True:
+                conn, addr = s.accept()
+                client_thread = threading.Thread(target=handle_client, args=(conn, addr, sc, ad))
+                client_thread.start()
+        except KeyboardInterrupt:
+            print("\nServer shutting down.")
+        finally:
+            sc.close()
+            ad.close()
+            print("Controllers closed.")
 
 if __name__ == '__main__':
     main()

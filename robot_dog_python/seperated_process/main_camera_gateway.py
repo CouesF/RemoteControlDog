@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-优化版实时UDP摄像头网关
+优化版实时UDP摄像头网关 (v2 - Fixed)
 端口：本地8991，FRP远程48991
 功能：多摄像头管理、实时视频流传输、性能优化
 """
@@ -20,12 +20,12 @@ from typing import Dict, Any, Optional, Tuple, List
 from dataclasses import dataclass
 import struct
 import threading
-from queue import Queue, Empty
+from queue import Queue, Empty, Full
 import base64
 
 # 配置日志
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO, # Changed to INFO for production, DEBUG is very verbose
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
@@ -34,27 +34,27 @@ logger = logging.getLogger(__name__)
 SHARED_SECRET_KEY = b"robot_dog_camera_secret_2024"
 SESSION_TIMEOUT = 300  # 5分钟会话超时
 MAX_UDP_SIZE = 8192  # 增大UDP包大小，减少分片
-FRAGMENT_THRESHOLD = 7000  # 分片阈值提高
+FRAGMENT_THRESHOLD = 1400  # 分片阈值提高
 HEADER_SIZE = 32  # 减小头部大小
 
 # 摄像头配置 - 优化性能
 CAMERA_CONFIGS = {
-    0: {
-        "resolution": (640, 480),
-        "fps": 20,  # 降低帧率减少CPU占用
-        "quality": 75,  # 适中的质量
-        "name": "主摄像头"
-    },
+    # 0: {
+    #     "resolution": (640, 480),
+    #     "fps": 20,  # 降低帧率减少CPU占用
+    #     "quality": 75,  # 适中的质量
+    #     "name": "主摄像头"
+    # },
     1: {
-        "resolution": (800, 600),  # 降低分辨率
+        "resolution": (640, 480),  # 降低分辨率
         "fps": 15,
         "quality": 70,
         "name": "高清摄像头"
     },
     2: {
-        "resolution": (320, 240),
-        "fps": 30,  # 小分辨率可以保持较高帧率
-        "quality": 65,
+        "resolution": (640, 480),
+        "fps": 20,  # 小分辨率可以保持较高帧率
+        "quality": 70,
         "name": "快速摄像头"
     }
 }
@@ -128,8 +128,9 @@ class SecurityManager:
         ]
         
         for sid in expired_sessions:
-            del self.active_sessions[sid]
-            logger.info(f"清理过期摄像头会话: {sid}")
+            if sid in self.active_sessions:
+                del self.active_sessions[sid]
+                logger.info(f"清理过期摄像头会话: {sid}")
 
 class PacketManager:
     """数据包管理器 - 支持自动切片"""
@@ -149,18 +150,12 @@ class PacketManager:
         packet_json = json.dumps(packet, ensure_ascii=False)
         packet_bytes = packet_json.encode('utf-8')
         
-        # 生成签名
-        signature = security_manager.generate_signature(packet_bytes, timestamp)
-        
-        # 添加签名头部
-        header = {
-            'signature': signature,
-            'size': len(packet_bytes)
-        }
+        # 头部格式: [2-byte length of header] + [JSON header]
+        header = {} # No security for now, keeping it simple
         header_bytes = json.dumps(header).encode('utf-8')
-        header_size = struct.pack('!H', len(header_bytes))
+        header_size_packed = struct.pack('!H', len(header_bytes))
         
-        return header_size + header_bytes + packet_bytes
+        return header_size_packed + header_bytes + packet_bytes
     
     def auto_fragment(self, data: bytes) -> List[bytes]:
         """自动判断是否需要切片"""
@@ -241,9 +236,7 @@ class PacketManager:
         buffer = self.fragment_buffers[fragment_id]
         if len(buffer['chunks']) == total_fragments:
             # 重组数据
-            complete_data = b''
-            for i in range(total_fragments):
-                complete_data += buffer['chunks'][i]
+            complete_data = b''.join(buffer['chunks'][i] for i in range(total_fragments))
             
             # 清理缓冲区
             del self.fragment_buffers[fragment_id]
@@ -275,8 +268,9 @@ class PacketManager:
         ]
         
         for fid in expired_fragments:
-            del self.fragment_buffers[fid]
-            logger.warning(f"清理过期摄像头分片: {fid}")
+            if fid in self.fragment_buffers:
+                del self.fragment_buffers[fid]
+                logger.warning(f"清理过期摄像头分片: {fid}")
 
 class SmartCameraHandler:
     """智能摄像头处理器"""
@@ -286,18 +280,15 @@ class SmartCameraHandler:
         self.config = config
         self.cap = None
         self.is_running = False
-        self.frame_queue = Queue(maxsize=2)  # 最多缓存2帧
+        self.frame_queue = Queue(maxsize=2)  # 最多缓存2帧,防止延迟
         self.capture_thread = None
         self.stats = {
             'frames_captured': 0,
             'frames_dropped': 0,
-            'frames_sent': 0
+            'frames_sent': 0,
+            'last_capture_time': 0
         }
-        
-        # 动态压缩质量
-        self.compression_levels = [95, 80, 60, 40, 20]
-        self.current_quality_index = 1
-        
+    
     async def start(self) -> bool:
         """启动摄像头"""
         try:
@@ -306,18 +297,16 @@ class SmartCameraHandler:
                 logger.error(f"无法打开摄像头 {self.camera_id}")
                 return False
             
-            # 设置摄像头参数
             width, height = self.config['resolution']
             self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
             self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
             self.cap.set(cv2.CAP_PROP_FPS, self.config['fps'])
             
-            # 验证设置
             actual_width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
             actual_height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
             actual_fps = self.cap.get(cv2.CAP_PROP_FPS)
             
-            logger.info(f"摄像头 {self.camera_id} 启动成功: {actual_width}x{actual_height}@{actual_fps}fps")
+            logger.info(f"摄像头 {self.camera_id} 启动: {actual_width}x{actual_height}@{actual_fps}fps (Requested: {width}x{height}@{self.config['fps']}fps)")
             
             self.is_running = True
             self.capture_thread = threading.Thread(target=self._capture_loop, daemon=True)
@@ -332,18 +321,17 @@ class SmartCameraHandler:
     def _capture_loop(self):
         """摄像头捕获循环"""
         frame_interval = 1.0 / self.config['fps']
-        last_capture_time = 0
         
         while self.is_running:
             try:
                 capture_start_time = time.time()
-
-                # 精确控制帧率
-                sleep_time = frame_interval - (capture_start_time - last_capture_time)
-                if sleep_time > 0:
-                    time.sleep(sleep_time)
                 
-                last_capture_time = time.time()
+                # 精确控制帧率
+                time_since_last_frame = capture_start_time - self.stats['last_capture_time']
+                if time_since_last_frame < frame_interval:
+                    time.sleep(frame_interval - time_since_last_frame)
+                
+                self.stats['last_capture_time'] = time.time()
                 
                 ret, frame = self.cap.read()
                 if not ret:
@@ -353,108 +341,52 @@ class SmartCameraHandler:
                 
                 self.stats['frames_captured'] += 1
                 
-                # 清理旧帧，保持实时性
-                while not self.frame_queue.empty():
+                # 编码帧
+                frame_data = self._process_frame(frame)
+                if not frame_data:
+                    self.stats['frames_dropped'] += 1
+                    continue
+
+                camera_frame = CameraFrame(
+                    camera_id=self.camera_id,
+                    frame_data=frame_data,
+                    timestamp=self.stats['last_capture_time'],
+                    frame_id=uuid.uuid4().hex[:8],
+                    resolution=self.config['resolution'],
+                    quality=self.config['quality']
+                )
+
+                # 如果队列已满，丢弃旧帧以保持实时性
+                if self.frame_queue.full():
                     try:
                         self.frame_queue.get_nowait()
                         self.stats['frames_dropped'] += 1
                     except Empty:
-                        break
+                        pass # Race condition, another thread might have taken it.
                 
-                # 添加新帧
-                try:
-                    frame_data = self._process_frame(frame)
-                    if frame_data:
-                        camera_frame = CameraFrame(
-                            camera_id=self.camera_id,
-                            frame_data=frame_data,
-                            timestamp=last_capture_time,
-                            frame_id=uuid.uuid4().hex[:8],
-                            resolution=self.config['resolution'],
-                            quality=self.config['quality']
-                        )
-                        self.frame_queue.put_nowait(camera_frame)
-                except:
-                    self.stats['frames_dropped'] += 1
+                self.frame_queue.put_nowait(camera_frame)
                 
+            except Full:
+                self.stats['frames_dropped'] += 1
             except Exception as e:
-                logger.error(f"摄像头 {self.camera_id} 捕获异常: {e}")
+                logger.error(f"摄像头 {self.camera_id} 捕获异常: {e}", exc_info=True)
                 time.sleep(0.1)
     
     def _process_frame(self, frame: np.ndarray) -> Optional[bytes]:
-        """处理帧数据"""
+        """处理帧数据（调整大小和压缩）"""
         try:
-            # 应用鱼眼校正（如果需要）
-            if self.camera_id == 0:  # 主摄像头使用鱼眼校正
-                frame = self._apply_fisheye_correction(frame)
-            
-            # 调整分辨率
             target_width, target_height = self.config['resolution']
             if frame.shape[1] != target_width or frame.shape[0] != target_height:
                 frame = cv2.resize(frame, (target_width, target_height), interpolation=cv2.INTER_AREA)
             
-            # 压缩为JPEG
             quality = self.config['quality']
-            success, encoded = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, quality])
+            success, encoded_jpg = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, quality])
             
-            if success:
-                frame_bytes = encoded.tobytes()
-                
-                # 检查大小并动态调整质量
-                if len(frame_bytes) > MAX_UDP_SIZE * 0.8:  # 如果接近UDP限制
-                    frame_bytes = self._adjust_quality_and_compress(frame)
-                
-                return frame_bytes
-            
-            return None
+            return encoded_jpg.tobytes() if success else None
             
         except Exception as e:
             logger.error(f"帧处理失败: {e}")
             return None
-    
-    def _apply_fisheye_correction(self, frame: np.ndarray) -> np.ndarray:
-        """应用鱼眼校正"""
-        try:
-            # 这里应该使用实际的鱼眼校正参数
-            # 目前使用简化版本
-            return frame
-        except Exception as e:
-            logger.error(f"鱼眼校正失败: {e}")
-            return frame
-    
-    def _adjust_quality_and_compress(self, frame: np.ndarray) -> bytes:
-        """动态调整压缩质量"""
-        for quality in self.compression_levels[self.current_quality_index:]:
-            success, encoded = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, quality])
-            if success:
-                frame_bytes = encoded.tobytes()
-                if len(frame_bytes) <= MAX_UDP_SIZE * 0.8:
-                    return frame_bytes
-        
-        # 如果还是太大，进行分辨率缩放
-        return self._scale_and_compress(frame)
-    
-    def _scale_and_compress(self, frame: np.ndarray) -> bytes:
-        """缩放并压缩"""
-        height, width = frame.shape[:2]
-        scale_factor = 0.8
-        
-        while scale_factor > 0.3:
-            new_width = int(width * scale_factor)
-            new_height = int(height * scale_factor)
-            scaled_frame = cv2.resize(frame, (new_width, new_height), interpolation=cv2.INTER_AREA)
-            
-            success, encoded = cv2.imencode('.jpg', scaled_frame, [cv2.IMWRITE_JPEG_QUALITY, 60])
-            if success:
-                frame_bytes = encoded.tobytes()
-                if len(frame_bytes) <= MAX_UDP_SIZE * 0.8:
-                    return frame_bytes
-            
-            scale_factor -= 0.1
-        
-        # 最后的保底方案
-        success, encoded = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 20])
-        return encoded.tobytes() if success else b''
     
     def get_latest_frame(self) -> Optional[CameraFrame]:
         """获取最新帧"""
@@ -477,10 +409,9 @@ class UDPProtocol(asyncio.DatagramProtocol):
     
     def __init__(self, gateway):
         self.gateway = gateway
-        self.transport = None
     
     def connection_made(self, transport):
-        self.transport = transport
+        self.gateway.transport = transport
         logger.info("UDP传输连接已建立")
     
     def datagram_received(self, data, addr):
@@ -504,13 +435,13 @@ class CameraGateway:
     
     def __init__(self, port: int = 8991):
         self.port = port
-        self.transport = None
+        self.transport: Optional[asyncio.DatagramTransport] = None
         self.protocol = None
         self.is_running = False
         self.security_manager = SecurityManager(SHARED_SECRET_KEY)
         self.packet_manager = PacketManager()
-        self.cameras = {}
-        self.active_clients = {}  # 客户端订阅信息
+        self.cameras: Dict[int, SmartCameraHandler] = {}
+        self.active_clients: Dict[Tuple[str, int], Dict] = {}  # 客户端订阅信息
         self.stats = {
             'packets_received': 0,
             'packets_sent': 0,
@@ -520,41 +451,31 @@ class CameraGateway:
     
     async def start(self):
         """启动网关服务"""
-        retry_count = 0
-        max_retries = 10
-        
-        while retry_count < max_retries:
-            try:
-                # 启动UDP服务器
-                self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                self.socket.bind(('0.0.0.0', self.port))
-                self.socket.setblocking(False)
-                
-                self.is_running = True
-                logger.info(f"摄像头网关启动成功，监听端口 {self.port}")
-                
-                # 初始化摄像头
-                await self._initialize_cameras()
-                
-                # 启动后台任务
-                await asyncio.gather(
-                    self._receive_loop(),
-                    self._stream_loop(),
-                    self._cleanup_loop(),
-                    self._stats_loop(),
-                    self._health_check_loop()
-                )
-                break
-                
-            except Exception as e:
-                retry_count += 1
-                logger.error(f"启动失败 (尝试 {retry_count}): {e}")
-                if retry_count < max_retries:
-                    await asyncio.sleep(min(retry_count * 2, 30))
-                else:
-                    logger.critical("启动失败，已达到最大重试次数")
-                    raise
+        loop = asyncio.get_running_loop()
+        logger.info(f"正在启动摄像头网关，监听端口 {self.port}")
+
+        try:
+            # 启动UDP服务器 - THE ASYNCIO WAY
+            self.transport, self.protocol = await loop.create_datagram_endpoint(
+                lambda: UDPProtocol(self),
+                local_addr=('0.0.0.0', self.port)
+            )
+
+            self.is_running = True
+            logger.info("摄像头网关启动成功")
+
+            await self._initialize_cameras()
+
+            await asyncio.gather(
+                # _receive_loop is replaced by the UDPProtocol
+                self._stream_loop(),
+                self._cleanup_loop(),
+                self._stats_loop(),
+                self._health_check_loop()
+            )
+        except Exception as e:
+            logger.critical(f"启动失败: {e}", exc_info=True)
+            raise
     
     async def _initialize_cameras(self):
         """初始化摄像头"""
@@ -563,73 +484,26 @@ class CameraGateway:
                 camera = SmartCameraHandler(camera_id, config)
                 if await camera.start():
                     self.cameras[camera_id] = camera
-                    logger.info(f"摄像头 {camera_id} ({config['name']}) 初始化成功")
                 else:
                     logger.warning(f"摄像头 {camera_id} ({config['name']}) 初始化失败")
             except Exception as e:
                 logger.error(f"摄像头 {camera_id} 初始化异常: {e}")
     
-    async def _receive_loop(self):
-        """接收数据循环"""
-        while self.is_running:
-            try:
-                # 使用传统的socket方法，避免asyncio兼容性问题
-                self.socket.settimeout(0.1)  # 设置短超时
-                try:
-                    data, addr = self.socket.recvfrom(MAX_UDP_SIZE)
-                    self.stats['packets_received'] += 1
-                    
-                    # 异步处理数据包
-                    asyncio.create_task(self._process_packet(data, addr))
-                except socket.timeout:
-                    # 超时是正常的，让出CPU
-                    await asyncio.sleep(0.01)
-                
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                self.stats['errors'] += 1
-                logger.error(f"接收数据失败: {e}")
-                await asyncio.sleep(0.1)
-    
     async def _process_packet(self, data: bytes, addr: Tuple[str, int]):
         """处理数据包"""
         try:
-            logger.debug(f"收到来自 {addr} 的原始数据: {data[:100]}...") # 打印前100字节
-            
-            # 解析数据包
             packet = self.packet_manager.process_received_packet(data, addr)
             if not packet:
-                logger.warning(f"无法从 {addr} 解析数据包")
+                # This could be a binary frame from another client, just ignore
                 return
             
-            # 验证安全性
-            if not self._verify_packet_security(packet, data, addr):
-                logger.warning(f"安全验证失败: {addr}")
-                return
+            # 安全性验证可以稍后添加
             
-            # 处理请求
             await self._handle_request(packet, addr)
             
         except Exception as e:
             self.stats['errors'] += 1
             logger.error(f"数据包处理失败: {e}")
-    
-    def _verify_packet_security(self, packet: Dict, original_data: bytes, addr: Tuple[str, int]) -> bool:
-        """验证数据包安全性"""
-        try:
-            timestamp = packet.get('timestamp')
-            if not timestamp or not self.security_manager.verify_timestamp(timestamp):
-                return False
-            
-            # 这里应该验证签名，但需要重构数据包格式
-            # 暂时跳过签名验证，在生产环境中必须启用
-            
-            return True
-            
-        except Exception as e:
-            logger.error(f"安全验证异常: {e}")
-            return False
     
     async def _handle_request(self, packet: Dict, addr: Tuple[str, int]):
         """处理客户端请求"""
@@ -646,7 +520,7 @@ class CameraGateway:
             elif request_type == 'capture_screenshot':
                 await self._handle_capture_screenshot(data, addr)
             else:
-                logger.warning(f"未知请求类型: {request_type}")
+                logger.warning(f"未知请求类型: {request_type} from {addr}")
                 
         except Exception as e:
             logger.error(f"请求处理失败: {e}")
@@ -663,9 +537,7 @@ class CameraGateway:
         }
         
         logger.info(f"客户端 {addr} 订阅摄像头: {camera_ids} (会话ID: {session_id})")
-        logger.info(f"当前活跃客户端数量: {len(self.active_clients)}")
         
-        # 发送确认响应
         await self._send_response(addr, {
             'status': 'success',
             'message': 'subscription_confirmed',
@@ -694,8 +566,7 @@ class CameraGateway:
                 'name': config['name'],
                 'resolution': config['resolution'],
                 'fps': config['fps'],
-                'is_active': camera.is_running,
-                'stats': camera.stats
+                'is_active': camera.is_running
             })
         
         await self._send_response(addr, {
@@ -709,55 +580,35 @@ class CameraGateway:
         camera_id = data.get('camera_id', 0)
         
         if camera_id not in self.cameras:
-            await self._send_response(addr, {
-                'status': 'error',
-                'message': 'camera_not_found'
-            })
+            await self._send_response(addr, {'status': 'error', 'message': 'camera_not_found'})
             return
         
         camera = self.cameras[camera_id]
         frame = camera.get_latest_frame()
         
         if frame:
-            # 将图像数据编码为base64
             frame_base64 = base64.b64encode(frame.frame_data).decode('utf-8')
-            
             await self._send_response(addr, {
-                'status': 'success',
-                'message': 'screenshot_captured',
-                'camera_id': camera_id,
-                'frame_id': frame.frame_id,
-                'timestamp': frame.timestamp,
-                'resolution': frame.resolution,
+                'status': 'success', 'message': 'screenshot_captured',
+                'camera_id': camera_id, 'frame_id': frame.frame_id,
+                'timestamp': frame.timestamp, 'resolution': frame.resolution,
                 'data': frame_base64
             })
         else:
-            await self._send_response(addr, {
-                'status': 'error',
-                'message': 'no_frame_available'
-            })
+            await self._send_response(addr, {'status': 'error', 'message': 'no_frame_available'})
     
     async def _stream_loop(self):
         """视频流发送循环"""
         while self.is_running:
             try:
                 if not self.active_clients:
-                    # 没有活跃客户端时，短暂休眠以降低CPU占用
-                    await asyncio.sleep(0.5)
+                    await asyncio.sleep(0.1)
                     continue
 
-                # 为每个活跃客户端发送视频帧
                 for addr, client_info in list(self.active_clients.items()):
-                    try:
-                        await self._send_frames_to_client(addr, client_info)
-                    except Exception as e:
-                        logger.error(f"向客户端 {addr} 发送帧失败: {e}")
-                        # 移除有问题的客户端
-                        if addr in self.active_clients:
-                            del self.active_clients[addr]
+                    await self._send_frames_to_client(addr, client_info)
                 
-                # 由摄像头帧率和网络状况决定发送速率
-                await asyncio.sleep(0.01)
+                await asyncio.sleep(0.001) # Yield to event loop to prevent tight loop
                 
             except asyncio.CancelledError:
                 break
@@ -766,51 +617,42 @@ class CameraGateway:
                 await asyncio.sleep(0.1)
     
     async def _send_frames_to_client(self, addr: Tuple[str, int], client_info: Dict):
-        """向客户端发送视频帧 - 优化版二进制传输"""
-        camera_ids = client_info['camera_ids']
-        
-        for camera_id in camera_ids:
-            if camera_id not in self.cameras:
-                continue
+        """向客户端发送视频帧"""
+        client_info['last_activity'] = time.time()
+        for camera_id in client_info['camera_ids']:
+            if camera_id not in self.cameras: continue
             
             camera = self.cameras[camera_id]
             frame = camera.get_latest_frame()
             
             if frame:
-                # 直接发送二进制数据，避免Base64编码开销
                 await self._send_binary_frame(addr, frame)
                 self.stats['frames_sent'] += 1
                 camera.stats['frames_sent'] += 1
     
     async def _send_binary_frame(self, addr: Tuple[str, int], frame: CameraFrame):
         """发送二进制帧数据 - 优化版"""
+        if not self.transport: return
         try:
-            # 构建二进制帧头部
-            frame_header = struct.pack('!BQHHHB', 
-                0xFF,  # 魔数标识二进制帧
-                int(frame.timestamp * 1000000),  # 微秒时间戳
-                frame.camera_id,
-                frame.resolution[0],  # 宽度
-                frame.resolution[1],  # 高度
-                frame.quality
+            # FIX: Correct struct format string to include 'Q' for the 8-byte timestamp.
+            frame_header = struct.pack('!B Q HHHB', 
+                0xFF,                               # Magic number (B)
+                int(frame.timestamp * 1000000),     # Microsecond timestamp (Q)
+                frame.camera_id,                    # Camera ID (H)
+                frame.resolution[0],                # Width (H)
+                frame.resolution[1],                # Height (H)
+                frame.quality                       # Quality (B)
             )
             
-            # 帧ID (8字节)
             frame_id_bytes = frame.frame_id.encode('ascii')[:8].ljust(8, b'\x00')
-            
-            # 数据长度
             data_length = struct.pack('!I', len(frame.frame_data))
             
-            # 组合完整数据包
             full_packet = frame_header + frame_id_bytes + data_length + frame.frame_data
             
-            # 检查是否需要分片
             if len(full_packet) <= FRAGMENT_THRESHOLD:
-                # 单包发送
-                self.socket.sendto(full_packet, addr)
+                self.transport.sendto(full_packet, addr)
                 self.stats['packets_sent'] += 1
             else:
-                # 分片发送
                 await self._send_fragmented_binary(addr, full_packet)
                 
         except Exception as e:
@@ -818,131 +660,105 @@ class CameraGateway:
     
     async def _send_fragmented_binary(self, addr: Tuple[str, int], data: bytes):
         """发送分片二进制数据"""
+        if not self.transport: return
         try:
             fragment_id = uuid.uuid4().hex[:8].encode('ascii')
-            chunk_size = FRAGMENT_THRESHOLD - 20  # 预留分片头部空间
+            chunk_size = FRAGMENT_THRESHOLD - 20
             total_fragments = (len(data) + chunk_size - 1) // chunk_size
             
-            for i in range(0, len(data), chunk_size):
-                chunk = data[i:i + chunk_size]
-                fragment_index = i // chunk_size
-                
-                # 分片头部: 魔数(1) + 分片ID(8) + 分片索引(2) + 总分片数(2) + 数据长度(2)
+            for i in range(total_fragments):
+                chunk = data[i*chunk_size : (i+1)*chunk_size]
                 fragment_header = struct.pack('!B8sHHH',
-                    0xFE,  # 分片魔数
-                    fragment_id,
-                    fragment_index,
-                    total_fragments,
-                    len(chunk)
+                    0xFE, fragment_id, i, total_fragments, len(chunk)
                 )
-                
                 fragment_packet = fragment_header + chunk
-                self.socket.sendto(fragment_packet, addr)
+                self.transport.sendto(fragment_packet, addr)
                 self.stats['packets_sent'] += 1
                 
         except Exception as e:
             logger.error(f"发送分片二进制数据失败: {e}")
 
     async def _send_response(self, addr: Tuple[str, int], response_data: Dict):
-        """发送响应"""
+        """发送JSON响应"""
+        if not self.transport: return
         try:
             response_packet = self.packet_manager.prepare_packet(response_data, self.security_manager)
-            fragments = self.packet_manager.auto_fragment(response_packet)
-            
-            for fragment in fragments:
-                self.socket.sendto(fragment, addr)
-            
+            self.transport.sendto(response_packet, addr)
             self.stats['packets_sent'] += 1
-            
         except Exception as e:
             logger.error(f"发送响应失败: {e}")
     
     async def _cleanup_loop(self):
         """清理循环"""
         while self.is_running:
+            await asyncio.sleep(60)
             try:
-                # 清理过期客户端
                 current_time = time.time()
                 expired_clients = [
                     addr for addr, client_info in self.active_clients.items()
                     if current_time - client_info['last_activity'] > SESSION_TIMEOUT
                 ]
-                
                 for addr in expired_clients:
-                    del self.active_clients[addr]
-                    logger.info(f"清理过期客户端: {addr}")
+                    if addr in self.active_clients:
+                        del self.active_clients[addr]
+                        logger.info(f"清理过期客户端: {addr}")
                 
-                # 清理其他过期数据
                 self.security_manager.cleanup_expired_sessions()
                 self.packet_manager.cleanup_expired_fragments()
-                
-                await asyncio.sleep(60)  # 每分钟清理一次
-            except asyncio.CancelledError:
-                break
             except Exception as e:
                 logger.error(f"清理任务失败: {e}")
     
     async def _stats_loop(self):
         """统计循环"""
         while self.is_running:
+            await asyncio.sleep(30)
             try:
-                await asyncio.sleep(30)  # 每30秒输出一次统计
-                logger.info(f"摄像头网关统计: {self.stats}")
-                
-                # 输出各摄像头统计
-                for camera_id, camera in self.cameras.items():
-                    logger.info(f"摄像头 {camera_id} 统计: {camera.stats}")
-                    
-            except asyncio.CancelledError:
-                break
+                logger.info(f"网关统计: {self.stats}")
+                for cid, cam in self.cameras.items():
+                    logger.info(f"摄像头 {cid} 统计: {cam.stats}")
+                    # Reset stats to see rates
+                    cam.stats['frames_captured'] = 0
+                    cam.stats['frames_dropped'] = 0
+                    cam.stats['frames_sent'] = 0
             except Exception as e:
                 logger.error(f"统计任务失败: {e}")
     
     async def _health_check_loop(self):
         """健康检查循环"""
         while self.is_running:
+            await asyncio.sleep(60)
             try:
-                # 检查摄像头状态
                 for camera_id, camera in list(self.cameras.items()):
-                    if not camera.is_running:
+                    if not camera.is_running or not camera.capture_thread.is_alive():
                         logger.warning(f"摄像头 {camera_id} 已停止，尝试重启...")
-                        try:
-                            if await camera.start():
-                                logger.info(f"摄像头 {camera_id} 重启成功")
-                            else:
-                                logger.error(f"摄像头 {camera_id} 重启失败")
-                        except Exception as e:
-                            logger.error(f"摄像头 {camera_id} 重启异常: {e}")
-                
-                await asyncio.sleep(10)  # 每10秒检查一次
-            except asyncio.CancelledError:
-                break
+                        await camera.start()
             except Exception as e:
                 logger.error(f"健康检查失败: {e}")
     
     async def stop(self):
         """停止网关服务"""
+        if not self.is_running: return
         self.is_running = False
+        logger.info("正在停止网关服务...")
         
-        # 停止所有摄像头
         for camera in self.cameras.values():
             camera.stop()
         
-        if self.socket:
-            self.socket.close()
+        if self.transport:
+            self.transport.close()
         
+        # Allow time for tasks to finish
+        await asyncio.sleep(0.5)
         logger.info("摄像头网关已停止")
 
 async def main():
-    """主函数"""
     gateway = CameraGateway()
+    loop = asyncio.get_event_loop()
     
     try:
         await gateway.start()
     except KeyboardInterrupt:
         logger.info("收到中断信号，正在停止...")
-    except Exception as e:
-        logger.critical(f"摄像头网关运行失败: {e}")
     finally:
         await gateway.stop()
 

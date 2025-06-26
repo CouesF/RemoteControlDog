@@ -16,7 +16,7 @@ communication_dir_path = os.path.join(parent_dir, 'communication')
 sys.path.append(communication_dir_path)
 # --- END OF FIX ---
 
-from dds_data_structure import DogStatus, JetsonTemperatures, JetsonPower, JetsonHardware
+from dds_data_structure import DogStatus
 from unitree_sdk2py.idl.unitree_go.msg.dds_ import LowState_
 from unitree_sdk2py.core.channel import ChannelSubscriber, ChannelPublisher, ChannelFactoryInitialize
 from unitree_sdk2py.comm.motion_switcher.motion_switcher_client import MotionSwitcherClient

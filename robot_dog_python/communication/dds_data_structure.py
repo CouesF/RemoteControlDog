@@ -11,6 +11,8 @@ from cyclonedds.idl import IdlStruct
 from cyclonedds.idl.annotations import key
 from enum import IntEnum
 from typing import List
+from cyclonedds.idl.types import int32, float32
+
 
 # --------------------------------------------------------------------------
 # 模块: main_dog_controller
@@ -93,14 +95,36 @@ class BodyControl(IdlStruct, typename="BodyControl"):
     
 
 
+# --- NEW: Added an enum for different types of head commands ---
+class HeadCommand(IntEnum):
+    """头部控制的指令类型"""
+    MOVE_ABSOLUTE = 0  # 移动到绝对角度
+    NOD = 1            # 执行点头动作
+    SHAKE = 2          # 执行摇头动作
+
+# --- REVISED: Replaced the old HeadControl with a more comprehensive version ---
 @dataclass
 class HeadControl(IdlStruct, typename="HeadControl"):
-    # --- 头部控制 ---
-    # 头部角度控制: [俯仰角, 偏航角] rad 
-    head_angles: List[float] = field(default_factory=lambda: [0.0, 0.0])
+    """
+    头部控制指令结构体 (V2)。
+    结合了绝对位置控制和预设动作指令。
+    """
+    # 时间戳，用于同步
+    timestamp_ns: int = 0
 
-    # 表情控制
-    expression: ExpressionCommand = ExpressionCommand.NORMAL
+    # 要执行的指令类型
+    command: HeadCommand = HeadCommand.MOVE_ABSOLUTE
+
+    # --- 绝对位置控制参数 ---
+    # 仅在 command 为 MOVE_ABSOLUTE 时有效
+    # 头部角度: [俯仰角(motor1), 偏航角(motor2)] 单位：度 (Degrees)
+    # 使用度更方便前端直接发送，后端服务根据需要转换为弧度。
+    target_angles_deg: List[float] = field(default_factory=lambda: [0.0, 0.0])
+
+    # --- 表情控制 ---
+    # 表情字符 (例如: 'c' for center, 'h' for happy)
+    # 适用于所有指令类型
+    expression_char: str = "c"
 
 # --------------------------------------------------------------------------
 # 模块: main_dog_status
@@ -296,3 +320,14 @@ class RaiseLegCommand(IdlStruct, typename="RaiseLegCommand"):
     command_id: int = 0                # 可用作控制退出，或扩展动作选择
     joint1_target: float = 0.0         # 1号关节目标角度
     joint2_target: float = 0.0         # 2号关节目标角度
+
+
+@dataclass
+class MotionCommand(IdlStruct, typename="MotionCommand"):
+    command_type: int32 = 0      # 0=状态切换，1=抬腿控制，2=导航控制
+    state_enum: int32 = 5        # 状态枚举（5=HIGH_LEVEL, 6=LOW_LEVEL, 7=LOW_LEVEL_STAND, 8=DAMP）
+    angle1: float = 0.0
+    angle2: float = 0.0
+    x: float = 0.0
+    y: float = 0.0
+    r: float = 0.0
