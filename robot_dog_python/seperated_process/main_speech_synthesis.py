@@ -523,7 +523,7 @@ async def main():
     # 定义信号处理函数
     def signal_handler(signal, frame):
         nonlocal exit_requested
-        print("\n收到 Ctrl+C 信号，准备优雅退出...")
+        print("\n收到 Ctrl+C 信号，准备美丽优雅旋转跳跃退出...")
         exit_requested = True
     
     # 注册信号处理器

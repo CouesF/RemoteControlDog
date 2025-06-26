@@ -29,8 +29,31 @@ def switch_state(state_enum: int):
 
     with fsm_lock:
         if state_enum == FSMStateEnum.DAMP:
-            print("[FSM] 切换到 DAMP 模式")
-            current_state = FSMStateEnum.DAMP
+            print("[FSM] 当前状态:", current_state.name)
+            print("[FSM] 尝试切换到 DAMP 模式...")
+
+            try:
+                if current_state == FSMStateEnum.HIGH_LEVEL:
+                    from unitree_sdk2py.go2.sport.sport_client import SportClient
+                    sport = SportClient(); sport.Init(); sport.Damp()
+                    print("[FSM] 已从 HIGH_LEVEL 成功切入 DAMP")
+                elif current_state in [FSMStateEnum.LOW_LEVEL, FSMStateEnum.LOW_LEVEL_STAND]:
+                    from unitree_sdk2py.comm.motion_switcher.motion_switcher_client import MotionSwitcherClient
+                    msc = MotionSwitcherClient(); msc.Init(); msc.SetTimeout(5.0)
+                    ret, _ = msc.SelectMode("damp")
+                    if ret == 0:
+                        print("[FSM] 已从底层成功切入 DAMP")
+                    else:
+                        print(f"[FSM] 切换失败，错误码: {ret}")
+                        return
+                else:
+                    print("[FSM] 当前状态不支持切入 DAMP")
+                    return
+
+                current_state = FSMStateEnum.DAMP
+
+            except Exception as e:
+                print(f"[FSM] 切入 DAMP 模式失败: {e}")
             return
 
         if current_state == FSMStateEnum.HIGH_LEVEL:
@@ -107,7 +130,7 @@ def main_loop():
 if __name__ == "__main__":
     ChannelFactoryInitialize(0, "enP8p1s0")
 
-    #使用 ChannelPublisher 注册 MyMotionCommand 类型
+    # 使用 ChannelPublisher 注册 MyMotionCommand 类型
     dummy_publisher = ChannelPublisher("rt/keyboard_control", MyMotionCommand)
     dummy_publisher.Init()
 

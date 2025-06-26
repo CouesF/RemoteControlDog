@@ -5,6 +5,7 @@ import threading
 import time
 import sys
 import os
+import queue # New: Import queue for message buffering
 
 # --- Real DDS Imports ---
 # This path needs to be correct on the robot executing this script.
@@ -36,7 +37,13 @@ socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
 # --- Global DDS Publishers ---
 speech_control_pub = None
-head_command_pub = None # New: Global publisher for head commands
+head_command_pub = None # Global publisher for head commands
+
+# --- Speech Command Queue and Thread Control ---
+# A queue to hold SpeechControl messages to be published via DDS.
+speech_command_queue = queue.Queue()
+# Flag to control the lifecycle of the speech publisher thread.
+speech_publisher_active = True
 
 # --- Motor Error Decoding ---
 MOTOR_ERROR_MAP = {
@@ -78,7 +85,7 @@ latest_dog_status = {
 # --- DDS Configuration ---
 DOG_STATUS_TOPIC = "DogStatus"
 SPEECH_CONTROL_TOPIC = "SpeechControl" # Topic for sending speech commands
-HEAD_COMMAND_TOPIC = "HeadCommand" # New: Topic for sending head commands
+HEAD_COMMAND_TOPIC = "HeadCommand" # Topic for sending head commands
 DDS_NETWORK_INTERFACE = "enP8p1s0"
 
 def dds_subscriber_thread():
@@ -86,7 +93,6 @@ def dds_subscriber_thread():
     global latest_dog_status
     sub = None
     try:
-        # Note: ChannelFactoryInitialize is called in the main thread now
         sub = ChannelSubscriber(DOG_STATUS_TOPIC, DogStatus)
         sub.Init()
     except Exception as e:
@@ -154,9 +160,45 @@ def dds_subscriber_thread():
         latest_dog_status["status_message"] = f"Critical DDS Stream Error: {e}"
         socketio.emit('dog_status_update', latest_dog_status, {"data_received": False})
     finally:
-        # is_initialized() is a valid method for ChannelSubscriber
         if sub and sub.is_initialized(): sub.Close()
         print("DDS subscriber thread stopped.")
+
+def _speech_publisher_thread():
+    """
+    Dedicated thread for publishing SpeechControl messages from the queue.
+    This helps ensure non-blocking behavior for the SocketIO event handler.
+    """
+    global speech_control_pub, speech_publisher_active
+
+    print("Speech publisher thread started.")
+    while speech_publisher_active:
+        try:
+            # Wait for a message with a timeout to allow thread to check active flag
+            command_msg = speech_command_queue.get(timeout=0.1)
+            
+            if speech_control_pub is None:
+                print("Error: Speech control DDS publisher is not initialized in publisher thread.")
+                # Put the message back if publisher not ready, or handle as an error
+                # For this case, we'll just log and drop, assuming initialization happens once.
+                continue
+
+            try:
+                speech_control_pub.Write(command_msg)
+                print(f"Published SpeechControl command from queue to DDS topic '{SPEECH_CONTROL_TOPIC}'.")
+            except Exception as e:
+                print(f"Error publishing queued SpeechControl to DDS: {e}")
+            finally:
+                speech_command_queue.task_done() # Mark task as done whether successful or not
+
+        except queue.Empty:
+            # No messages in queue, continue loop
+            pass
+        except Exception as e:
+            print(f"Speech publisher thread error: {e}")
+            # Consider adding a small sleep here to prevent busy-waiting on errors
+            time.sleep(0.1)
+            
+    print("Speech publisher thread stopped.")
 
 @app.route('/')
 def index():
@@ -176,14 +218,10 @@ def handle_disconnect():
 
 @socketio.on('speech_command')
 def handle_speech_command(data):
-    """Handles speech commands from the web UI and publishes them via DDS."""
-    global speech_control_pub
-    
-    if speech_control_pub is None:
-        print("Error: Speech control DDS publisher is not initialized.")
-        emit('speech_response', {'status': 'error', 'message': 'Backend DDS publisher not ready.'})
-        return
-
+    """
+    Handles speech commands from the web UI and adds them to a queue for DDS publishing.
+    This function no longer directly publishes but queues the command.
+    """
     print(f"Received speech command from web UI: {data}")
     
     command_msg = SpeechControl()
@@ -201,14 +239,12 @@ def handle_speech_command(data):
         except (ValueError, TypeError):
             print(f"Warning: Could not parse volume '{data['volume']}'. Ignoring.")
 
-    try:
-        speech_control_pub.Write(command_msg)
-        print(f"Published SpeechControl command to DDS topic '{SPEECH_CONTROL_TOPIC}'.")
-        # Send a more detailed response to the client
-        emit('speech_response', {'status': 'success', 'action': action, 'message': 'Command sent successfully.'})
-    except Exception as e:
-        print(f"Error publishing to DDS: {e}")
-        emit('speech_response', {'status': 'error', 'message': f'DDS publish error: {e}'})
+    # Add the message to the queue instead of direct DDS write
+    speech_command_queue.put(command_msg)
+    print(f"Queued SpeechControl command: text='{command_msg.text_to_speak}', stop={command_msg.stop_speaking}, volume={command_msg.volume}")
+    
+    # Emit response immediately, indicating command was accepted for processing
+    emit('speech_response', {'status': 'success', 'action': action, 'message': 'Command queued successfully.'})
 
 
 @socketio.on('head_control_command')
@@ -280,7 +316,7 @@ if __name__ == '__main__':
         speech_control_pub.Init()
         print(f"DDS Publisher for '{SPEECH_CONTROL_TOPIC}' initialized.")
 
-        # New: Initialize DDS Publisher for Head Commands
+        # Initialize DDS Publisher for Head Commands
         head_command_pub = ChannelPublisher(HEAD_COMMAND_TOPIC, HeadCommand)
         head_command_pub.Init()
         print(f"DDS Publisher for '{HEAD_COMMAND_TOPIC}' initialized.")
@@ -289,8 +325,21 @@ if __name__ == '__main__':
         print(f"FATAL: DDS initialization failed: {e}. The application cannot start.")
         sys.exit(1)
         
+    # Start the DDS subscriber thread for dog status
     subscriber_thread = threading.Thread(target=dds_subscriber_thread, daemon=True)
     subscriber_thread.start()
 
-    socketio.run(app, host='0.0.0.0', port=5001, debug=True, allow_unsafe_werkzeug=True)
+    # New: Start the speech command publisher thread
+    speech_publisher_thread = threading.Thread(target=_speech_publisher_thread, daemon=True)
+    speech_publisher_thread.start()
+
+    try:
+        socketio.run(app, host='0.0.0.0', port=5001, debug=True, allow_unsafe_werkzeug=True)
+    finally:
+        # Ensure the speech publisher thread stops cleanly on application exit
+        speech_publisher_active = False
+        if speech_publisher_thread.is_alive():
+            speech_publisher_thread.join(timeout=1.0)
+            if speech_publisher_thread.is_alive():
+                print("Warning: Speech publisher thread did not terminate gracefully.")
 
