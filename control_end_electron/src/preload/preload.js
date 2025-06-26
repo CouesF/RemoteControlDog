@@ -1,36 +1,7 @@
 // control_end_electron/src/preload/preload.js
 const { contextBridge, ipcRenderer } = require('electron');
 
-contextBridge.exposeInMainWorld('electronAPI', {
-    // From Main to Renderer
-    onRobotStatus: (callback) => ipcRenderer.on('robot-status', (_event, value) => callback(value)),
-    onVideoStream: (callback) => ipcRenderer.on('video-stream', (_event, value) => callback(value)),
-    
-    // From Renderer to Main
-    sendControlCommand: (command) => ipcRenderer.send('send-control-command', command),
-    sendSystemCommand: (command) => ipcRenderer.send('send-system-command', command), // ADDED
-    sendPostureCommand: (command) => ipcRenderer.send('send-posture-command', command), // ADDED
-
-    // UDP Connection Management for Camera
-    initializeUDP: () => ipcRenderer.invoke('initialize-udp'),
-    connectUDP: (connectionId, config) => ipcRenderer.invoke('connect-udp', connectionId, config),
-    disconnectUDP: (connectionId) => ipcRenderer.invoke('disconnect-udp', connectionId),
-    sendUDPMessage: (connectionId, message) => ipcRenderer.invoke('send-udp-message', connectionId, message),
-    onUDPMessage: (callback) => ipcRenderer.on('udp-message', (_event, data) => callback(data)),
-    onConnectionStatusChange: (callback) => ipcRenderer.on('connection-status-change', (_event, status) => callback(status)),
-    
-    // Camera frame events for binary data
-    onCameraFrame: (callback) => ipcRenderer.on('camera-frame', (_event, frameData) => callback(frameData)),
-
-    // Remove listeners if component unmounts to prevent memory leaks
-    removeRobotStatusListener: (callback) => ipcRenderer.removeListener('robot-status', callback),
-    removeVideoStreamListener: (callback) => ipcRenderer.removeListener('video-stream', callback),
-    removeUDPMessageListener: (callback) => ipcRenderer.removeListener('udp-message', callback),
-    removeConnectionStatusListener: (callback) => ipcRenderer.removeListener('connection-status-change', callback),
-    removeCameraFrameListener: (callback) => ipcRenderer.removeListener('camera-frame', callback),
-});
-
-// Mock API for frontend development
+// Mock API for frontend development (preserved from original file)
 const mockData = {
     participants: [
         {
@@ -70,7 +41,45 @@ const mockData = {
     ]
 };
 
+// Expose a unified API to the renderer process
 contextBridge.exposeInMainWorld('api', {
+    // --- Camera Gateway API ---
+    connectCameraGateway: () => ipcRenderer.invoke('camera-gateway-connect'),
+    disconnectCameraGateway: () => ipcRenderer.send('camera-gateway-disconnect'),
+    subscribeToCameras: (cameraIds) => ipcRenderer.send('camera-subscribe', cameraIds),
+    unsubscribeFromCameras: (cameraIds) => ipcRenderer.send('camera-unsubscribe', cameraIds),
+
+    // --- Camera Event Listeners ---
+    onCameraList: (callback) => ipcRenderer.on('camera-list', (event, ...args) => callback(...args)),
+    onCameraFrame: (callback) => ipcRenderer.on('camera-frame', (event, ...args) => callback(...args)),
+    onSubscriptionChange: (callback) => ipcRenderer.on('subscription-changed', (event, ...args) => callback(...args)),
+
+    // --- Generic UDP API ---
+    connectUDP: (options) => ipcRenderer.invoke('connect-udp', options),
+    disconnectUDP: (connectionId) => ipcRenderer.send('disconnect-udp', connectionId),
+    onUDPMessage: (connectionId, callback) => {
+        const channel = `udp-message-${connectionId}`;
+        ipcRenderer.on(channel, (event, ...args) => callback(...args));
+        // Return a cleanup function to remove the listener
+        return () => ipcRenderer.removeAllListeners(channel);
+    },
+    onUDPError: (connectionId, callback) => {
+        const channel = `udp-error-${connectionId}`;
+        ipcRenderer.on(channel, (event, ...args) => callback(...args));
+        return () => ipcRenderer.removeAllListeners(channel);
+    },
+    onUDPConnect: (connectionId, callback) => {
+        const channel = `udp-connect-${connectionId}`;
+        ipcRenderer.on(channel, (event, ...args) => callback(...args));
+        return () => ipcRenderer.removeAllListeners(channel);
+    },
+    onUDPDisconnect: (connectionId, callback) => {
+        const channel = `udp-disconnect-${connectionId}`;
+        ipcRenderer.on(channel, (event, ...args) => callback(...args));
+        return () => ipcRenderer.removeAllListeners(channel);
+    },
+
+    // --- Mock Data API (Preserved) ---
     getParticipants: () => Promise.resolve(mockData.participants),
     createParticipant: (participant) => {
         const newParticipant = { ...participant, participantId: `uuid-p${mockData.participants.length + 1}` };
@@ -91,13 +100,12 @@ contextBridge.exposeInMainWorld('api', {
             startTime: new Date().toISOString(),
             status: 'started',
         };
-        // In a real app, you'd store this session in a sessions array.
         return Promise.resolve(newSession);
     },
     endSession: (sessionId) => {
-        // In a real app, you'd find the session and update its status and end time.
         console.log(`Ending session ${sessionId}`);
         return Promise.resolve({ sessionId, status: 'ended', endTime: new Date().toISOString() });
     }
 });
-console.log("CE_Preload: electronAPI exposed to renderer.");
+
+console.log("CE_Preload: Unified API exposed to renderer.");
