@@ -44,7 +44,7 @@ HEADER_SIZE = 32  # 减小头部大小
 CAMERA_CONFIGS = {
     0: {
         "type": "csi",
-        "resolution": (1280, 720),
+        "resolution": (640, 480),
         "fps": 15,
         "quality": 50,
         "name": "CSI摄像头-0",
@@ -52,7 +52,7 @@ CAMERA_CONFIGS = {
     },
     1: {
         "type": "csi",
-        "resolution": (1280, 720),
+        "resolution": (640, 480),
         "fps": 15,
         "quality": 50,
         "name": "CSI摄像头-1",

@@ -95,36 +95,43 @@ class BodyControl(IdlStruct, typename="BodyControl"):
     
 
 
-# --- NEW: Added an enum for different types of head commands ---
-class HeadCommand(IntEnum):
-    """头部控制的指令类型"""
-    MOVE_ABSOLUTE = 0  # 移动到绝对角度
-    NOD = 1            # 执行点头动作
-    SHAKE = 2          # 执行摇头动作
+# --------------------------------------------------------------------------
+class HeadAction(IntEnum):
+    """
+    头部动作指令枚举
+    Enum for head action commands.
+    """
+    MOVE_DIRECT = 0  # 直接角度控制 (Direct angle control)
+    NOD = 1          # 点头动作 (Perform nod action)
+    SHAKE = 2        # 摇头动作 (Perform shake action)
 
-# --- REVISED: Replaced the old HeadControl with a more comprehensive version ---
 @dataclass
-class HeadControl(IdlStruct, typename="HeadControl"):
+class HeadCommand(IdlStruct, typename="HeadCommand"):
     """
-    头部控制指令结构体 (V2)。
-    结合了绝对位置控制和预设动作指令。
+    机器人狗头部动作指令结构体。
+    DDS structure for sending action commands to the dog's head.
     """
-    # 时间戳，用于同步
-    timestamp_ns: int = 0
+    # 时间戳 (Timestamp for synchronization and debugging)
+    timestamp: int = 0
 
-    # 要执行的指令类型
-    command: HeadCommand = HeadCommand.MOVE_ABSOLUTE
+    # 动作指令类型 (The type of action to perform)
+    # FIX: The type must be a primitive like 'int' for DDS serialization.
+    # The default value is set using the enum for clarity.
+    action: int = HeadAction.MOVE_DIRECT.value
 
-    # --- 绝对位置控制参数 ---
-    # 仅在 command 为 MOVE_ABSOLUTE 时有效
-    # 头部角度: [俯仰角(motor1), 偏航角(motor2)] 单位：度 (Degrees)
-    # 使用度更方便前端直接发送，后端服务根据需要转换为弧度。
-    target_angles_deg: List[float] = field(default_factory=lambda: [0.0, 0.0])
+    # 俯仰角 (度), 控制电机2 (上下运动)
+    # Pitch angle in degrees for Motor 2 (nodding motion).
+    # Used when action is MOVE_DIRECT.
+    pitch_deg: float = 0.0
 
-    # --- 表情控制 ---
-    # 表情字符 (例如: 'c' for center, 'h' for happy)
-    # 适用于所有指令类型
-    expression_char: str = "c"
+    # 偏航角 (度), 控制电机1 (左右运动)
+    # Yaw angle in degrees for Motor 1 (shaking motion).
+    # Used when action is MOVE_DIRECT.
+    yaw_deg: float = 0.0
+
+    # 目标表情字符 (c, l, r, h, s, etc.)
+    # Target expression character, sent directly to the Arduino.
+    expression_char: str = 'c'
 
 # --------------------------------------------------------------------------
 # 模块: main_dog_status
@@ -323,9 +330,9 @@ class RaiseLegCommand(IdlStruct, typename="RaiseLegCommand"):
 
 
 @dataclass
-class MotionCommand(IdlStruct, typename="MotionCommand"):
-    command_type: int32 = 0      # 0=状态切换，1=抬腿控制，2=导航控制
-    state_enum: int32 = 5        # 状态枚举（5=HIGH_LEVEL, 6=LOW_LEVEL, 7=LOW_LEVEL_STAND, 8=DAMP）
+class MyMotionCommand(IdlStruct, typename="MyMotionCommand"):
+    command_type: int          # 0=状态切换，1=抬腿控制，2=导航控制
+    state_enum: int = 5        # 状态枚举（5=HIGH_LEVEL, 6=LOW_LEVEL, 7=LOW_LEVEL_STAND, 8=DAMP）
     angle1: float = 0.0
     angle2: float = 0.0
     x: float = 0.0
