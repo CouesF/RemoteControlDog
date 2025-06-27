@@ -58,7 +58,7 @@ export default class Router {
 
     async navigate(pageName, options = {}) {
         try {
-            Logger.info(`Navigating to: ${pageName}`);
+            Logger.info(`Navigating to: ${pageName}`, options);
 
             // 验证页面名称
             if (!pageModules[pageName]) {
@@ -71,6 +71,9 @@ export default class Router {
             // 更新导航状态
             this.updateNavigationState(pageName);
 
+            // 构建URL参数
+            this.updateURL(pageName, options);
+
             // 加载并渲染新页面
             const PageClass = await this.loadPage(pageName);
             this.currentPage = new PageClass.default();
@@ -78,7 +81,7 @@ export default class Router {
 
             // 更新历史记录
             if (!options.skipHistory) {
-                this.updateHistory(pageName);
+                this.updateHistory(pageName, options);
             }
 
             // 触发导航完成事件
@@ -130,7 +133,31 @@ export default class Router {
         });
     }
 
-    updateHistory(pageName) {
+    updateURL(pageName, options = {}) {
+        // 构建URL参数
+        const urlParams = new URLSearchParams();
+        
+        // 添加页面特定的参数
+        if (options.mapId) {
+            urlParams.set('mapId', options.mapId);
+        }
+        
+        // 可以根据需要添加更多参数
+        Object.keys(options).forEach(key => {
+            if (key !== 'skipHistory' && key !== 'triggeredBy' && options[key] !== undefined) {
+                urlParams.set(key, options[key]);
+            }
+        });
+
+        // 更新URL
+        const urlString = urlParams.toString();
+        const newUrl = urlString ? `#${pageName}?${urlString}` : `#${pageName}`;
+        
+        // 不使用 pushState，让 updateHistory 处理
+        window.location.hash = newUrl;
+    }
+
+    updateHistory(pageName, options = {}) {
         this.navigationHistory.push(pageName);
         
         // 限制历史记录长度
@@ -138,9 +165,9 @@ export default class Router {
             this.navigationHistory.shift();
         }
 
-        // 更新浏览器历史
-        const state = { page: pageName };
-        window.history.pushState(state, '', `#${pageName}`);
+        // 更新浏览器历史（URL已经在updateURL中更新了）
+        const state = { page: pageName, options };
+        window.history.replaceState(state, '', window.location.href);
     }
 
     async handleNavigationError(error, pageName) {

@@ -18,6 +18,7 @@ class CameraManager extends EventEmitter {
         this.cameraList = [];
         this.subscribedCameras = new Set();
         this.isInitialized = false;
+        this.connectionState = 'disconnected'; // 'disconnected', 'connecting', 'connected'
 
         this._initIpcListeners();
     }
@@ -50,6 +51,14 @@ class CameraManager extends EventEmitter {
                 logger.info('Subscription changed:', subscribedIds);
                 this.subscribedCameras = new Set(Array.isArray(subscribedIds) ? subscribedIds : []);
                 this.emit('subscription-updated', Array.from(this.subscribedCameras));
+            });
+
+            window.api.onCameraConnectionState((state) => {
+                if (this.connectionState !== state) {
+                    logger.info(`Camera connection state changed to: ${state}`);
+                    this.connectionState = state;
+                    this.emit('connection-state-updated', this.connectionState);
+                }
             });
         } else {
             logger.error('window.api is not available. IPC listeners cannot be set up.');

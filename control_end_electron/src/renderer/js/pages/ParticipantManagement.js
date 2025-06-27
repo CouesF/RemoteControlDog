@@ -7,6 +7,7 @@ import mapsAPI from '../api/maps.js';
 import { EVENTS } from '../utils/constants.js';
 import { Validator } from '../utils/validator.js';
 import Logger from '../utils/logger.js';
+import { formatIdDisplayWithTitle } from '../utils/idFormatter.js';
 
 export default class ParticipantManagement extends BasePage {
     constructor() {
@@ -107,7 +108,7 @@ export default class ParticipantManagement extends BasePage {
             return `
                 <tr data-participant-id="${participant.participantId}">
                     <td>
-                        <code>${participant.participantId}</code>
+                        ${formatIdDisplayWithTitle(participant.participantId)}
                     </td>
                     <td>
                         <strong>${participant.participantName}</strong>

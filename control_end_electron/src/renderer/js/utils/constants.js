@@ -26,6 +26,7 @@ export const EVENTS = {
     // 数据事件
     DATA_UPDATED: 'data_updated',
     DATA_ERROR: 'data_error',
+    TARGET_UPDATED: 'target_updated',
     
     // UI事件
     MODAL_OPEN: 'modal_open',
