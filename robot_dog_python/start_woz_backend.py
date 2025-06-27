@@ -1,39 +1,40 @@
+#!/usr/bin/env python3
 """
 WOZ系统后端启动脚本
 """
 import sys
 import os
-import logging
+from pathlib import Path
 
-# 添加项目路径到sys.path
-current_dir = os.path.dirname(os.path.abspath(__file__))
-project_root = os.path.dirname(current_dir)
-if project_root not in sys.path:
-    sys.path.insert(0, project_root)
-if current_dir not in sys.path:
-    sys.path.insert(0, current_dir)
+# 添加项目根目录到Python路径
+project_root = Path(__file__).parent
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+
+# 设置环境变量
+os.environ.setdefault('PYTHONPATH', str(project_root))
 
 def main():
     """启动WOZ系统后端"""
     try:
+        from woz_system_backend.main import run_server
         print("Starting WOZ System Backend...")
-        print("=" * 50)
-        
-        # 导入并运行服务器
-        from woz_system_backend import run_server, API_HOST, API_PORT
-        
-        print(f"Server will start on http://{API_HOST}:{API_PORT}")
-        print(f"API documentation available at http://{API_HOST}:{API_PORT}/docs")
+        print(f"Project root: {project_root}")
+        print("Backend will be available at: http://0.0.0.0:8995")
+        print("API documentation: http://0.0.0.0:8995/docs")
         print("Press Ctrl+C to stop the server")
-        print("=" * 50)
         
         run_server()
         
     except KeyboardInterrupt:
-        print("\nShutting down server...")
+        print("\nShutting down WOZ System Backend...")
+    except ImportError as e:
+        print(f"Import error: {e}")
+        print("Please ensure all dependencies are installed:")
+        print("pip install fastapi uvicorn python-multipart")
+        sys.exit(1)
     except Exception as e:
-        print(f"Failed to start server: {e}")
-        logging.exception("Server startup failed")
+        print(f"Failed to start WOZ System Backend: {e}")
         sys.exit(1)
 
 if __name__ == "__main__":

@@ -400,8 +400,290 @@ class MapHandler:
         except Exception as e:
             logger.error(f"Failed to get targets for map {map_id}: {e}")
             raise HTTPException(status_code=500, detail="Failed to retrieve targets")
+    
+    async def create_target(self, map_id: str, target_data: Dict, target_img_file: Optional[UploadFile] = None, env_img_file: Optional[UploadFile] = None) -> Dict:
+        """在地图上创建新目标点"""
+        try:
+            # 检查地图是否存在
+            query = "SELECT * FROM maps WHERE id = ?"
+            rows = db.execute_query(query, (map_id,))
+            if not rows:
+                raise HTTPException(status_code=404, detail="Map not found")
+            
+            # 验证必需字段
+            required_fields = ['targetName', 'pose']
+            for field in required_fields:
+                if field not in target_data or not target_data[field]:
+                    raise HTTPException(status_code=400, detail=f"Missing required field: {field}")
+            
+            # 解析pose数据
+            try:
+                if isinstance(target_data['pose'], str):
+                    pose_data = json.loads(target_data['pose'])
+                else:
+                    pose_data = target_data['pose']
+            except (json.JSONDecodeError, TypeError):
+                raise HTTPException(status_code=400, detail="Invalid pose format")
+            
+            # 获取当前最大sequence值
+            sequence_query = "SELECT MAX(sequence) as max_seq FROM ja_targets WHERE map_id = ?"
+            sequence_rows = db.execute_query(sequence_query, (map_id,))
+            max_sequence = sequence_rows[0]['max_seq'] if sequence_rows and sequence_rows[0]['max_seq'] is not None else 0
+            new_sequence = max_sequence + 1
+            
+            target_id = db.generate_id()
+            
+            # 处理图片上传
+            target_img_url = None
+            env_img_url = None
+            
+            if target_img_file:
+                file_content = await target_img_file.read()
+                success, message, img_url = await file_handler.save_target_image(
+                    file_content, target_img_file.filename, target_id, 'target'
+                )
+                if success:
+                    target_img_url = img_url
+                else:
+                    logger.warning(f"Failed to save target image: {message}")
+            
+            if env_img_file:
+                file_content = await env_img_file.read()
+                success, message, img_url = await file_handler.save_target_image(
+                    file_content, env_img_file.filename, target_id, 'environment'
+                )
+                if success:
+                    env_img_url = img_url
+                else:
+                    logger.warning(f"Failed to save environment image: {message}")
+            
+            # 构建目标点数据
+            target_full_data = {
+                'description': target_data.get('description', ''),
+                'pose': pose_data,
+                'targetImgUrl': target_img_url,
+                'envImgUrl': env_img_url
+            }
+            
+            data_json = db.to_json(target_full_data)
+            
+            # 插入数据库
+            query = "INSERT INTO ja_targets (id, map_id, name, data, sequence) VALUES (?, ?, ?, ?, ?)"
+            db.execute_insert(query, (target_id, map_id, target_data['targetName'], data_json, new_sequence))
+            
+            result = {
+                "targetId": target_id,
+                "mapId": map_id,
+                "targetName": target_data['targetName'],
+                "description": target_full_data['description'],
+                "sequence": new_sequence,
+                "pose": pose_data,
+                "targetImgUrl": target_img_url,
+                "envImgUrl": env_img_url
+            }
+            
+            logger.info(f"Created target: {target_id} for map: {map_id}")
+            return result
+            
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Failed to create target for map {map_id}: {e}")
+            raise HTTPException(status_code=500, detail="Failed to create target")
+    
+    async def update_target(self, target_id: str, target_data: Dict, target_img_file: Optional[UploadFile] = None, env_img_file: Optional[UploadFile] = None) -> Dict:
+        """更新目标点信息"""
+        try:
+            # 检查目标点是否存在
+            query = "SELECT * FROM ja_targets WHERE id = ?"
+            rows = db.execute_query(query, (target_id,))
+            if not rows:
+                raise HTTPException(status_code=404, detail="Target not found")
+            
+            existing_target = rows[0]
+            existing_data = db.from_json(existing_target['data'])
+            
+            # 解析pose数据
+            pose_data = existing_data.get('pose', {})
+            if 'pose' in target_data:
+                try:
+                    if isinstance(target_data['pose'], str):
+                        pose_data = json.loads(target_data['pose'])
+                    else:
+                        pose_data = target_data['pose']
+                except (json.JSONDecodeError, TypeError):
+                    raise HTTPException(status_code=400, detail="Invalid pose format")
+            
+            # 处理图片上传
+            target_img_url = existing_data.get('targetImgUrl')
+            env_img_url = existing_data.get('envImgUrl')
+            
+            if target_img_file:
+                # 删除旧图片
+                if target_img_url:
+                    file_handler.delete_image(target_img_url)
+                
+                file_content = await target_img_file.read()
+                success, message, img_url = await file_handler.save_target_image(
+                    file_content, target_img_file.filename, target_id, 'target'
+                )
+                if success:
+                    target_img_url = img_url
+                else:
+                    logger.warning(f"Failed to save target image: {message}")
+            
+            if env_img_file:
+                # 删除旧图片
+                if env_img_url:
+                    file_handler.delete_image(env_img_url)
+                
+                file_content = await env_img_file.read()
+                success, message, img_url = await file_handler.save_target_image(
+                    file_content, env_img_file.filename, target_id, 'environment'
+                )
+                if success:
+                    env_img_url = img_url
+                else:
+                    logger.warning(f"Failed to save environment image: {message}")
+            
+            # 更新数据
+            updated_data = {
+                'description': target_data.get('description', existing_data.get('description', '')),
+                'pose': pose_data,
+                'targetImgUrl': target_img_url,
+                'envImgUrl': env_img_url
+            }
+            
+            data_json = db.to_json(updated_data)
+            target_name = target_data.get('targetName', existing_target['name'])
+            
+            query = "UPDATE ja_targets SET name = ?, data = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+            affected_rows = db.execute_update(query, (target_name, data_json, target_id))
+            
+            if affected_rows == 0:
+                raise HTTPException(status_code=404, detail="Target not found")
+            
+            result = {
+                "targetId": target_id,
+                "mapId": existing_target['map_id'],
+                "targetName": target_name,
+                "description": updated_data['description'],
+                "sequence": existing_target['sequence'],
+                "pose": pose_data,
+                "targetImgUrl": target_img_url,
+                "envImgUrl": env_img_url
+            }
+            
+            logger.info(f"Updated target: {target_id}")
+            return result
+            
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Failed to update target {target_id}: {e}")
+            raise HTTPException(status_code=500, detail="Failed to update target")
+    
+    async def update_targets_order(self, map_id: str, target_ids: List[str]):
+        """批量更新目标点顺序"""
+        try:
+            # 检查地图是否存在
+            query = "SELECT * FROM maps WHERE id = ?"
+            rows = db.execute_query(query, (map_id,))
+            if not rows:
+                raise HTTPException(status_code=404, detail="Map not found")
+            
+            # 验证所有目标点都属于该地图
+            placeholders = ','.join(['?' for _ in target_ids])
+            query = f"SELECT id FROM ja_targets WHERE id IN ({placeholders}) AND map_id = ?"
+            params = target_ids + [map_id]
+            existing_targets = db.execute_query(query, params)
+            
+            existing_target_ids = {row['id'] for row in existing_targets}
+            if len(existing_target_ids) != len(target_ids):
+                missing_targets = set(target_ids) - existing_target_ids
+                raise HTTPException(status_code=400, detail=f"Invalid target IDs: {missing_targets}")
+            
+            # 批量更新顺序
+            for index, target_id in enumerate(target_ids):
+                sequence = index + 1
+                query = "UPDATE ja_targets SET sequence = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+                db.execute_update(query, (sequence, target_id))
+            
+            logger.info(f"Updated targets order for map: {map_id}")
+            
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Failed to update targets order for map {map_id}: {e}")
+            raise HTTPException(status_code=500, detail="Failed to update targets order")
+    
+    async def delete_target(self, target_id: str):
+        """删除目标点"""
+        try:
+            # 获取目标点信息
+            query = "SELECT * FROM ja_targets WHERE id = ?"
+            rows = db.execute_query(query, (target_id,))
+            if not rows:
+                raise HTTPException(status_code=404, detail="Target not found")
+            
+            target_data = db.from_json(rows[0]['data'])
+            
+            # 删除相关图片
+            if target_data.get('targetImgUrl'):
+                file_handler.delete_image(target_data['targetImgUrl'])
+            if target_data.get('envImgUrl'):
+                file_handler.delete_image(target_data['envImgUrl'])
+            
+            # 删除数据库记录
+            query = "DELETE FROM ja_targets WHERE id = ?"
+            affected_rows = db.execute_update(query, (target_id,))
+            
+            if affected_rows == 0:
+                raise HTTPException(status_code=404, detail="Target not found")
+            
+            logger.info(f"Deleted target: {target_id}")
+            
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Failed to delete target {target_id}: {e}")
+            raise HTTPException(status_code=500, detail="Failed to delete target")
+
+
+class TargetHandler:
+    """目标点管理API处理器"""
+    
+    async def get_by_id(self, target_id: str) -> Dict:
+        """根据ID获取目标点"""
+        try:
+            query = "SELECT * FROM ja_targets WHERE id = ?"
+            rows = db.execute_query(query, (target_id,))
+            
+            if not rows:
+                raise HTTPException(status_code=404, detail="Target not found")
+            
+            row = rows[0]
+            target_data = db.from_json(row['data'])
+            
+            return {
+                "targetId": row['id'],
+                "mapId": row['map_id'],
+                "targetName": row['name'],
+                "description": target_data.get('description', ''),
+                "sequence": row['sequence'],
+                "pose": target_data.get('pose', {}),
+                "targetImgUrl": target_data.get('targetImgUrl'),
+                "envImgUrl": target_data.get('envImgUrl'),
+            }
+            
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Failed to get target {target_id}: {e}")
+            raise HTTPException(status_code=500, detail="Failed to retrieve target")
 
 
 # 创建处理器实例
 participant_handler = ParticipantHandler()
 map_handler = MapHandler()
+target_handler = TargetHandler()

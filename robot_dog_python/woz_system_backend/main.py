@@ -17,7 +17,7 @@ from .config import (
 )
 from .database import db
 from .dds_bridge import dds_bridge
-from .api_handlers import participant_handler, map_handler
+from .api_handlers import participant_handler, map_handler, target_handler
 
 # 配置日志
 logging.basicConfig(level=LOG_LEVEL, format=LOG_FORMAT)
@@ -184,8 +184,18 @@ async def create_target(
     envImgFile: Optional[UploadFile] = File(None)
 ):
     """在地图上创建新目标点"""
-    # TODO: 实现目标点创建逻辑
-    raise HTTPException(status_code=501, detail="Target creation not implemented yet")
+    target_data = {
+        'targetName': targetName,
+        'description': description,
+        'pose': pose
+    }
+    return await map_handler.create_target(map_id, target_data, targetImgFile, envImgFile)
+
+
+@app.get(f"{API_PREFIX}/targets/{{target_id}}", response_model=Dict)
+async def get_target(target_id: str):
+    """根据ID获取目标点"""
+    return await target_handler.get_by_id(target_id)
 
 
 @app.put(f"{API_PREFIX}/targets/{{target_id}}", response_model=Dict)
@@ -198,22 +208,29 @@ async def update_target(
     envImgFile: Optional[UploadFile] = File(None)
 ):
     """更新目标点信息"""
-    # TODO: 实现目标点更新逻辑
-    raise HTTPException(status_code=501, detail="Target update not implemented yet")
+    target_data = {
+        'targetName': targetName,
+        'description': description,
+        'pose': pose
+    }
+    return await map_handler.update_target(target_id, target_data, targetImgFile, envImgFile)
 
 
 @app.put(f"{API_PREFIX}/maps/{{map_id}}/targets/order")
 async def update_targets_order(map_id: str, order_data: Dict):
     """批量更新目标点顺序"""
-    # TODO: 实现目标点顺序更新逻辑
-    raise HTTPException(status_code=501, detail="Target order update not implemented yet")
+    target_ids = order_data.get('targetIds', [])
+    if not target_ids:
+        raise HTTPException(status_code=400, detail="targetIds is required")
+    
+    await map_handler.update_targets_order(map_id, target_ids)
+    return {"message": "Target order updated successfully"}
 
 
 @app.delete(f"{API_PREFIX}/targets/{{target_id}}", status_code=204)
 async def delete_target(target_id: str):
     """删除目标点"""
-    # TODO: 实现目标点删除逻辑
-    raise HTTPException(status_code=501, detail="Target deletion not implemented yet")
+    await map_handler.delete_target(target_id)
 
 
 # ==================== 会话管理API ====================
