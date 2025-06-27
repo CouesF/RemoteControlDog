@@ -1,21 +1,20 @@
 # app.py
-from flask import Flask, render_template
+from flask import Flask, render_template, request
 from flask_socketio import SocketIO, emit
 import threading
 import time
 import sys
 import os
-import queue # New: Import queue for message buffering
+import queue
+import uuid
 
 # --- Real DDS Imports ---
-# This path needs to be correct on the robot executing this script.
 COMMUNICATION_DIR = "/home/d3lab/Projects/RemoteControlDog/robot_dog_python/communication"
 if COMMUNICATION_DIR not in sys.path:
     sys.path.append(COMMUNICATION_DIR)
 
 try:
-    # Import necessary data structures for status, speech control, and head control
-    from dds_data_structure import DogStatus, SpeechControl, HeadCommand, HeadAction
+    from dds_data_structure import DogStatus, SpeechControl, HeadCommand, HeadAction, PowerControl
 except ImportError as e:
     print(f"Error: Could not import DDS data structures. Please ensure 'dds_data_structure.py' "
           f"is located at '{COMMUNICATION_DIR}/dds_data_structure.py'.")
@@ -35,14 +34,21 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your_super_secret_key_here_please_change_this_for_production'
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
+# --- Authentication Configuration (Hardcoded for simplicity) ---
+USERS = {
+    "robotdog": "password123", # Example username and password
+    "d3lab": "d3lab" # Example username and password
+}
+# A set to keep track of authenticated session IDs
+authenticated_sids = set()
+
 # --- Global DDS Publishers ---
 speech_control_pub = None
-head_command_pub = None # Global publisher for head commands
+head_command_pub = None
+power_control_pub = None
 
 # --- Speech Command Queue and Thread Control ---
-# A queue to hold SpeechControl messages to be published via DDS.
 speech_command_queue = queue.Queue()
-# Flag to control the lifecycle of the speech publisher thread.
 speech_publisher_active = True
 
 # --- Motor Error Decoding ---
@@ -84,8 +90,9 @@ latest_dog_status = {
 
 # --- DDS Configuration ---
 DOG_STATUS_TOPIC = "DogStatus"
-SPEECH_CONTROL_TOPIC = "SpeechControl" # Topic for sending speech commands
-HEAD_COMMAND_TOPIC = "HeadCommand" # Topic for sending head commands
+SPEECH_CONTROL_TOPIC = "SpeechControl"
+HEAD_COMMAND_TOPIC = "HeadCommand"
+POWER_CONTROL_TOPIC = "PowerControl"
 DDS_NETWORK_INTERFACE = "enP8p1s0"
 
 def dds_subscriber_thread():
@@ -97,7 +104,7 @@ def dds_subscriber_thread():
         sub.Init()
     except Exception as e:
         print(f"DDS Subscriber setup failed: {e}")
-        latest_dog_status["status_message"] = f"DDS Setup Error: {e}"
+        latest_dog_status["status_message"] = f"DDS Setup Error: {e}. Check network interface & SDK."
         socketio.emit('dog_status_update', latest_dog_status)
         if sub and sub.is_initialized(): sub.Close()
         return
@@ -107,13 +114,56 @@ def dds_subscriber_thread():
         while True:
             msg = sub.Read(100)
             if msg:
-                latency_ms = (time.time_ns() - msg.timestamp_ns) / 1_000_000.0
+                raw_timestamp_ns = getattr(msg, 'timestamp_ns', None)
+                timestamp_ns_val = 0
+                if raw_timestamp_ns is not None:
+                    try:
+                        timestamp_ns_val = int(raw_timestamp_ns)
+                    except (ValueError, TypeError):
+                        print(f"Warning: Could not convert timestamp_ns '{raw_timestamp_ns}' to int. Using 0.")
+                
+                latency_ms = (time.time_ns() - timestamp_ns_val) / 1_000_000.0 if timestamp_ns_val else 0.0
+
                 try:
+                    raw_battery = getattr(msg, 'battery_percent', None)
+                    raw_cpu = getattr(msg, 'cpu_usage_percent', None)
+                    raw_gpu = getattr(msg, 'gpu_usage_percent', None)
+                    raw_memory = getattr(msg, 'memory_usage_percent', None)
+
+                    battery_percent_val = 0.0
+                    if raw_battery is not None:
+                        try:
+                            battery_percent_val = float(raw_battery)
+                        except (ValueError, TypeError):
+                            print(f"Warning: Could not convert battery_percent '{raw_battery}' to float. Using 0.0.")
+
+                    cpu_usage_percent_val = 0.0
+                    if raw_cpu is not None:
+                        try:
+                            cpu_usage_percent_val = float(raw_cpu)
+                        except (ValueError, TypeError):
+                            print(f"Warning: Could not convert cpu_usage_percent '{raw_cpu}' to float. Using 0.0.")
+
+                    gpu_usage_percent_val = 0.0
+                    if raw_gpu is not None:
+                        try:
+                            gpu_usage_percent_val = float(raw_gpu)
+                        except (ValueError, TypeError):
+                            print(f"Warning: Could not convert gpu_usage_percent '{raw_gpu}' to float. Using 0.0.")
+
+                    memory_usage_percent_val = 0.0
+                    if raw_memory is not None:
+                        try:
+                            memory_usage_percent_val = float(raw_memory)
+                        except (ValueError, TypeError):
+                            print(f"Warning: Could not convert memory_usage_percent '{raw_memory}' to float. Using 0.0.")
+
+
                     latest_dog_status.update({
-                        "battery_percent": float(msg.battery_percent),
-                        "cpu_usage_percent": float(msg.cpu_usage_percent),
-                        "gpu_usage_percent": float(msg.gpu_usage_percent),
-                        "memory_usage_percent": float(msg.memory_usage_percent),
+                        "battery_percent": battery_percent_val,
+                        "cpu_usage_percent": cpu_usage_percent_val,
+                        "gpu_usage_percent": gpu_usage_percent_val,
+                        "memory_usage_percent": memory_usage_percent_val,
                         "latency_ms": latency_ms,
                         "robot_mode_form": get_nested_attr(msg, ['robot_mode_form'], "N/A"),
                         "robot_mode_name": get_nested_attr(msg, ['robot_mode_name'], "N/A"),
@@ -173,13 +223,10 @@ def _speech_publisher_thread():
     print("Speech publisher thread started.")
     while speech_publisher_active:
         try:
-            # Wait for a message with a timeout to allow thread to check active flag
             command_msg = speech_command_queue.get(timeout=0.1)
             
             if speech_control_pub is None:
                 print("Error: Speech control DDS publisher is not initialized in publisher thread.")
-                # Put the message back if publisher not ready, or handle as an error
-                # For this case, we'll just log and drop, assuming initialization happens once.
                 continue
 
             try:
@@ -188,14 +235,12 @@ def _speech_publisher_thread():
             except Exception as e:
                 print(f"Error publishing queued SpeechControl to DDS: {e}")
             finally:
-                speech_command_queue.task_done() # Mark task as done whether successful or not
+                speech_command_queue.task_done()
 
         except queue.Empty:
-            # No messages in queue, continue loop
             pass
         except Exception as e:
             print(f"Speech publisher thread error: {e}")
-            # Consider adding a small sleep here to prevent busy-waiting on errors
             time.sleep(0.1)
             
     print("Speech publisher thread stopped.")
@@ -207,22 +252,52 @@ def index():
 
 @socketio.on('connect')
 def handle_connect():
-    """Handles new client connections, sending initial status."""
-    print('Client connected')
-    emit('dog_status_update', latest_dog_status)
+    """Handles new client connections. Initially, clients are not authenticated."""
+    print(f'Client connected: {request.sid}. Awaiting authentication.')
+    # Do not add to authenticated_sids here. Authentication happens via 'authenticate' event.
+    emit('authentication_required') # Inform the client it needs to log in
 
 @socketio.on('disconnect')
 def handle_disconnect():
-    """Handles client disconnections."""
-    print('Client disconnected')
+    """Handles client disconnections and removes from authenticated sessions."""
+    print(f'Client disconnected: {request.sid}')
+    if request.sid in authenticated_sids:
+        authenticated_sids.remove(request.sid)
+        print(f"Removed authenticated SID: {request.sid}")
+
+@socketio.on('authenticate')
+def authenticate_client(data):
+    """Handles authentication requests from clients."""
+    username = data.get('username')
+    password = data.get('password')
+    sid = request.sid
+
+    if USERS.get(username) == password:
+        authenticated_sids.add(sid)
+        print(f"Client {sid} authenticated successfully as '{username}'.")
+        emit('login_response', {'status': 'success', 'message': 'Authentication successful.'})
+    else:
+        print(f"Client {sid} failed authentication for user '{username}'.")
+        emit('login_response', {'status': 'error', 'message': 'Invalid username or password.'})
+
+# --- Protected SocketIO Event Handlers ---
+def check_authentication():
+    """Decorator to check if a client is authenticated."""
+    def decorator(f):
+        def wrapped(*args, **kwargs):
+            if request.sid not in authenticated_sids:
+                print(f"Unauthorized access attempt by {request.sid} to {f.__name__}.")
+                emit('unauthorized', {'message': 'Authentication required.'})
+                return
+            return f(*args, **kwargs)
+        return wrapped
+    return decorator
 
 @socketio.on('speech_command')
+@check_authentication()
 def handle_speech_command(data):
-    """
-    Handles speech commands from the web UI and adds them to a queue for DDS publishing.
-    This function no longer directly publishes but queues the command.
-    """
-    print(f"Received speech command from web UI: {data}")
+    """Handles speech commands from the web UI and adds them to a queue for DDS publishing."""
+    print(f"Received speech command from authenticated client {request.sid}: {data}")
     
     command_msg = SpeechControl()
     command_msg.text_to_speak = data.get('text', '')
@@ -233,26 +308,21 @@ def handle_speech_command(data):
     if 'volume' in data:
         try:
             command_msg.volume = int(data['volume'])
-            # If only volume is sent, the action is 'volume_change'
             if not command_msg.text_to_speak and not command_msg.stop_speaking:
                 action = 'volume_change'
         except (ValueError, TypeError):
             print(f"Warning: Could not parse volume '{data['volume']}'. Ignoring.")
 
-    # Add the message to the queue instead of direct DDS write
     speech_command_queue.put(command_msg)
     print(f"Queued SpeechControl command: text='{command_msg.text_to_speak}', stop={command_msg.stop_speaking}, volume={command_msg.volume}")
     
-    # Emit response immediately, indicating command was accepted for processing
     emit('speech_response', {'status': 'success', 'action': action, 'message': 'Command queued successfully.'})
 
 
 @socketio.on('head_control_command')
+@check_authentication()
 def handle_head_control_command(data):
-    """
-    Handles head control commands from the web UI and publishes them via DDS.
-    This function does not expect feedback from the head for repeatability.
-    """
+    """Handles head control commands from the web UI and publishes them via DDS."""
     global head_command_pub
 
     if head_command_pub is None:
@@ -260,20 +330,19 @@ def handle_head_control_command(data):
         emit('head_response', {'status': 'error', 'message': 'Backend DDS publisher not ready.'})
         return
 
-    print(f"Received head control command from web UI: {data}")
+    print(f"Received head control command from authenticated client {request.sid}: {data}")
 
     command_msg = HeadCommand()
-    command_msg.timestamp = time.time_ns() # Set timestamp for the DDS message
+    command_msg.timestamp = time.time_ns()
     command = data.get('command')
     command_sent_status = 'error'
     command_message = 'Invalid command.'
 
     try:
         if command == 'move':
-            # Ensure pitch_deg and yaw_deg are floats
             pitch = float(data.get('pos1', 0.0))
             yaw = float(data.get('pos2', 0.0))
-            expr = str(data.get('expr', 'c')) # Default to 'c' if not provided
+            expr = str(data.get('expr', 'c'))
 
             command_msg.action = HeadAction.MOVE_DIRECT.value
             command_msg.pitch_deg = pitch
@@ -307,36 +376,82 @@ def handle_head_control_command(data):
         emit('head_response', {'status': 'error', 'message': f'DDS publish error: {e}'})
 
 
+@socketio.on('power_command')
+@check_authentication()
+def handle_power_command(data):
+    """Handles power control commands (shutdown/reboot) from the web UI and publishes them via DDS."""
+    global power_control_pub
+
+    if power_control_pub is None:
+        print("Error: Power control DDS publisher is not initialized.")
+        emit('power_response', {'status': 'error', 'message': 'Backend DDS publisher not ready.'})
+        return
+
+    command_type_str = data.get('command')
+    command_type = 0
+    response_message = "Invalid power command."
+    response_status = "error"
+
+    if command_type_str == "shutdown":
+        command_type = 1
+        response_message = "Shutdown command sent to robot."
+        response_status = "success"
+    elif command_type_str == "reboot":
+        command_type = 2
+        response_message = "Reboot command sent to robot."
+        response_status = "success"
+    else:
+        print(f"Received unknown power command: {command_type_str}")
+        emit('power_response', {'status': response_status, 'message': response_message})
+        return
+
+    power_command_msg = PowerControl()
+    power_command_msg.command_type = command_type
+    power_command_msg.command_id = uuid.uuid4().int & (2**31 - 1) 
+    power_command_msg.message = f"Request to {command_type_str} from web UI."
+
+    try:
+        power_control_pub.Write(power_command_msg)
+        print(f"Published PowerControl command '{command_type_str}' (ID: {power_command_msg.command_id}) to DDS topic '{POWER_CONTROL_TOPIC}'.")
+        time.sleep(0.05) 
+    except Exception as e:
+        response_message = f"DDS publish error for {command_type_str}: {e}"
+        response_status = "error"
+        print(f"Error publishing power control command to DDS: {e}")
+    finally:
+        emit('power_response', {'status': response_status, 'message': response_message})
+
+
 if __name__ == '__main__':
     try:
-        print(f"Initializing DDS factory on network interface: {DDS_NETWORK_INTERFACE}")
+        print(f"Initializing DDS factory for main process on network interface: {DDS_NETWORK_INTERFACE}")
         ChannelFactoryInitialize(networkInterface=DDS_NETWORK_INTERFACE)
         
         speech_control_pub = ChannelPublisher(SPEECH_CONTROL_TOPIC, SpeechControl)
         speech_control_pub.Init()
         print(f"DDS Publisher for '{SPEECH_CONTROL_TOPIC}' initialized.")
 
-        # Initialize DDS Publisher for Head Commands
         head_command_pub = ChannelPublisher(HEAD_COMMAND_TOPIC, HeadCommand)
         head_command_pub.Init()
         print(f"DDS Publisher for '{HEAD_COMMAND_TOPIC}' initialized.")
+
+        power_control_pub = ChannelPublisher(POWER_CONTROL_TOPIC, PowerControl)
+        power_control_pub.Init()
+        print(f"DDS Publisher for '{POWER_CONTROL_TOPIC}' initialized.")
 
     except Exception as e:
         print(f"FATAL: DDS initialization failed: {e}. The application cannot start.")
         sys.exit(1)
         
-    # Start the DDS subscriber thread for dog status
     subscriber_thread = threading.Thread(target=dds_subscriber_thread, daemon=True)
     subscriber_thread.start()
 
-    # New: Start the speech command publisher thread
     speech_publisher_thread = threading.Thread(target=_speech_publisher_thread, daemon=True)
     speech_publisher_thread.start()
 
     try:
         socketio.run(app, host='0.0.0.0', port=5001, debug=True, allow_unsafe_werkzeug=True)
     finally:
-        # Ensure the speech publisher thread stops cleanly on application exit
         speech_publisher_active = False
         if speech_publisher_thread.is_alive():
             speech_publisher_thread.join(timeout=1.0)

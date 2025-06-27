@@ -57,20 +57,124 @@
         .motor-card { border: 1px solid #d0d0d0; padding: 0.75rem; background-color: #f8f8f8; }
         .motor-title { font-family: 'Roboto Mono'; font-weight: 700; font-size: 1.1rem; border-bottom: 1px solid #e0e0e0; padding-bottom: 0.5rem; margin-bottom: 0.5rem; }
         .motor-details { display: grid; grid-template-columns: 100px 1fr; gap: 0.25rem; font-size: 0.9rem; }
+
+        /* Custom Confirmation Modal Styling */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.6);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        .modal-content {
+            background-color: white;
+            padding: 1.5rem;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            width: 90%;
+            max-width: 400px;
+            text-align: center;
+        }
+        .modal-content h3 {
+            font-family: 'Roboto Mono', monospace;
+            font-size: 1.25rem;
+            font-weight: 700;
+            margin-bottom: 1rem;
+        }
+        .modal-content p {
+            margin-bottom: 1.5rem;
+            color: #555;
+        }
+        .modal-buttons {
+            display: flex;
+            justify-content: center;
+            gap: 1rem;
+        }
+        .modal-btn {
+            padding: 0.6rem 1.5rem;
+            border-radius: 5px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: background-color 0.2s, color 0.2s;
+        }
+        .modal-btn.confirm {
+            background-color: #ef4444; /* red-500 */
+            color: white;
+        }
+        .modal-btn.confirm:hover {
+            background-color: #dc2626; /* red-600 */
+        }
+        .modal-btn.cancel {
+            background-color: #e5e7eb; /* gray-200 */
+            color: #374151; /* gray-700 */
+        }
+        .modal-btn.cancel:hover {
+            background-color: #d1d5db; /* gray-300 */
+        }
+
+        /* New: Login Modal Styling */
+        #login-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.8); /* Darker overlay for login */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000; /* Higher z-index than confirmation modal */
+        }
+        #login-modal .modal-content {
+            padding: 2rem;
+            max-width: 350px;
+        }
+        #login-modal input[type="text"],
+        #login-modal input[type="password"] {
+            width: 100%;
+            padding: 0.75rem;
+            margin-bottom: 1rem;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            box-sizing: border-box; /* Include padding in width */
+        }
+        #login-modal .login-btn {
+            background-color: #2563eb; /* blue-600 */
+            color: white;
+            padding: 0.75rem 1.5rem;
+            border-radius: 5px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        #login-modal .login-btn:hover {
+            background-color: #1d4ed8; /* blue-700 */
+        }
+        #login-error-message {
+            color: #ef4444; /* red-500 */
+            margin-top: 0.5rem;
+            font-size: 0.9rem;
+        }
+        .hidden { display: none !important; }
     </style>
 </head>
 <body class="flex items-center justify-center min-h-screen">
     <div class="cpp-container w-full">
         <div class="cpp-header">
             <div class="cpp-header-text">
-                <h1>Dog Hybrid Console</h1>
+                <h1>Dog Hybrid Control Console</h1>
                 <p id="page-subtitle">Main Dashboard</p>
             </div>
             <button id="toggle-page-btn" class="toggle-button">View Motor Details</button>
         </div>
 
         <!-- Page 1: Main Dashboard -->
-        <div id="page-system-overview">
+        <div id="page-system-overview" class="hidden"> <!-- Initially hidden -->
             <!-- LEFT COLUMN: INFORMATION -->
             <div id="info-column">
                 <div class="info-section">
@@ -134,16 +238,50 @@
                                 <div id="head-status" class="status-box status-idle">Status: Idle</div>
                             </div>
                         </div>
+                        <!-- New: System Power Control -->
+                        <div class="border-t pt-4">
+                            <h3 class="font-bold mb-2">System Power</h3>
+                            <div class="flex flex-col gap-3">
+                                <div class="flex gap-2">
+                                    <button id="shutdown-btn" class="control-btn bg-red-700 text-white">Shutdown Robot</button>
+                                    <button id="reboot-btn" class="control-btn bg-yellow-600 text-white">Reboot Robot</button>
+                                </div>
+                                <div id="power-status" class="status-box status-idle">Status: Idle</div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
 
         <!-- Page 2: Detailed Motor Status -->
-        <div id="page-motor-status" style="display: none;">
+        <div id="page-motor-status" class="hidden"> <!-- Initially hidden -->
             <div id="motor-grid" class="motor-grid">
                 <!-- Populated by JS -->
             </div>
+        </div>
+    </div>
+
+    <!-- Custom Confirmation Modal -->
+    <div id="confirmation-modal" class="modal-overlay hidden">
+        <div class="modal-content">
+            <h3 id="modal-title">Confirm Action</h3>
+            <p id="modal-message">Are you sure you want to perform this action?</p>
+            <div class="modal-buttons">
+                <button id="modal-cancel-btn" class="modal-btn cancel">No, Cancel</button>
+                <button id="modal-confirm-btn" class="modal-btn confirm">Yes, Proceed</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- New: Login Modal -->
+    <div id="login-modal" class="modal-overlay"> <!-- Initially visible -->
+        <div class="modal-content">
+            <h3>Login to Dog Hybrid Console</h3>
+            <input type="text" id="username-input" placeholder="Username" autocomplete="username">
+            <input type="password" id="password-input" placeholder="Password" autocomplete="current-password">
+            <button id="login-btn" class="login-btn">Login</button>
+            <div id="login-error-message" class="text-danger mt-2 hidden">Invalid username or password.</div>
         </div>
     </div>
 
@@ -152,15 +290,15 @@
         const socket = io();
         const motorNames = ['FR_hip', 'FR_thigh', 'FR_calf', 'FL_hip', 'FL_thigh', 'FL_calf', 'RR_hip', 'RR_thigh', 'RR_calf', 'RL_hip', 'RL_thigh', 'RL_calf'];
         const statMetrics = [
-            { id: 'battery', label: 'Battery', unit: ' %', warn: 30, danger: 15, precision: 1, isLowerBad: true },
-            { id: 'cpu', label: 'CPU Usage', unit: ' %', warn: 70, danger: 90, precision: 1 },
-            { id: 'gpu', label: 'GPU Usage', unit: ' %', warn: 70, danger: 90, precision: 1 },
-            { id: 'memory', label: 'Memory', unit: ' %', warn: 75, danger: 90, precision: 1 },
-            { id: 'latency', label: 'DDS Latency', unit: ' ms', warn: 50, danger: 100, precision: 2 },
-            { id: 'temp-cpu', label: 'Temp CPU', unit: ' °C', warn: 75, danger: 90, precision: 0 },
-            { id: 'temp-gpu', label: 'Temp GPU', unit: ' °C', warn: 75, danger: 90, precision: 0 },
-            { id: 'power-nv-power-total', label: 'Power Total', unit: ' mW', precision: 0 },
-            { id: 'hardware-uptime', label: 'Uptime', unit: ' min', precision: 1 },
+            { id: 'battery_percent', label: 'Battery', unit: ' %', warn: 30, danger: 15, precision: 1, isLowerBad: true },
+            { id: 'cpu_usage_percent', label: 'CPU Usage', unit: ' %', warn: 70, danger: 90, precision: 1 },
+            { id: 'gpu_usage_percent', label: 'GPU Usage', unit: ' %', warn: 70, danger: 90, precision: 1 },
+            { id: 'memory_usage_percent', label: 'Memory', unit: ' %', warn: 75, danger: 90, precision: 1 },
+            { id: 'latency_ms', label: 'DDS Latency', unit: ' ms', warn: 50, danger: 100, precision: 2 },
+            { id: 'temp_cpu', label: 'Temp CPU', unit: ' °C', warn: 75, danger: 90, precision: 0 },
+            { id: 'temp_gpu', label: 'Temp GPU', unit: ' °C', warn: 75, danger: 90, precision: 0 },
+            { id: 'power_nv_power_total', label: 'Power Total', unit: ' mW', precision: 0 },
+            { id: 'hardware_uptime_seconds', label: 'Uptime', unit: ' min', precision: 1 },
         ];
 
         // --- Element Initialization ---
@@ -176,13 +314,11 @@
         const motorErrorGrid = document.getElementById('motor-error-grid');
         const motorDetailGrid = document.getElementById('motor-grid');
         for (let i = 0; i < 12; i++) {
-            // Page 1: Error Report
             const errorItem = document.createElement('div');
             errorItem.id = `motor-error-item-${i}`;
             errorItem.className = 'motor-error-item';
             errorItem.innerHTML = `<span class="font-mono">${motorNames[i]}</span><span id="motor-error-status-${i}">--</span>`;
             motorErrorGrid.appendChild(errorItem);
-            // Page 2: Detail Card
             const card = document.createElement('div');
             card.className = 'motor-card';
             card.innerHTML = `<div id="motor-title-${i}" class="motor-title">${motorNames[i]}</div><div class="motor-details"><span class="font-bold">Angle:</span><span id="motor-q-${i}">-- rad</span><span class="font-bold">Velocity:</span><span id="motor-dq-${i}">-- r/s</span><span class="font-bold">Torque:</span><span id="motor-tau-${i}">-- Nm</span><span class="font-bold">Temp:</span><span id="motor-temp-${i}">-- &deg;C</span></div>`;
@@ -195,21 +331,23 @@
         const toggleBtn = document.getElementById('toggle-page-btn');
         const pageSubtitle = document.getElementById('page-subtitle');
         toggleBtn.addEventListener('click', () => {
-            const isMotorPageVisible = pageSystem.style.display === 'none';
-            pageSystem.style.display = isMotorPageVisible ? 'grid' : 'none';
-            pageMotors.style.display = isMotorPageVisible ? 'none' : 'block';
+            const isMotorPageVisible = pageSystem.classList.contains('hidden');
+            pageSystem.classList.toggle('hidden', !isMotorPageVisible);
+            pageMotors.classList.toggle('hidden', isMotorPageVisible);
             toggleBtn.textContent = isMotorPageVisible ? 'View Motor Details' : 'View Dashboard';
             pageSubtitle.textContent = isMotorPageVisible ? 'Main Dashboard' : 'Detailed Motor Status';
         });
 
         // --- Get Control Elements ---
         const controlElements = {};
-        ['speak-btn', 'pause-speak-btn', 'stop-speak-btn', 'speech-text', 'volume-slider', 'volume-label', 'speech-status', 'nod-btn', 'shake-btn', 'set-pos-expr-btn', 'motor1-slider', 'motor2-slider', 'motor1-label', 'motor2-label', 'expression-input', 'head-status'].forEach(id => {
+        ['speak-btn', 'pause-speak-btn', 'stop-speak-btn', 'speech-text', 'volume-slider', 'volume-label', 'speech-status', 'nod-btn', 'shake-btn', 'set-pos-expr-btn', 'motor1-slider', 'motor2-slider', 'motor1-label', 'motor2-label', 'expression-input', 'head-status', 'shutdown-btn', 'reboot-btn', 'power-status'].forEach(id => {
             controlElements[id.replace(/-/g, '')] = document.getElementById(id);
         });
         
         // --- Event Listeners ---
-        const { speakbtn, pausespeakbtn, stopspeakbtn, speechtext, volumeslider, volumelabel, nodbtn, shakebtn, setposexprbtn, motor1slider, motor2slider, motor1label, motor2label, expressioninput } = controlElements;
+        const { speakbtn, pausespeakbtn, stopspeakbtn, speechtext, volumeslider, volumelabel, nodbtn, shakebtn, setposexprbtn, motor1slider, motor2slider, motor1label, motor2label, expressioninput, shutdownbtn, rebootbtn, powerstatus } = controlElements;
+
+        // Speech Control
         speakbtn.addEventListener('click', () => {
             const text = speechtext.value.trim();
             if (text) socket.emit('speech_command', { text: text, volume: parseInt(volumeslider.value) });
@@ -218,6 +356,8 @@
         stopspeakbtn.addEventListener('click', () => socket.emit('speech_command', { stop: true }));
         volumeslider.addEventListener('input', () => volumelabel.textContent = `${volumeslider.value}%`);
         volumeslider.addEventListener('change', () => socket.emit('speech_command', { volume: parseInt(volumeslider.value) }));
+        
+        // Head Control
         nodbtn.addEventListener('click', () => socket.emit('head_control_command', { command: 'nod' }));
         shakebtn.addEventListener('click', () => socket.emit('head_control_command', { command: 'shake' }));
         setposexprbtn.addEventListener('click', () => {
@@ -231,7 +371,106 @@
         motor1slider.addEventListener('input', () => motor1label.textContent = `${motor1slider.value}°`);
         motor2slider.addEventListener('input', () => motor2label.textContent = `${motor2slider.value}°`);
 
-        // --- Socket Listeners for UI Updates ---
+        // Power Control with Custom Confirmation Modal
+        const confirmationModal = document.getElementById('confirmation-modal');
+        const modalTitle = document.getElementById('modal-title');
+        const modalMessage = document.getElementById('modal-message');
+        const modalConfirmBtn = document.getElementById('modal-confirm-btn');
+        const modalCancelBtn = document.getElementById('modal-cancel-btn');
+
+        let pendingPowerCommand = '';
+
+        function showConfirmationModal(action) {
+            pendingPowerCommand = action;
+            modalTitle.textContent = `Confirm ${action.charAt(0).toUpperCase() + action.slice(1)}`;
+            modalMessage.textContent = `Are you sure you want to ${action} the robot? This action cannot be undone.`;
+            confirmationModal.classList.remove('hidden');
+        }
+
+        function hideConfirmationModal() {
+            confirmationModal.classList.add('hidden');
+            pendingPowerCommand = '';
+        }
+
+        modalConfirmBtn.addEventListener('click', () => {
+            if (pendingPowerCommand) {
+                socket.emit('power_command', { command: pendingPowerCommand });
+                powerstatus.textContent = `Sending ${pendingPowerCommand} command...`;
+                powerstatus.className = 'status-box status-speaking';
+            }
+            hideConfirmationModal();
+        });
+
+        modalCancelBtn.addEventListener('click', () => {
+            powerstatus.textContent = 'Status: Action cancelled.';
+            powerstatus.className = 'status-box status-idle';
+            hideConfirmationModal();
+        });
+
+        shutdownbtn.addEventListener('click', () => showConfirmationModal('shutdown'));
+        rebootbtn.addEventListener('click', () => showConfirmationModal('reboot'));
+
+        // --- New: Login Modal Logic ---
+        const loginModal = document.getElementById('login-modal');
+        const usernameInput = document.getElementById('username-input');
+        const passwordInput = document.getElementById('password-input');
+        const loginBtn = document.getElementById('login-btn');
+        const loginErrorMessage = document.getElementById('login-error-message');
+        const mainContent = document.querySelector('.cpp-container > div:not(.cpp-header):not(.modal-overlay)'); // Selects page-system-overview and page-motor-status
+
+        // Initially hide main content, show login modal
+        pageSystem.classList.add('hidden');
+        pageMotors.classList.add('hidden');
+        loginModal.classList.remove('hidden');
+
+        loginBtn.addEventListener('click', () => {
+            const username = usernameInput.value;
+            const password = passwordInput.value;
+            socket.emit('authenticate', { username: username, password: password });
+        });
+
+        // Allow pressing Enter key to login
+        usernameInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                loginBtn.click();
+            }
+        });
+        passwordInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                loginBtn.click();
+            }
+        });
+
+        socket.on('login_response', (data) => {
+            if (data.status === 'success') {
+                loginModal.classList.add('hidden');
+                pageSystem.classList.remove('hidden'); // Show main dashboard on successful login
+                loginErrorMessage.classList.add('hidden'); // Hide any previous error
+            } else {
+                loginErrorMessage.textContent = data.message;
+                loginErrorMessage.classList.remove('hidden');
+            }
+        });
+
+        socket.on('authentication_required', (data) => {
+            // This can happen if the server restarts or if authentication expires
+            loginModal.classList.remove('hidden');
+            pageSystem.classList.add('hidden');
+            pageMotors.classList.add('hidden');
+            loginErrorMessage.textContent = data.message || "Authentication required. Please log in.";
+            loginErrorMessage.classList.remove('hidden');
+        });
+
+        socket.on('unauthorized', (data) => {
+            // This is for commands sent while unauthenticated
+            loginModal.classList.remove('hidden');
+            pageSystem.classList.add('hidden');
+            pageMotors.classList.add('hidden');
+            loginErrorMessage.textContent = data.message || "Unauthorized action. Please log in.";
+            loginErrorMessage.classList.remove('hidden');
+        });
+
+        // --- Socket Listeners for UI Updates (remaining) ---
         function applyWarning(baseEl, textEl, value, metric) {
             baseEl.classList.remove('bg-warn', 'bg-danger');
             textEl.classList.remove('text-warn', 'text-danger');
@@ -265,38 +504,52 @@
             }, 2500);
         });
 
-        socket.on('dog_status_update', function(data) {
-            if (!data || !data.data_received) return;
+        socket.on('power_response', (data) => {
+            const { powerstatus } = controlElements;
+            powerstatus.textContent = `Status: ${data.message}`;
+            powerstatus.className = `status-box status-${data.status === 'success' ? 'speaking' : 'error'}`;
+            if (data.status === 'error') {
+                 setTimeout(() => {
+                    powerstatus.textContent = 'Status: Idle';
+                    powerstatus.className = 'status-box status-idle';
+                }, 3000);
+            }
+        });
 
-            // Update System Stats
+        socket.on('dog_status_update', function(data) {
+            if (!data || !data.data_received) {
+                console.warn("No data or data not received yet:", data);
+                return;
+            }
+
             statMetrics.forEach(metric => {
                 let value;
-                if (metric.id === 'hardware-uptime') {
-                    value = data.hardware_uptime_seconds / 60;
+                if (metric.id === 'hardware_uptime_seconds') {
+                    value = data[metric.id] / 60;
                 } else {
-                    value = data[metric.id.replace(/-/g, '_')];
+                    value = data[metric.id];
                 }
 
-                if (typeof value !== 'undefined') {
+                if (typeof value !== 'undefined' && value !== null) {
                     const itemEl = document.getElementById(`${metric.id}-item`);
                     const valueEl = document.getElementById(metric.id);
                     valueEl.textContent = `${value.toFixed(metric.precision)}${metric.unit}`;
                     if (metric.warn) {
                         applyWarning(itemEl, valueEl, value, metric);
                     }
+                } else {
+                    const valueEl = document.getElementById(metric.id);
+                    if (valueEl) valueEl.textContent = `--${metric.unit}`;
                 }
             });
 
-            // Update Motor Reports
             if (data.motors && data.motors.length === 12) {
                 for (let i = 0; i < 12; i++) {
                     const motor = data.motors[i];
-                    // Page 1
                     const errorItem = document.getElementById(`motor-error-item-${i}`);
                     const errorStatus = document.getElementById(`motor-error-status-${i}`);
                     errorStatus.textContent = motor.error_str;
                     errorItem.className = 'motor-error-item ' + (motor.error_str === 'OK' ? 'motor-error-ok' : 'motor-error-fault');
-                    // Page 2
                     document.getElementById(`motor-title-${i}`).textContent = `${motorNames[i]} (${motor.error_str})`;
                     document.getElementById(`motor-title-${i}`).classList.toggle('text-danger', motor.error_str !== 'OK');
                     document.getElementById(`motor-q-${i}`).textContent = `${motor.q.toFixed(3)} rad`;

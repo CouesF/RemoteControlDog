@@ -523,7 +523,7 @@ async def main():
     # 定义信号处理函数
     def signal_handler(signal, frame):
         nonlocal exit_requested
-        print("\n收到 Ctrl+C 信号，准备优雅退出...")
+        print("\n收到 Ctrl+C 信号，准备美丽优雅旋转跳跃退出...")
         exit_requested = True
     
     # 注册信号处理器
@@ -573,7 +573,7 @@ async def main():
                         
                         # 启动语音合成任务
                         await run_tts(
-                            appId, token, "zh_female_shuangkuaisisi_moon_bigtts", 
+                            appId, token, "BV700_streaming", 
                             control_msg.text_to_speak, output_path, audio_player
                         )
                     

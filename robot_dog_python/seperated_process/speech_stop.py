@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # @Time    : 2025/4/22 10:28
 # @Author  : Mark White
@@ -24,12 +25,12 @@ import base64
 import hashlib
 import hmac
 import ssl
-import signal  # 添加信号处理模块
 from datetime import datetime
 from urllib.parse import urlencode
 import websocket
 import queue
 from dataclasses import dataclass
+import signal
 
 # ==== 添加DDS相关导入和数据结构 ====
 # --- FIX FOR CROSS-DIRECTORY IMPORT ---
@@ -119,6 +120,12 @@ class AudioPlayer:
         print(f"[系统音量控制] 执行命令: {cmd}")
         os.system(cmd)
     
+    def stop_immediately(self):
+        """立即停止所有播放"""
+        if self.stream and self.stream.is_active():
+            self.stream.stop_stream()
+            print("音频流已紧急停止")
+    
     def amplify_audio(self, audio_data):
         """放大音频音量"""
         if not audio_data or len(audio_data) < 2:
@@ -195,12 +202,14 @@ class SpeechControlHandler:
                     print(f"收到音量设置请求: {control_msg.volume}%")
                     self.audio_player.set_system_volume(control_msg.volume)
                 
+                # 处理停止指令
+                if control_msg.stop_speaking:
+                    print("收到停止语音指令!")
+                    self.audio_player.stop_immediately()
+                
                 # 处理语音播放
                 if control_msg.text_to_speak and control_msg.text_to_speak.strip():
                     print(f"收到语音命令: {control_msg.text_to_speak[:20]}...")
-                    # 在实际应用中，这里应该触发语音合成
-                    # 但在本程序中，实际合成在run_tts函数中完成
-                
             except queue.Empty:
                 continue
             except Exception as e:
@@ -446,10 +455,10 @@ async def finish_connection(ws: ClientConnection):
     print("===> Sent Finish Connection event")
 
 async def run_tts(appId: str, token: str, speaker: str, text: str, output_path: str, audio_player: AudioPlayer):
-    url = 'wss://openspeech.bytedance.com/api/v3/tts/bidirection'
+    url = 'wss://tts-api.xfyun.cn/v2/tts'
     ws_header = {
-        "X-Api-App-Key": appId,
-        "X-Api-Access-Key": token,
+        "X-Appid": appId,
+        "X-Api-Key": token,
         "X-Api-Resource-Id": 'volc.service_type.10029',
         "X-Api-Connect-Id": str(uuid.uuid4()),
     }
@@ -573,7 +582,7 @@ async def main():
                         
                         # 启动语音合成任务
                         await run_tts(
-                            appId, token, "zh_female_shuangkuaisisi_moon_bigtts", 
+                            appId, token, "BV700_streaming", 
                             control_msg.text_to_speak, output_path, audio_player
                         )
                     
@@ -591,10 +600,10 @@ async def main():
                     continue  # 临时跳过权限错误
                 else:
                     print(f"主循环错误: {e}")
-                    break
+                    exit_requested = True
     
     except KeyboardInterrupt:
-        print("外部捕获到 Ctrl+C 信号，准备退出程序...")
+        print("收到 Ctrl+C 信号，准备退出程序...")
     
     except Exception as e:
         print(f"主程序发生错误: {e}")

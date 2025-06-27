@@ -338,3 +338,23 @@ class MyMotionCommand(IdlStruct, typename="MyMotionCommand"):
     x: float = 0.0
     y: float = 0.0
     r: float = 0.0
+    command_id: int = 0  # 存储 ASCII 字符，q代表退出抬腿
+
+
+# --------------------------------------------------------------------------
+# 模块: system_power_control
+# 订阅主题: PowerControl
+# 描述: 用于接收系统电源控制指令 (关机, 重启)。
+# --------------------------------------------------------------------------
+
+@dataclass
+class PowerControl(IdlStruct, typename="PowerControl"):
+    """
+    系统电源控制结构体。
+    """
+    # 命令类型: 0=无操作, 1=关机, 2=重启
+    command_type: int = 0
+    # 唯一ID，用于确认命令是否已处理，或在多个客户端时区分命令
+    command_id: int = 0
+    # 额外消息，可用于未来扩展
+    message: str = ""
