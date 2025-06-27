@@ -66,8 +66,8 @@ def switch_state(state_enum: int):
         elif current_state == FSMStateEnum.LOW_LEVEL_STAND:
             if state_enum == FSMStateEnum.HIGH_LEVEL:
                 print("[FSM] LOW_LEVEL_STAND → HIGH_LEVEL：将先趴下并切 AI")
+                lie_down_and_switch_to_ai()
                 current_state = FSMStateEnum.HIGH_LEVEL
-                threading.Thread(target=lie_down_and_switch_to_ai).start()
 
             elif state_enum == FSMStateEnum.LOW_LEVEL:
                 print("[FSM] LOW_LEVEL_STAND → LOW_LEVEL")
@@ -76,22 +76,19 @@ def switch_state(state_enum: int):
             elif state_enum == FSMStateEnum.DAMP:
                 print("[FSM] LOW_LEVEL_STAND → DAMP：将先趴下并切 AI 再切阻尼")
 
-                def go_damp_after_lie():
-                    from unitree_sdk2py.comm.motion_switcher.motion_switcher_client import MotionSwitcherClient
-                    lie_down_and_switch_to_ai()
-                    time.sleep(2.0)  # 确保切 AI 完成
-                    msc = MotionSwitcherClient(); msc.Init(); msc.SetTimeout(5.0)
-                    ret, _ = msc.SelectMode("damp")
-                    if ret == 0:
-                        print("[FSM] 已成功切换到 DAMP")
-                    else:
-                        print(f"[FSM] 切换 DAMP 失败，错误码: {ret}")
+                from control.low_level_controller import lie_down_and_switch_to_ai
+                from unitree_sdk2py.comm.motion_switcher.motion_switcher_client import MotionSwitcherClient
 
-                current_state = FSMStateEnum.DAMP
-                threading.Thread(target=go_damp_after_lie).start()
+                lie_down_and_switch_to_ai()
+                time.sleep(2.0)
 
-            else:
-                print(f"[FSM] 无法从 LOW_LEVEL_STAND 切换到 {state_enum}")
+                msc = MotionSwitcherClient(); msc.Init(); msc.SetTimeout(5.0)
+                ret, _ = msc.SelectMode("damp")
+                if ret == 0:
+                    print("[FSM] 已成功切换到 DAMP")
+                    current_state = FSMStateEnum.DAMP
+                else:
+                    print(f"[FSM] 切换 DAMP 失败，错误码: {ret}")
 
 
         elif current_state == FSMStateEnum.LOW_LEVEL:
@@ -129,23 +126,33 @@ def listener_loop():
             update_navigation_target(msg.x, msg.y, msg.r)
 
 def main_loop():
+    last_state = None
+    active_thread = None
+
     while True:
         with fsm_lock:
             state_now = current_state
 
-        print(f"[FSM] 当前状态: {state_now.name}")
+        if state_now != last_state:
+            print(f"[FSM] 状态变化: {last_state} → {state_now}")
+            last_state = state_now
 
-        if state_now == FSMStateEnum.HIGH_LEVEL:
-            run_highlevel_behavior()
-        elif state_now == FSMStateEnum.LOW_LEVEL:
-            run_lowlevel_leg_control()
-        elif state_now == FSMStateEnum.LOW_LEVEL_STAND:
-            run_lowlevel_stand_hold()
-        elif state_now == FSMStateEnum.DAMP:
-            run_damp()
+            # 如果之前有行为线程正在运行，不管，主流程直接触发新的
+            def run_target():
+                if state_now == FSMStateEnum.HIGH_LEVEL:
+                    run_highlevel_behavior()
+                elif state_now == FSMStateEnum.LOW_LEVEL:
+                    run_lowlevel_leg_control()
+                elif state_now == FSMStateEnum.LOW_LEVEL_STAND:
+                    run_lowlevel_stand_hold()
+                elif state_now == FSMStateEnum.DAMP:
+                    run_damp()
 
-        print("[FSM] 等待指令中...\n")
-        time.sleep(1)
+            active_thread = threading.Thread(target=run_target)
+            active_thread.start()
+
+        time.sleep(0.2)
+
 
 if __name__ == "__main__":
     ChannelFactoryInitialize(0, "enP8p1s0")

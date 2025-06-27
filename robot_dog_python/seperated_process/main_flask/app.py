@@ -450,11 +450,16 @@ if __name__ == '__main__':
     speech_publisher_thread.start()
 
     try:
-        socketio.run(app, host='0.0.0.0', port=5001, debug=True, allow_unsafe_werkzeug=True)
+        socketio.run(app, host='0.0.0.0', port=5002, debug=True, allow_unsafe_werkzeug=True)
     finally:
         speech_publisher_active = False
         if speech_publisher_thread.is_alive():
             speech_publisher_thread.join(timeout=1.0)
+            for _ in range(5):  # Wait a bit for the thread to finish
+                if not speech_publisher_thread.is_alive():
+                    break
+                time.sleep(0.1)
+                speech_publisher_thread.join(timeout=1.0)
             if speech_publisher_thread.is_alive():
                 print("Warning: Speech publisher thread did not terminate gracefully.")
 

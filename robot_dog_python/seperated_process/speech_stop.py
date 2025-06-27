@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # @Time    : 2025/4/22 10:28
 # @Author  : Mark White
@@ -25,12 +24,12 @@ import base64
 import hashlib
 import hmac
 import ssl
+import signal  # 添加信号处理模块
 from datetime import datetime
 from urllib.parse import urlencode
 import websocket
 import queue
 from dataclasses import dataclass
-import signal
 
 # ==== 添加DDS相关导入和数据结构 ====
 # --- FIX FOR CROSS-DIRECTORY IMPORT ---
@@ -46,6 +45,9 @@ from unitree_sdk2py.core.channel import ChannelPublisher, ChannelSubscriber, Cha
 # ==== DDS通信配置 ====
 DDS_NETWORK_INTERFACE = "enP8p1s0"  # 根据您的实际网络接口修改
 DDS_SLEEP_INTERVAL = 0.01  # DDS读取间隔
+
+# ==== 全局停止标志 ====
+stop_playing = False  # 全局停止标志
 
 # ==== TTS协议常量 ====
 PROTOCOL_VERSION = 0b0001
@@ -86,6 +88,8 @@ class AudioPlayer:
         self.stream = None
         self.device_index = device_index
         self.TARGET_SAMPLE_RATE = 48000
+        self.stop_playing_flag = False  # 实例级别的停止标志
+        self.lock = threading.Lock()  # 用于线程安全控制
         
         # 打印可用音频设备（调试信息）
         print("可用音频设备:")
@@ -112,6 +116,34 @@ class AudioPlayer:
         self.current_volume = 70
         self.set_system_volume(self.current_volume)
     
+        def stop_playing(self):
+            """立即停止播放并清空缓冲区"""
+            if self.stream and self.stream.is_active():
+                try:
+                    print("⏹ 立即停止音频播放并清空缓冲区")
+                    self.stream.stop_stream()
+                # 清空PyAudio内部缓冲区
+                    while self.stream.get_write_available() < self.stream._frames_per_buffer:
+                        time.sleep(0.01)
+                    self.stream.start_stream()  # 重新启动流
+                except Exception as e:
+                    print(f"停止播放时出错: {e}")
+        
+        # 重置内部状态
+            self.current_audio_buffer = b''
+            print("✅ 音频缓冲区已清空")
+    
+    def reset_stop_flag(self):
+        """重置停止标志"""
+        with self.lock:
+            self.stop_playing_flag = False
+    
+    def is_stop_requested(self):
+        """检查是否有停止请求"""
+        global stop_playing
+        with self.lock:
+            return self.stop_playing_flag or stop_playing
+    
     def set_system_volume(self, volume_percent: int):
         """设置 USB 声卡的系统音量（通过 ALSA）"""
         volume = max(0, min(100, volume_percent))  # 限制在 0-100 之间
@@ -119,12 +151,6 @@ class AudioPlayer:
         cmd = f"amixer -D hw:0 sset 'PCM' {volume}%"
         print(f"[系统音量控制] 执行命令: {cmd}")
         os.system(cmd)
-    
-    def stop_immediately(self):
-        """立即停止所有播放"""
-        if self.stream and self.stream.is_active():
-            self.stream.stop_stream()
-            print("音频流已紧急停止")
     
     def amplify_audio(self, audio_data):
         """放大音频音量"""
@@ -161,6 +187,10 @@ class AudioPlayer:
     
     def play_audio(self, audio_data):
         """播放音频数据"""
+        if self.is_stop_requested():
+            print("⏹ 播放请求被忽略（停止中）")
+            return
+        
         if self.stream and self.stream.is_active():
             try:
                 # 音量放大
@@ -186,6 +216,7 @@ class SpeechControlHandler:
         self.audio_player = audio_player
         self.command_queue = queue.Queue()
         self.running = True
+        self.active_tts_session = None
         self.handler_thread = threading.Thread(target=self._process_queue, daemon=True)
         self.handler_thread.start()
     
@@ -197,19 +228,43 @@ class SpeechControlHandler:
             try:
                 control_msg = self.command_queue.get(timeout=0.5)
                 
+                # 处理停止播放请求
+                if control_msg.stop_speaking:
+                    print("收到停止播放请求")
+                    self.audio_player.stop_playing()
+                    if self.active_tts_session and not self.active_tts_session.done():
+                        print("⚠️ 取消进行中的TTS会话")
+                        self.active_tts_session.cancel()
+                    
+                    continue
+                
                 # 处理音量设置
                 if hasattr(control_msg, 'volume'):
                     print(f"收到音量设置请求: {control_msg.volume}%")
                     self.audio_player.set_system_volume(control_msg.volume)
                 
-                # 处理停止指令
-                if control_msg.stop_speaking:
-                    print("收到停止语音指令!")
-                    self.audio_player.stop_immediately()
-                
                 # 处理语音播放
                 if control_msg.text_to_speak and control_msg.text_to_speak.strip():
                     print(f"收到语音命令: {control_msg.text_to_speak[:20]}...")
+                    # 在实际应用中，这里应该触发语音合成
+                    # 但在本程序中，实际合成在run_tts函数中完成
+                    
+                    if self.active_tts_session and not self.active_tts_session.done():
+                        print("⚠️ 取消前一个TTS会话以处理新请求")
+                        self.active_tts_session.cancel()
+                    
+                    # 启动新的TTS任务
+                    self.active_tts_session = asyncio.run_coroutine_threadsafe(
+                        run_tts(
+                            appId, token, 
+                            "zh_female_shuangkuaisisi_moon_bigtts",
+                            control_msg.text_to_speak,
+                            f"./tts_output_{int(time.time())}.pcm",
+                            self.audio_player
+                        ),
+                        asyncio.get_event_loop()
+                    )
+                
             except queue.Empty:
                 continue
             except Exception as e:
@@ -455,10 +510,18 @@ async def finish_connection(ws: ClientConnection):
     print("===> Sent Finish Connection event")
 
 async def run_tts(appId: str, token: str, speaker: str, text: str, output_path: str, audio_player: AudioPlayer):
-    url = 'wss://tts-api.xfyun.cn/v2/tts'
+    global stop_playing
+    
+    print(f"启动TTS合成: 文本长度={len(text)}")
+    
+    # 重置停止标志
+    audio_player.reset_stop_flag()
+    stop_playing = False
+    
+    url = 'wss://openspeech.bytedance.com/api/v3/tts/bidirection'
     ws_header = {
-        "X-Appid": appId,
-        "X-Api-Key": token,
+        "X-Api-App-Key": appId,
+        "X-Api-Access-Key": token,
         "X-Api-Resource-Id": 'volc.service_type.10029',
         "X-Api-Connect-Id": str(uuid.uuid4()),
     }
@@ -488,7 +551,13 @@ async def run_tts(appId: str, token: str, speaker: str, text: str, output_path: 
         
             async with aiofiles.open(output_path, mode="wb") as output_file:
                     while True:
-                        res_bytes = await ws.recv()
+                        # 检查是否有停止请求
+                        if stop_playing or audio_player.is_stop_requested():
+                            print("⏹ 收到停止请求，退出TTS处理")
+                            await finish_connection(ws)
+                            return
+                            
+                        res_bytes = await asyncio.wait_for(ws.recv(), timeout=1.0)
                         res = parser_response(res_bytes)
                 
                 # 处理音频片段
@@ -523,6 +592,7 @@ async def run_tts(appId: str, token: str, speaker: str, text: str, output_path: 
 
 # 主功能
 async def main():
+    global stop_playing
     appId = "2657638375"
     token = "NHt65iYV2xQ-0Uv6VfO97BletTaOMtAn"
     
@@ -563,6 +633,13 @@ async def main():
         
         while not exit_requested:
             try:
+                # 检查是否有停止请求
+                if stop_playing:
+                    # 重置停止标志
+                    stop_playing = False
+                    print("🚨 处理全局停止请求")
+                    audio_player.stop_playing()
+                
                 # 读取DDS消息
                 control_msg = speech_control_sub.Read(1)
                 if control_msg is not None:
@@ -576,13 +653,13 @@ async def main():
                     speech_handler.add_command(control_msg)
                     
                     # 如果有文本需要合成
-                    if control_msg.text_to_speak and control_msg.text_to_speak.strip():
+                    if control_msg.text_to_speak and control_msg.text_to_speak.strip() and not stop_playing:
                         print(f"合成文本: '{control_msg.text_to_speak[:20]}...'")
                         output_path = f"./tts_output_{int(time.time())}.pcm"
                         
                         # 启动语音合成任务
                         await run_tts(
-                            appId, token, "BV700_streaming", 
+                            appId, token, "zh_female_shuangkuaisisi_moon_bigtts", 
                             control_msg.text_to_speak, output_path, audio_player
                         )
                     
@@ -598,12 +675,14 @@ async def main():
                     print(f"DDS读取失败: {e}")
                 elif "Operation not permitted" in str(e):
                     continue  # 临时跳过权限错误
+                elif "TimeoutError" in str(e):
+                    continue  # 忽略超时错误
                 else:
                     print(f"主循环错误: {e}")
-                    exit_requested = True
+                    break
     
     except KeyboardInterrupt:
-        print("收到 Ctrl+C 信号，准备退出程序...")
+        print("外部捕获到 Ctrl+C 信号，准备退出程序...")
     
     except Exception as e:
         print(f"主程序发生错误: {e}")

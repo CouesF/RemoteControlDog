@@ -26,7 +26,7 @@ from unitree_sdk2py.core.channel import ChannelFactoryInitialize, ChannelPublish
 # DDS 配置
 DEFAULT_NETWORK_INTERFACE = "enP8p1s0"  # 默认网络接口
 DEFAULT_TEST_TEXT = "语音合成服务。"  # 默认测试文本
-DEFAULT_VOLUME = 40  # 默认音量百分比
+DEFAULT_VOLUME = 60  # 默认音量百分比
 DEFAULT_TEST_COUNT = 3  # 默认测试次数
 DDS_SLEEP_INTERVAL = 0.1  # DDS消息发送间隔
 
@@ -159,7 +159,7 @@ def run_automated_test(test_text, volume, test_count, network_interface):
             # 测试停止功能（每隔2次测试）
             if (i+1) % 2 == 0 and not tester.is_stop_requested():
                 print("测试停止功能...")
-                tester.send_tts_command("这将被中断的语音", volume)
+                tester.send_tts_command("语音合成服务，这是一段将被中断的语音", volume)
                 time.sleep(0.5)  # 稍微播放一会儿
                 tester.send_stop_command()
                 print("已发送停止命令")

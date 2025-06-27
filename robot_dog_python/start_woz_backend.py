@@ -5,6 +5,7 @@ WOZ系统后端启动脚本
 import sys
 import os
 from pathlib import Path
+from woz_system_backend.main import run_server
 
 # 添加项目根目录到Python路径
 project_root = Path(__file__).parent
@@ -17,7 +18,7 @@ os.environ.setdefault('PYTHONPATH', str(project_root))
 def main():
     """启动WOZ系统后端"""
     try:
-        from woz_system_backend.main import run_server
+        
         print("Starting WOZ System Backend...")
         print(f"Project root: {project_root}")
         print("Backend will be available at: http://0.0.0.0:8995")

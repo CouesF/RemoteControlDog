@@ -262,10 +262,17 @@ class MapHandler:
             maps = []
             for row in rows:
                 map_data = db.from_json(row['data'])
+                
+                # 统计目标点数量
+                target_count_query = "SELECT COUNT(*) as count FROM ja_targets WHERE map_id = ?"
+                target_count_rows = db.execute_query(target_count_query, (row['id'],))
+                target_count = target_count_rows[0]['count'] if target_count_rows else 0
+                
                 map_info = {
                     "mapId": row['id'],
                     "mapName": row['name'],
                     "mapDescription": map_data.get('mapDescription', ''),
+                    "targetCount": target_count
                 }
                 maps.append(map_info)
             
@@ -274,6 +281,30 @@ class MapHandler:
         except Exception as e:
             logger.error(f"Failed to get maps: {e}")
             raise HTTPException(status_code=500, detail="Failed to retrieve maps")
+    
+    async def get_by_id(self, map_id: str) -> Dict:
+        """根据ID获取地图"""
+        try:
+            query = "SELECT * FROM maps WHERE id = ?"
+            rows = db.execute_query(query, (map_id,))
+            
+            if not rows:
+                raise HTTPException(status_code=404, detail="Map not found")
+            
+            row = rows[0]
+            map_data = db.from_json(row['data'])
+            
+            return {
+                "mapId": row['id'],
+                "mapName": row['name'],
+                "mapDescription": map_data.get('mapDescription', ''),
+            }
+            
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Failed to get map {map_id}: {e}")
+            raise HTTPException(status_code=500, detail="Failed to retrieve map")
     
     async def create_map(self, map_data: Dict) -> Dict:
         """创建新地图"""

@@ -148,6 +148,12 @@ async def get_maps():
     return await map_handler.get_all_maps()
 
 
+@app.get(f"{API_PREFIX}/maps/{{map_id}}", response_model=Dict)
+async def get_map(map_id: str):
+    """根据ID获取地图"""
+    return await map_handler.get_by_id(map_id)
+
+
 @app.post(f"{API_PREFIX}/maps", response_model=Dict, status_code=201)
 async def create_map(map_data: Dict):
     """创建新地图"""
@@ -346,7 +352,7 @@ async def root():
 def run_server():
     """运行服务器"""
     uvicorn.run(
-        "robot_dog_python.woz_system_backend.main:app",
+        "woz_system_backend.main:app",
         host=API_HOST,
         port=API_PORT,
         reload=False,
