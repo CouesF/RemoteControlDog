@@ -53,6 +53,7 @@ contextBridge.exposeInMainWorld('api', {
     onCameraList: (callback) => ipcRenderer.on('camera-list', (event, ...args) => callback(...args)),
     onCameraFrame: (callback) => ipcRenderer.on('camera-frame', (event, ...args) => callback(...args)),
     onSubscriptionChange: (callback) => ipcRenderer.on('subscription-changed', (event, ...args) => callback(...args)),
+    onCameraConnectionState: (callback) => ipcRenderer.on('camera-connection-state', (event, ...args) => callback(...args)),
 
     // --- Generic UDP API ---
     connectUDP: (options) => ipcRenderer.invoke('connect-udp', options),

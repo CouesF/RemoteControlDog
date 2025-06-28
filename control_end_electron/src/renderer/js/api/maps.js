@@ -7,9 +7,10 @@ import CONFIG from '../config.js';
 
 class MapsAPI extends BaseAPI {
     constructor() {
-        super(CONFIG.API.BASE_URL);
+        // 使用WOZ系统后端地址
+        super('http://118.31.58.101:48995/api');
         this.setTimeout(CONFIG.API.TIMEOUT);
-        this.endpoint = API_ENDPOINTS.MAPS;
+        this.endpoint = '/maps';
     }
 
     // 获取所有地图
@@ -67,8 +68,9 @@ class MapsAPI extends BaseAPI {
     // 删除地图
     async delete(mapId) {
         try {
+            // 直接调用父类的delete方法，它会处理好请求和响应
             await super.delete(`${this.endpoint}/${mapId}`);
-            return true;
+            return true; // 明确返回true表示成功
         } catch (error) {
             Logger.error(`Failed to delete map ${mapId}:`, error);
             throw error;
@@ -88,7 +90,20 @@ class MapsAPI extends BaseAPI {
     // 为地图添加目标点
     async addTarget(mapId, targetData) {
         try {
-            return await this.post(`${this.endpoint}/${mapId}/targets`, targetData);
+            // 构建FormData用于文件上传
+            const formData = new FormData();
+            formData.append('targetName', targetData.targetName);
+            formData.append('description', targetData.description || '');
+            formData.append('pose', JSON.stringify(targetData.pose));
+            
+            if (targetData.targetImgFile) {
+                formData.append('targetImgFile', targetData.targetImgFile);
+            }
+            if (targetData.envImgFile) {
+                formData.append('envImgFile', targetData.envImgFile);
+            }
+            
+            return await this.upload(`${this.endpoint}/${mapId}/targets`, formData);
         } catch (error) {
             Logger.error(`Failed to add target to map ${mapId}:`, error);
             throw error;
@@ -96,22 +111,57 @@ class MapsAPI extends BaseAPI {
     }
 
     // 更新目标点
-    async updateTarget(mapId, targetId, targetData) {
+    async updateTarget(targetId, targetData) {
         try {
-            return await this.put(`${this.endpoint}/${mapId}/targets/${targetId}`, targetData);
+            // 构建FormData用于文件上传
+            const formData = new FormData();
+            formData.append('targetName', targetData.targetName);
+            formData.append('description', targetData.description || '');
+            formData.append('pose', JSON.stringify(targetData.pose));
+            
+            if (targetData.targetImgFile) {
+                formData.append('targetImgFile', targetData.targetImgFile);
+            }
+            if (targetData.envImgFile) {
+                formData.append('envImgFile', targetData.envImgFile);
+            }
+            
+            return await this.upload(`/targets/${targetId}`, formData, 'PUT');
         } catch (error) {
-            Logger.error(`Failed to update target ${targetId} in map ${mapId}:`, error);
+            Logger.error(`Failed to update target ${targetId}:`, error);
             throw error;
         }
     }
 
     // 删除目标点
-    async deleteTarget(mapId, targetId) {
+    async deleteTarget(targetId) {
         try {
-            await super.delete(`${this.endpoint}/${mapId}/targets/${targetId}`);
+            await super.delete(`/targets/${targetId}`);
             return true;
         } catch (error) {
-            Logger.error(`Failed to delete target ${targetId} from map ${mapId}:`, error);
+            Logger.error(`Failed to delete target ${targetId}:`, error);
+            throw error;
+        }
+    }
+
+    // 更新目标点顺序
+    async updateTargetsOrder(mapId, targetIds) {
+        try {
+            const orderData = { targetIds };
+            await this.put(`${this.endpoint}/${mapId}/targets/order`, orderData);
+            return true;
+        } catch (error) {
+            Logger.error(`Failed to update targets order for map ${mapId}:`, error);
+            throw error;
+        }
+    }
+
+    // 根据ID获取目标点
+    async getTargetById(targetId) {
+        try {
+            return await this.get(`/targets/${targetId}`);
+        } catch (error) {
+            Logger.error(`Failed to get target ${targetId}:`, error);
             throw error;
         }
     }

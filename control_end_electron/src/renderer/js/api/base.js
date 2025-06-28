@@ -42,7 +42,7 @@ export class BaseAPI {
     }
 
     // 上传文件
-    async upload(endpoint, formData, options = {}) {
+    async upload(endpoint, formData, method = 'POST', options = {}) {
         const uploadOptions = {
             ...options,
             headers: {
@@ -51,7 +51,7 @@ export class BaseAPI {
             }
         };
         
-        return this.request('POST', endpoint, formData, uploadOptions);
+        return this.request(method, endpoint, formData, uploadOptions);
     }
 
     // 通用请求方法

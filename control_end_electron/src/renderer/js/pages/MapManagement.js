@@ -6,6 +6,7 @@ import { Validator } from '../utils/validator.js';
 import Logger from '../utils/logger.js';
 import mapsAPI from '../api/maps.js';
 import EventBus from '../eventBus.js';
+import { formatIdDisplayWithTitle } from '../utils/idFormatter.js';
 
 export default class MapManagement extends BasePage {
     constructor() {
@@ -55,6 +56,18 @@ export default class MapManagement extends BasePage {
         if (tableBody) {
             this.addEventListener(tableBody, 'click', (e) => this.handleTableAction(e));
         }
+
+        // 监听页面回到地图管理的事件，用于刷新目标点数量
+        this.onEvent(EVENTS.TARGET_UPDATED, () => {
+            this.refreshData();
+        });
+
+        // 监听页面显示事件，从地图构建页面返回时刷新数据
+        this.onEvent(EVENTS.PAGE_SHOW, (data) => {
+            if (data.from === PAGES.MAP_BUILDER) {
+                this.refreshData();
+            }
+        });
     }
 
     renderMapTable() {
@@ -82,7 +95,7 @@ export default class MapManagement extends BasePage {
             return `
                 <tr data-map-id="${map.mapId}">
                     <td>
-                        <code>${map.mapId}</code>
+                        ${formatIdDisplayWithTitle(map.mapId)}
                     </td>
                     <td>
                         <strong>${map.mapName}</strong>
@@ -96,28 +109,16 @@ export default class MapManagement extends BasePage {
                     <td>
                         <div class="btn-group btn-group-sm" role="group">
                             <button class="btn btn-outline-primary" 
-                                    data-action="edit-targets" 
+                                    data-action="enter-builder" 
                                     data-map-id="${map.mapId}"
-                                    title="编辑目标点">
-                                <i class="fas fa-map-marker-alt"></i>
-                            </button>
-                            <button class="btn btn-outline-secondary" 
-                                    data-action="edit" 
-                                    data-map-id="${map.mapId}"
-                                    title="编辑地图">
-                                <i class="fas fa-edit"></i>
-                            </button>
-                            <button class="btn btn-outline-info" 
-                                    data-action="view" 
-                                    data-map-id="${map.mapId}"
-                                    title="查看详情">
-                                <i class="fas fa-eye"></i>
+                                    title="进入构建页面">
+                                <i class="fas fa-map-marked-alt"></i> 进入构建
                             </button>
                             <button class="btn btn-outline-danger" 
                                     data-action="delete" 
                                     data-map-id="${map.mapId}"
                                     title="删除地图">
-                                <i class="fas fa-trash"></i>
+                                <i class="fas fa-trash"></i> 删除
                             </button>
                         </div>
                     </td>
@@ -152,14 +153,8 @@ export default class MapManagement extends BasePage {
         }
 
         switch (action) {
-            case 'view':
-                this.handleViewMap(map);
-                break;
-            case 'edit':
-                this.handleEditMap(map);
-                break;
-            case 'edit-targets':
-                this.handleEditTargets(map);
+            case 'enter-builder':
+                this.handleEnterBuilder(map);
                 break;
             case 'delete':
                 this.handleDeleteMap(map);
@@ -167,19 +162,7 @@ export default class MapManagement extends BasePage {
         }
     }
 
-    handleViewMap(map) {
-        // TODO: 实现查看地图详情功能
-        this.showInfo(`TODO: 显示地图 ${map.mapName} 的详细信息`);
-        Logger.info('View map:', map);
-    }
-
-    handleEditMap(map) {
-        // TODO: 实现编辑地图功能
-        this.showInfo(`TODO: 编辑地图 ${map.mapName}`);
-        Logger.info('Edit map:', map);
-    }
-
-    handleEditTargets(map) {
+    handleEnterBuilder(map) {
         // 跳转到地图构建页面
         EventBus.emit(EVENTS.NAVIGATE_TO, { 
             page: PAGES.MAP_BUILDER,

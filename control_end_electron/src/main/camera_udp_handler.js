@@ -20,6 +20,9 @@ const SERVER_HOST = '118.31.58.101';
 const SERVER_PORT = 48991;
 const MAX_UDP_SIZE = 65507;
 const FRAGMENT_TIMEOUT = 5000; // 5 seconds
+const CONNECTION_RETRY_INTERVAL = 3000; // 3 seconds
+const HEARTBEAT_CHECK_INTERVAL = 5000; // 5 seconds
+const HEARTBEAT_TIMEOUT = 15000; // 15 seconds, should be longer than the check interval
 
 // --- Protocol Constants ---
 const MAGIC_BINARY_FRAME = 0xFF;
@@ -33,18 +36,27 @@ class CameraUDPHandler {
         this.subscribedCameras = new Set();
         this.fragmentBuffer = new Map();
 
+        // Connection state management
+        this.connectionState = 'disconnected'; // 'disconnected', 'connecting', 'connected'
+        this.connectionInterval = null;
+        this.heartbeatInterval = null;
+        this.lastMessageTimestamp = 0;
+
         this._setupSocketListeners();
         this._setupIpcListeners();
     }
 
     _setupSocketListeners() {
         this.socket.on('message', (msg, rinfo) => {
+            this.lastMessageTimestamp = Date.now();
             this._processReceivedData(msg);
         });
 
         this.socket.on('error', (err) => {
-            logger.error(`Camera UDP socket error:\n${err.stack}`);
-            this.socket.close();
+            logger.error(`CRITICAL: Camera UDP socket error received. This is the likely cause of disconnection.`);
+            logger.error(`Error details: ${err.message}\n${err.stack}`);
+            // Don't close the socket, allow for reconnection attempts
+            this._handleDisconnection();
         });
 
         this.socket.on('listening', () => {
@@ -69,20 +81,56 @@ class CameraUDPHandler {
     }
 
     connect() {
-        logger.info('Requesting camera list to test connection...');
+        if (this.connectionState !== 'disconnected') {
+            logger.warn(`Connect called in state: ${this.connectionState}. Ignoring.`);
+            return;
+        }
+
+        logger.info('Starting camera gateway connection process...');
+        this.connectionState = 'connecting';
         this.sessionId = uuidv4();
-        this._sendPacket({ request_type: 'get_camera_list' });
+        
         // Cleanup expired fragments periodically
-        this.fragmentCleanupInterval = setInterval(() => this._cleanupExpiredFragments(), FRAGMENT_TIMEOUT);
+        if (!this.fragmentCleanupInterval) {
+            this.fragmentCleanupInterval = setInterval(() => this._cleanupExpiredFragments(), FRAGMENT_TIMEOUT);
+        }
+
+        // Stop any previous connection attempts
+        if (this.connectionInterval) {
+            clearInterval(this.connectionInterval);
+        }
+
+        this.connectionInterval = setInterval(() => this._attemptConnection(), CONNECTION_RETRY_INTERVAL);
+        this._attemptConnection(); // Attempt immediately
+    }
+
+    _attemptConnection() {
+        logger.info('Attempting to connect to camera gateway...');
+        this._sendPacket({ request_type: 'get_camera_list' });
     }
 
     disconnect() {
+        logger.info('Disconnecting from camera gateway...');
         if (this.subscribedCameras.size > 0) {
             this.unsubscribe(Array.from(this.subscribedCameras));
         }
+        
         if (this.fragmentCleanupInterval) {
             clearInterval(this.fragmentCleanupInterval);
+            this.fragmentCleanupInterval = null;
         }
+        if (this.connectionInterval) {
+            clearInterval(this.connectionInterval);
+            this.connectionInterval = null;
+        }
+        if (this.heartbeatInterval) {
+            clearInterval(this.heartbeatInterval);
+            this.heartbeatInterval = null;
+        }
+
+        this.connectionState = 'disconnected';
+        this.subscribedCameras.clear();
+        this.mainWindow.webContents.send('camera-connection-state', 'disconnected');
         logger.info('Camera UDP handler disconnected.');
     }
 
@@ -170,8 +218,9 @@ class CameraUDPHandler {
                 resolution: [width, height],
                 quality,
             });
+            logger.info(`Successfully parsed binary frame for cam ${cameraId} and sent to renderer.`);
         } catch (e) {
-            logger.error(`Error parsing binary frame: ${e.message}`);
+            logger.error(`CRITICAL: Error parsing binary frame: ${e.message}\n${e.stack}`);
         }
     }
 
@@ -227,10 +276,69 @@ class CameraUDPHandler {
         }
     }
 
+    _handleDisconnection() {
+        if (this.connectionState === 'disconnected') return;
+        logger.warn('Connection to camera gateway lost. Attempting to reconnect...');
+        
+        // Clean up intervals
+        if (this.heartbeatInterval) {
+            clearInterval(this.heartbeatInterval);
+            this.heartbeatInterval = null;
+        }
+        if (this.connectionInterval) {
+            clearInterval(this.connectionInterval);
+            this.connectionInterval = null;
+        }
+
+        this.connectionState = 'disconnected';
+        // Don't clear subscribedCameras, so we can re-subscribe on reconnect
+        
+        // Notify renderer
+        this.mainWindow.webContents.send('camera-connection-state', 'disconnected');
+        this.mainWindow.webContents.send('camera-list', []); // Clear camera list
+        this.mainWindow.webContents.send('subscription-changed', []);
+
+        // Restart connection process
+        this.connect();
+    }
+
+    _startHeartbeat() {
+        logger.info('Connection established. Starting heartbeat check.');
+        if (this.heartbeatInterval) {
+            clearInterval(this.heartbeatInterval);
+        }
+        this.heartbeatInterval = setInterval(() => this._checkConnection(), HEARTBEAT_CHECK_INTERVAL);
+    }
+
+    _checkConnection() {
+        if (Date.now() - this.lastMessageTimestamp > HEARTBEAT_TIMEOUT) {
+            this._handleDisconnection();
+        }
+    }
+
     _handleResponse(response) {
         const msgType = response.message;
+
+        if (this.connectionState === 'connecting' && msgType === 'camera_list') {
+            this.connectionState = 'connected';
+            clearInterval(this.connectionInterval);
+            this.connectionInterval = null;
+            this.mainWindow.webContents.send('camera-connection-state', 'connected');
+            logger.info('Successfully connected to camera gateway.');
+            this._startHeartbeat();
+
+            // After reconnecting, re-subscribe to any cameras we were previously watching
+            if (this.subscribedCameras.size > 0) {
+                logger.info(`Re-subscribing to cameras: ${Array.from(this.subscribedCameras).join(', ')}`);
+                this._sendPacket({
+                    request_type: 'subscribe',
+                    camera_ids: Array.from(this.subscribedCameras),
+                    session_id: this.sessionId
+                });
+            }
+        }
+
         if (msgType === 'camera_list') {
-            // Defensive coding: Ensure we send an array, even if the response is missing the 'cameras' key.
             const cameras = response.cameras || [];
             this.mainWindow.webContents.send('camera-list', cameras);
         } else if (msgType === 'subscription_confirmed') {
