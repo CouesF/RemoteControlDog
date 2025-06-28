@@ -56,14 +56,24 @@ def clamp_warning(index, val, lo, hi):
     return True
 
 def run_lowlevel_leg_control():
+    from main_state_machine import get_current_state, FSMStateEnum
     global pose_buffer
     print("[LOW_LEVEL] 执行自动抬腿 + DDS 姿态监听...")
+
+    def exit_requested():
+        return get_current_state() != FSMStateEnum.LOW_LEVEL
+
     msc = MotionSwitcherClient(); msc.Init(); msc.SetTimeout(5.0)
     sport = SportClient(); sport.Init(); sport.StandUp()
     time.sleep(1.0)
-    while True:
+    while not exit_requested():
         msc.ReleaseMode(); time.sleep(0.01)
-        if msc.CheckMode()[1].get("name", "") == "": break
+        if msc.CheckMode()[1].get("name", "") == "":
+            break
+
+    if exit_requested():
+        print("[LOW_LEVEL] 状态已切换，取消低层动作控制")
+        return
 
     publisher = ChannelPublisher("rt/lowcmd", LowCmd_); publisher.Init()
     low_cmd = unitree_go_msg_dds__LowCmd_()
@@ -75,20 +85,73 @@ def run_lowlevel_leg_control():
 
     step1 = stand[:]; step1[11] -= 0.3; step1[9] += 0.3
     interpolate_selected_joints(stand, step1, [9,11], 650, low_cmd, publisher, crc, high_kp, high_kd)
+    if exit_requested(): return
 
     step2 = step1[:]; step2[2] -= 0.8
     interpolate_selected_joints(step1, step2, [2], 250, low_cmd, publisher, crc, high_kp, high_kd)
+    if exit_requested(): return
+
     step3 = step2[:]; step3[0] -= 0.8
     interpolate_selected_joints(step2, step3, [0], 250, low_cmd, publisher, crc, high_kp, high_kd)
+    if exit_requested(): return
+
     step4 = step3[:]; step4[1] -= 1.0
     interpolate_selected_joints(step3, step4, [1], 250, low_cmd, publisher, crc, high_kp, high_kd)
+    if exit_requested(): return
+
     step5 = step4[:]; step5[2] = stand[2]
     interpolate_selected_joints(step4, step5, [2], 250, low_cmd, publisher, crc, high_kp, high_kd)
+    if exit_requested(): return
 
     pose_buffer = step5[:]
-    adjusting = {"running": True}
-    subscriber = ChannelSubscriber("rt/keyboard_control", MyMotionCommand)
-    subscriber.Init()
+    stop_flag = {"stop": False}
+
+    def maintain_pose_loop():
+        while not stop_flag["stop"] and not exit_requested():
+            for j in range(12):
+                low_cmd.motor_cmd[j].mode = 0x01
+                low_cmd.motor_cmd[j].q = pose_buffer[j]
+                low_cmd.motor_cmd[j].dq = 0.0
+                low_cmd.motor_cmd[j].kp = high_kp[j]
+                low_cmd.motor_cmd[j].kd = high_kd[j]
+                low_cmd.motor_cmd[j].tau = 0.0
+            low_cmd.crc = crc.Crc(low_cmd)
+            publisher.Write(low_cmd)
+            time.sleep(0.002)
+
+    def receive_dds_command_loop():
+        subscriber = ChannelSubscriber("rt/keyboard_control", MyMotionCommand)
+        subscriber.Init()
+        while not stop_flag["stop"] and not exit_requested():
+            msg = subscriber.Read()
+            if not msg:
+                time.sleep(0.01)
+                continue
+            if msg.command_type == 1 and msg.command_id == ord("q"):
+                print("[DDS] 收到退出信号，恢复站姿")
+                stop_flag["stop"] = True
+                break
+            if clamp_warning(1, msg.angle1, -1.5, 3.4):
+                move_joint(1, msg.angle1)
+            if clamp_warning(2, msg.angle2, -2.7, -0.8):
+                move_joint(2, msg.angle2)
+
+    t_pose = threading.Thread(target=maintain_pose_loop)
+    t_cmd = threading.Thread(target=receive_dds_command_loop)
+    t_pose.start(); t_cmd.start()
+    t_cmd.join(); stop_flag["stop"] = True; t_pose.join()
+
+    if exit_requested():
+        print("[LOW_LEVEL] 状态已切换，抬腿控制结束")
+        return
+
+    for idx in [0,1,2,9,10,11]:
+        restore = pose_buffer[:]; restore[idx] = stand[idx]
+        interpolate_selected_joints(pose_buffer, restore, [idx], 300, low_cmd, publisher, crc)
+        pose_buffer = restore[:]
+
+    print("[LOW_LEVEL] 姿态恢复完毕，维持标准站立")
+
 
     def receive_dds_command():
         while adjusting["running"]:

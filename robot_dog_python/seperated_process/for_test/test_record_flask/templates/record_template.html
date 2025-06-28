@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web Microphone Monitor</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.0/socket.io.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f4f4f4; color: #333; }
+        h1 { color: #0056b3; }
+        button {
+            padding: 12px 25px;
+            margin: 8px;
+            cursor: pointer;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            transition: background-color 0.3s ease;
+        }
+        button:hover:enabled {
+            opacity: 0.9;
+        }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        #startButton { background-color: #28a745; color: white; }
+        #startButton:hover:enabled { background-color: #218838; }
+        #stopButton { background-color: #dc3545; color: white; }
+        #stopButton:hover:enabled { background-color: #c82333; }
+        #status {
+            margin-top: 25px;
+            padding: 15px;
+            border-radius: 8px;
+            background-color: #e9ecef;
+            color: #495057;
+            font-size: 1.1em;
+            text-align: center;
+        }
+        #log {
+            margin-top: 20px;
+            border: 1px solid #dee2e6;
+            padding: 15px;
+            min-height: 100px;
+            max-height: 250px;
+            overflow-y: auto;
+            background-color: #ffffff;
+            border-radius: 8px;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 0.9em;
+            line-height: 1.4;
+            color: #555;
+        }
+        #log p {
+            margin: 5px 0;
+            padding-bottom: 3px;
+            border-bottom: 1px dotted #eee;
+        }
+        #log p:last-child {
+            border-bottom: none;
+        }
+    </style>
+</head>
+<body>
+    <h1>Web Microphone Monitor</h1>
+
+    <button id="startButton">Start Recording & Monitoring</button>
+    <button id="stopButton" disabled>Stop Recording & Monitoring</button>
+
+    <div id="status">Ready to connect...</div>
+    <div id="log"></div>
+
+    <script>
+        const statusDiv = document.getElementById('status');
+        const logDiv = document.getElementById('log');
+        const startButton = document.getElementById('startButton');
+        const stopButton = document.getElementById('stopButton');
+
+        // Connect to the SocketIO server
+        const socket = io('http://localhost:5000/audio'); // Ensure this matches your Flask server address
+
+        let audioContext = null;
+        let audioQueue = []; // To buffer incoming audio data
+        let nextPlaybackTime = 0; // To schedule audio chunks sequentially
+        const SAMPLE_RATE = 16000; // MUST MATCH THE PYTHON SERVER'S FS
+
+        function log(message) {
+            const p = document.createElement('p');
+            p.textContent = message;
+            logDiv.appendChild(p);
+            logDiv.scrollTop = logDiv.scrollHeight; // Auto-scroll to bottom
+        }
+
+        socket.on('connect', () => {
+            log('Connected to server.');
+            statusDiv.textContent = 'Ready to start recording.';
+            startButton.disabled = false; // Enable start button once connected
+        });
+
+        socket.on('disconnect', () => {
+            log('Disconnected from server.');
+            statusDiv.textContent = 'Disconnected.';
+            stopAudioPlayback(); // Stop any ongoing playback
+            startButton.disabled = false;
+            stopButton.disabled = true;
+        });
+
+        socket.on('response', (data) => {
+            log(`Server: ${data.data}`);
+        });
+
+        socket.on('status', (data) => {
+            statusDiv.textContent = data.message;
+            log(`Status: ${data.message}`);
+        });
+
+        socket.on('audio_data', (audioBytes) => {
+            // Received binary audio data (ArrayBuffer)
+            // It's a 16-bit PCM, mono, 16000 Hz from Python server
+            const audioData = new Int16Array(audioBytes);
+            audioQueue.push(audioData); // Add to our queue
+
+            // If audioContext is ready and we're not currently scheduling playback, start
+            if (audioContext && audioContext.state === 'running') {
+                scheduleNextAudioChunk();
+            }
+        });
+
+        function initAudioContext() {
+            if (!audioContext || audioContext.state === 'closed') {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: SAMPLE_RATE });
+                log('AudioContext initialized with sample rate: ' + SAMPLE_RATE);
+                // Set initial playback time to current time
+                nextPlaybackTime = audioContext.currentTime;
+            }
+            // Attempt to resume context if suspended (common browser policy)
+            if (audioContext.state === 'suspended') {
+                audioContext.resume().then(() => {
+                    log('AudioContext resumed successfully.');
+                    // If audioContext just resumed, ensure playback starts
+                    if (audioQueue.length > 0) {
+                        scheduleNextAudioChunk();
+                    }
+                }).catch(e => log('Error resuming AudioContext: ' + e));
+            }
+        }
+
+        function scheduleNextAudioChunk() {
+            if (audioQueue.length === 0 || !audioContext || audioContext.state !== 'running') {
+                return; // Nothing to play or context not ready
+            }
+
+            const audioData = audioQueue.shift(); // Get the next chunk from the queue
+
+            // Create an AudioBuffer
+            const buffer = audioContext.createBuffer(
+                1,                      // Number of channels (mono)
+                audioData.length,       // Number of samples
+                audioContext.sampleRate // Sample rate
+            );
+
+            // Get a Float32Array representation of the audio buffer's channel
+            const channelData = buffer.getChannelData(0);
+
+            // Convert Int16 (signed 16-bit integers) to Float32 for Web Audio API
+            // Samples are normalized to a range of -1.0 to 1.0
+            for (let i = 0; i < audioData.length; i++) {
+                channelData[i] = audioData[i] / 32768.0; // Max value of int16 is 32767
+            }
+
+            // Create an AudioBufferSourceNode
+            const source = audioContext.createBufferSource();
+            source.buffer = buffer;
+            source.connect(audioContext.destination);
+
+            // Schedule the playback
+            // Ensure chunks play one after another with minimal gap/overlap
+            if (audioContext.currentTime > nextPlaybackTime) {
+                // If we've fallen behind, catch up to current time
+                nextPlaybackTime = audioContext.currentTime;
+            }
+            source.start(nextPlaybackTime); // Play at the scheduled time
+            nextPlaybackTime += buffer.duration; // Advance the scheduled time by this buffer's duration
+
+            // Schedule the next chunk when this one finishes (or slightly before)
+            // This is a simple way to keep the playback going. For more robust systems,
+            // you might want to use AudioWorklet or more advanced buffering.
+            source.onended = () => {
+                if (audioQueue.length > 0 && audioContext.state === 'running') {
+                    // Try to schedule the next one immediately if available
+                    scheduleNextAudioChunk();
+                }
+            };
+        }
+
+        startButton.addEventListener('click', () => {
+            startButton.disabled = true;
+            stopButton.disabled = false;
+            log('Sending start_recording command...');
+            socket.emit('start_recording');
+            statusDiv.textContent = 'Starting recording...';
+
+            initAudioContext(); // Initialize or resume AudioContext on user gesture
+        });
+
+        stopButton.addEventListener('click', () => {
+            startButton.disabled = false;
+            stopButton.disabled = true;
+            log('Sending stop_recording command...');
+            socket.emit('stop_recording');
+            statusDiv.textContent = 'Stopping recording...';
+            stopAudioPlayback();
+            audioQueue = []; // Clear any remaining audio in queue
+        });
+
+        function stopAudioPlayback() {
+            if (audioContext && audioContext.state !== 'closed') {
+                audioContext.close().then(() => {
+                    log('AudioContext closed.');
+                    audioContext = null;
+                    nextPlaybackTime = 0; // Reset playback time
+                }).catch(e => log('Error closing AudioContext: ' + e));
+            }
+        }
+
+        // Handle browser tab closing/refresh to stop server recording
+        window.addEventListener('beforeunload', () => {
+            // Only emit stop if we're actively recording, to prevent unnecessary server calls
+            if (stopButton.disabled === false) { // Check if stop button is enabled, implying active recording
+                socket.emit('stop_recording'); // Try to stop recording on server
+            }
+            socket.disconnect(); // Disconnect WebSocket
+        });
+
+    </script>
+</body>
+</html>

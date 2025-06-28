@@ -45,16 +45,16 @@ CAMERA_CONFIGS = {
     0: {
         "type": "csi",
         "resolution": (640, 480),
-        "fps": 15,
-        "quality": 50,
+        "fps": 12,
+        "quality": 40,
         "name": "CSI摄像头-0",
         "sensor_id": 0
     },
     1: {
         "type": "csi",
         "resolution": (640, 480),
-        "fps": 15,
-        "quality": 50,
+        "fps": 12,
+        "quality": 40,
         "name": "CSI摄像头-1",
         "sensor_id": 1
     },

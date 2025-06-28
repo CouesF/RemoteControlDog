@@ -24,6 +24,12 @@ class FSMStateEnum(IntEnum):
 current_state = FSMStateEnum.HIGH_LEVEL
 fsm_lock = threading.Lock()
 
+
+def get_current_state():
+    with fsm_lock:
+        return current_state
+
+
 def switch_state(state_enum: int):
     global current_state
 
@@ -129,27 +135,32 @@ def main_loop():
     last_state = None
     active_thread = None
 
+    def run_behavior(state):
+        if state == FSMStateEnum.HIGH_LEVEL:
+            run_highlevel_behavior()
+        elif state == FSMStateEnum.LOW_LEVEL:
+            run_lowlevel_leg_control()
+        elif state == FSMStateEnum.LOW_LEVEL_STAND:
+            run_lowlevel_stand_hold()
+        elif state == FSMStateEnum.DAMP:
+            run_damp()
+
     while True:
         with fsm_lock:
             state_now = current_state
 
         if state_now != last_state:
-            print(f"[FSM] 状态变化: {last_state} → {state_now}")
-            last_state = state_now
+            print(f"[FSM] 状态变化：{last_state} → {state_now}")
 
-            # 如果之前有行为线程正在运行，不管，主流程直接触发新的
-            def run_target():
-                if state_now == FSMStateEnum.HIGH_LEVEL:
-                    run_highlevel_behavior()
-                elif state_now == FSMStateEnum.LOW_LEVEL:
-                    run_lowlevel_leg_control()
-                elif state_now == FSMStateEnum.LOW_LEVEL_STAND:
-                    run_lowlevel_stand_hold()
-                elif state_now == FSMStateEnum.DAMP:
-                    run_damp()
+            # 如果前一个行为线程还活着，标记它应该退出
+            if active_thread and active_thread.is_alive():
+                print("[FSM] 停止旧状态行为线程（注意：必须行为函数支持退出机制）")
 
-            active_thread = threading.Thread(target=run_target)
+            # 启动新状态线程
+            active_thread = threading.Thread(target=run_behavior, args=(state_now,))
             active_thread.start()
+
+            last_state = state_now
 
         time.sleep(0.2)
 
