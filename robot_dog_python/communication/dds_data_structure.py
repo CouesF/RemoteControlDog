@@ -331,14 +331,18 @@ class RaiseLegCommand(IdlStruct, typename="RaiseLegCommand"):
 
 @dataclass
 class MyMotionCommand(IdlStruct, typename="MyMotionCommand"):
-    command_type: int          # 0=状态切换，1=抬腿控制，2=导航控制
-    state_enum: int = 5        # 状态枚举（5=HIGH_LEVEL, 6=LOW_LEVEL, 7=LOW_LEVEL_STAND, 8=DAMP）
-    angle1: float = 0.0
-    angle2: float = 0.0
-    x: float = 0.0
-    y: float = 0.0
-    r: float = 0.0
-    command_id: int = 0  # 存储 ASCII 字符，q代表退出抬腿
+    """
+    用于main_body_control.py状态机的DDS指令结构。
+    """
+    command_type: int          # 0=状态切换, 1=抬腿控制, 2=导航控制
+    state_enum: int            # 目标状态，参考main_body_control.py中的RobotState枚举
+    leg_selection: int = 0     # 目标腿选择: 0=FR, 1=FL, 2=RR, 3=RL
+    angle1: float = 0.0        # 抬腿控制参数1
+    angle2: float = 0.0        # 抬腿控制参数2
+    x: float = 0.0             # 高级模式下x轴速度
+    y: float = 0.0             # 高级模式下y轴速度
+    r: float = 0.0             # 高级模式下旋转速度
+    command_id: int = 0        # 特殊指令, e.g., 'q' to exit
 
 
 # --------------------------------------------------------------------------

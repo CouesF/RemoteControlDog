@@ -1,6 +1,7 @@
 // 实验控制页面
 import BasePage from './BasePage.js';
 import RobotController from '../components/RobotController.js';
+import '../components/camera/MultiCameraMonitor.js';
 import SessionsAPI from '../api/sessions.js';
 import { EVENTS, SESSION_STATUS } from '../utils/constants.js';
 import Logger from '../utils/logger.js';
@@ -11,6 +12,7 @@ export default class ExperimentControl extends BasePage {
         this.pageTitle = '实验控制';
         this.viewTemplate = 'experiment_control.html';
         this.robotController = null;
+        this.cameraMonitor = null;
         this.currentSessionId = null;
         this.speechText = '';
     }
@@ -28,7 +30,7 @@ export default class ExperimentControl extends BasePage {
 
     async renderData() {
         // 初始化机器人控制器
-        this.initializeRobotController();
+        this.initializeComponents();
         
         // 设置会话信息显示
         this.updateSessionInfo();
@@ -77,14 +79,18 @@ export default class ExperimentControl extends BasePage {
         this.setupQuickSpeechButtons();
     }
 
-    initializeRobotController() {
+    initializeComponents() {
         try {
             this.robotController = new RobotController('robot-control-container');
             this.robotController.render();
             Logger.info('Robot controller initialized');
+
+            this.cameraMonitor = this.querySelector('multi-camera-monitor');
+            Logger.info('Camera monitor initialized');
+
         } catch (error) {
-            Logger.error('Failed to initialize robot controller:', error);
-            this.showError('机器人控制器初始化失败', error.message);
+            Logger.error('Failed to initialize components:', error);
+            this.showError('组件初始化失败', error.message);
         }
     }
 
@@ -263,6 +269,10 @@ export default class ExperimentControl extends BasePage {
         if (this.robotController) {
             await this.robotController.cleanup();
             this.robotController = null;
+        }
+        if (this.cameraMonitor) {
+            // 如果 cameraMonitor 有 cleanup 方法，可以在这里调用
+            this.cameraMonitor = null;
         }
     }
 }

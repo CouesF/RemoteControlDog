@@ -174,20 +174,29 @@ interface PromptAttempt {
   - `targetImgFile`: (file, optional)
   - `envImgFile`: (file, optional)
 - **返回 (201 Created)**: `application/json` - `JaTarget`
+- **状态**: ✅ 已实现
+
+#### `GET /api/targets/{targetId}`
+- **描述**: 根据ID获取目标点信息。
+- **返回 (200 OK)**: `application/json` - `JaTarget`
+- **状态**: ✅ 已实现
 
 #### `PUT /api/targets/{targetId}`
 - **描述**: 更新目标点信息。
 - **请求体**: `multipart/form-data` (同上)
 - **返回 (200 OK)**: `application/json` - `JaTarget`
+- **状态**: ✅ 已实现
 
 #### `PUT /api/maps/{mapId}/targets/order`
 - **描述**: 批量更新目标点的顺序。
 - **请求体**: `application/json` - `{ "targetIds": ["uuid-t3", "uuid-t1", "uuid-t2"] }`
 - **返回 (200 OK)**
+- **状态**: ✅ 已实现
 
 #### `DELETE /api/targets/{targetId}`
 - **描述**: 删除一个目标点。
 - **返回 (204 No Content)**
+- **状态**: ✅ 已实现
 
 ---
 
