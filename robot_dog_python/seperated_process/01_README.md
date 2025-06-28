@@ -1,15 +1,15 @@
 
 ## 功能：实现文本转语音
-功能描述：xxxxxxxxx
+功能描述：将文本转换成语音（且包含停止语音和调整音量功能）
 使用方法：
 先激活env_unitree虚拟环境
-```
-python xxx/tts_test.py
-```
 新开terminal
-```
-python xxx/tts_main.py
-```
+python /home/d3lab/Projects/RemoteControlDog/robot_dog_python/seperated_process/main_speech_synthesis.py
+
+（运行测试）
+先激活env_unitree虚拟环境
+新开terminal
+python /home/d3lab/Projects/RemoteControlDog/robot_dog_python/seperated_process/speech_test.py
 
 ## 功能：获取狗状态信息
 功能描述：提供电机状态和jtop提供的大多数信息

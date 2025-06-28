@@ -46,13 +46,10 @@ from unitree_sdk2py.core.channel import ChannelPublisher, ChannelSubscriber, Cha
 DDS_NETWORK_INTERFACE = "enP8p1s0"  # 根据您的实际网络接口修改
 DDS_SLEEP_INTERVAL = 0.01  # DDS读取间隔
 
-# ==== 全局停止标志 ====
-stop_playing = False  # 全局停止标志
-
 # ==== TTS协议常量 ====
 PROTOCOL_VERSION = 0b0001
 DEFAULT_HEADER_SIZE = 0b0001
-FULL_CLIENT_REQUEST = 0b0001  
+FULL_CLIENT_REQUEST = 0b0001
 AUDIO_ONLY_RESPONSE = 0b1011
 FULL_SERVER_RESPONSE = 0b1001
 ERROR_INFORMATION = 0b1111
@@ -88,8 +85,6 @@ class AudioPlayer:
         self.stream = None
         self.device_index = device_index
         self.TARGET_SAMPLE_RATE = 48000
-        self.stop_playing_flag = False  # 实例级别的停止标志
-        self.lock = threading.Lock()  # 用于线程安全控制
         
         # 打印可用音频设备（调试信息）
         print("可用音频设备:")
@@ -115,34 +110,6 @@ class AudioPlayer:
         # 当前音量 (0-100)
         self.current_volume = 70
         self.set_system_volume(self.current_volume)
-    
-    def stop_playing(self):
-        """立即停止播放并清空缓冲区"""
-        if self.stream and self.stream.is_active():
-            try:
-                print("⏹ 立即停止音频播放并清空缓冲区")
-                self.stream.stop_stream()
-                # 清空PyAudio内部缓冲区
-                while self.stream.get_write_available() < self.stream._frames_per_buffer:
-                    time.sleep(0.01)
-                self.stream.start_stream()  # 重新启动流
-            except Exception as e:
-                print(f"停止播放时出错: {e}")
-        
-        # 重置内部状态
-        self.current_audio_buffer = b''
-        print("✅ 音频缓冲区已清空")
-    
-    def reset_stop_flag(self):
-        """重置停止标志"""
-        with self.lock:
-            self.stop_playing_flag = False
-    
-    def is_stop_requested(self):
-        """检查是否有停止请求"""
-        global stop_playing
-        with self.lock:
-            return self.stop_playing_flag or stop_playing
     
     def set_system_volume(self, volume_percent: int):
         """设置 USB 声卡的系统音量（通过 ALSA）"""
@@ -187,10 +154,6 @@ class AudioPlayer:
     
     def play_audio(self, audio_data):
         """播放音频数据"""
-        if self.is_stop_requested():
-            print("⏹ 播放请求被忽略（停止中）")
-            return
-        
         if self.stream and self.stream.is_active():
             try:
                 # 音量放大
@@ -210,18 +173,14 @@ class AudioPlayer:
         self.p.terminate()
         print("PyAudio 资源已释放")
 
-# 语音控制处理器类 - 修改为接收 app_id 和 token
+# 语音控制处理器类
 class SpeechControlHandler:
-    def __init__(self, audio_player, app_id, token,loop):
+    def __init__(self, audio_player):
         self.audio_player = audio_player
-        self.app_id = app_id  # 存储 app_id
-        self.token = token    # 存储 token
         self.command_queue = queue.Queue()
         self.running = True
-        self.active_tts_session = None
         self.handler_thread = threading.Thread(target=self._process_queue, daemon=True)
         self.handler_thread.start()
-        self.loop = loop
     
     def add_command(self, control_msg):
         self.command_queue.put(control_msg)
@@ -231,16 +190,6 @@ class SpeechControlHandler:
             try:
                 control_msg = self.command_queue.get(timeout=0.5)
                 
-                # 处理停止播放请求
-                if control_msg.stop_speaking:
-                    print("🚨 收到停止播放请求")
-                    self.audio_player.stop_playing()
-                    if self.active_tts_session and not self.active_tts_session.done():
-                        print("⚠️ 取消进行中的TTS会话")
-                        self.active_tts_session.cancel()
-                    
-                    continue
-                
                 # 处理音量设置
                 if hasattr(control_msg, 'volume'):
                     print(f"收到音量设置请求: {control_msg.volume}%")
@@ -249,33 +198,13 @@ class SpeechControlHandler:
                 # 处理语音播放
                 if control_msg.text_to_speak and control_msg.text_to_speak.strip():
                     print(f"收到语音命令: {control_msg.text_to_speak[:20]}...")
-                    
-                    if self.active_tts_session and not self.active_tts_session.done():
-                        print("⚠️ 取消前一个TTS会话以处理新请求")
-                        self.active_tts_session.cancel()
-                        
-                    if self.loop.is_closed():
-                        print("❌ 事件循环已关闭，无法启动新任务")
-                        continue
-                    
-                    # 启动新的TTS任务，使用存储的app_id和token
-                    self.active_tts_session = asyncio.run_coroutine_threadsafe(
-                        run_tts(
-                            self.app_id,  # 使用 self.app_id
-                            self.token,   # 使用 self.token
-                            "zh_female_shuangkuaisisi_moon_bigtts",
-                            control_msg.text_to_speak,
-                            f"./tts_output_{int(time.time())}.pcm",
-                            self.audio_player
-                        ),
-                        self.loop()
-                    )
+                    # 在实际应用中，这里应该触发语音合成
+                    # 但在本程序中，实际合成在run_tts函数中完成
                 
             except queue.Empty:
                 continue
             except Exception as e:
                 print(f"处理命令时出错: {e}")
-                traceback.print_exc()
     
     def stop(self):
         self.running = False
@@ -516,16 +445,7 @@ async def finish_connection(ws: ClientConnection):
     await send_event(ws, header, optional, payload)
     print("===> Sent Finish Connection event")
 
-# 在 run_tts 函数中增加停止检查
 async def run_tts(appId: str, token: str, speaker: str, text: str, output_path: str, audio_player: AudioPlayer):
-    global stop_playing
-    
-    print(f"启动TTS合成: 文本长度={len(text)}")
-    
-    # 重置停止标志
-    audio_player.reset_stop_flag()
-    stop_playing = False
-    
     url = 'wss://openspeech.bytedance.com/api/v3/tts/bidirection'
     ws_header = {
         "X-Api-App-Key": appId,
@@ -534,93 +454,71 @@ async def run_tts(appId: str, token: str, speaker: str, text: str, output_path: 
         "X-Api-Connect-Id": str(uuid.uuid4()),
     }
    
-    try:
-        async with websockets.connect(url, additional_headers=ws_header, max_size=1000000000) as ws:
-            print("WebSocket连接已建立")
+    async with websockets.connect(url, additional_headers=ws_header, max_size=1000000000) as ws:
+            print("WebSocket connection established.")
             await start_connection(ws)
             res_bytes = await ws.recv()
             res = parser_response(res_bytes)
-            
+            print_response(res, 'start_connection response:')
             if res.optional.event != EVENT_ConnectionStarted:
-                raise RuntimeError(f"启动连接失败: {res.optional.response_meta_json or res.payload_json or '未知错误'}")
+                raise RuntimeError(f"Start connection failed. Response: {res.optional.response_meta_json or res.payload_json or 'Unknown error'}")
+            print("Connection started successfully.")
             
             session_id = uuid.uuid4().__str__().replace('-', '')
-            print(f"会话ID: {session_id}")
         
             await start_session(ws, speaker, session_id, audio_format='pcm', audio_sample_rate=audio_player.TARGET_SAMPLE_RATE)
+        
             res = parser_response(await ws.recv())
-            
+            print_response(res, 'start_session response:')
             if res.optional.event != EVENT_SessionStarted:
-                raise RuntimeError(f"启动会话失败! {res.optional.response_meta_json or res.payload_json or '未知错误'}")
-            
-            print(f"发送文本: '{text[:20]}...'")
+                    raise RuntimeError(f"Start session failed! Response: {res.optional.response_meta_json or res.payload_json or 'Unknown error'}")
+            print(f"Session started successfully (Session ID: {session_id}).")
+
             await send_text(ws, speaker, text, session_id, audio_format='pcm', audio_sample_rate=audio_player.TARGET_SAMPLE_RATE)
             await finish_session(ws, session_id)
         
             async with aiofiles.open(output_path, mode="wb") as output_file:
-                while True:
-                    # 检查停止请求 - 优先级最高
-                    if stop_playing or audio_player.is_stop_requested():
-                        print("⏹ 收到停止请求，终止TTS处理")
-                        # 主动关闭WebSocket连接
-                        await ws.close()
-                        return
-                    
-                    try:
-                        # 设置超时避免永久等待
-                        res_bytes = await asyncio.wait_for(ws.recv(), timeout=1.0)
-                    except asyncio.TimeoutError:
-                        # 检查是否应该继续等待
-                        if stop_playing or audio_player.is_stop_requested():
-                            print("⏹ 超时期间收到停止请求，终止TTS处理")
-                            return
-                        continue
-                    
-                    res = parser_response(res_bytes)
+                    while True:
+                        res_bytes = await ws.recv()
+                        res = parser_response(res_bytes)
                 
-                    # 处理音频片段
-                    if res.optional.event == EVENT_TTSResponse and res.header.message_type == AUDIO_ONLY_RESPONSE:
-                        if res.payload:
-                            # 再次检查停止请求
-                            if stop_playing or audio_player.is_stop_requested():
-                                print("⏹ 音频处理前收到停止请求，跳过播放")
-                                continue
-                            
-                            # 保存并播放音频
-                            await output_file.write(res.payload)
-                            audio_player.play_audio(res.payload)
+                # 处理音频片段
+                        if res.optional.event == EVENT_TTSResponse and res.header.message_type == AUDIO_ONLY_RESPONSE:
+                            if res.payload:
+                        # 保存到文件
+                                await output_file.write(res.payload)
+                                audio_player.play_audio(res.payload)
                     
-                    elif res.optional.event in [EVENT_TTSSentenceStart, EVENT_TTSSentenceEnd]:
-                        print(f"事件: {'句子开始' if res.optional.event == EVENT_TTSSentenceStart else '句子结束'}")
-                    
-                    elif res.optional.event == EVENT_SessionFinished:
-                        print("会话完成 - 音频流结束")
-                        break
-                    
-                    elif res.optional.event == EVENT_SessionFailed:
-                        raise RuntimeError(f"会话失败: {res.optional.response_meta_json or res.payload_json}")
-                    
-                    else:
-                        print(f"警告: 收到意外事件或消息类型")
-            
+                            else:
+                                print("Warning: Received EVENT_TTSResponse with empty payload.")
+                        elif res.optional.event in [EVENT_TTSSentenceStart, EVENT_TTSSentenceEnd]:
+                            print(f"Received event: {'Sentence Start' if res.optional.event == EVENT_TTSSentenceStart else 'Sentence End'}. Info: {res.payload_json}")
+                            continue
+                        elif res.optional.event == EVENT_SessionFinished:
+                            print("Received Session Finished event. Audio stream ended.")
+                            print_response(res, 'session_finished response:')
+                            break
+                        elif res.optional.event == EVENT_SessionFailed:
+                             print_response(res, 'session_failed response:')
+                             raise RuntimeError(f"Session failed during audio receive. Info: {res.optional.response_meta_json or res.payload_json}")
+                        else:
+                            print(f"Warning: Received unexpected event or message type during audio receive.")
+                            print_response(res, 'unexpected_response:')
+
+            print(f"Audio saved to {output_path}")
+
             await finish_connection(ws)
-            print('✅ TTS处理完成')
-    except asyncio.CancelledError:
-        print("⏹ TTS会话被取消")
-    except Exception as e:
-        print(f"❌ TTS处理出错: {e}")
-        traceback.print_exc()
+            res = parser_response(await ws.recv())
+            print_response(res, 'finish_connection response:')
+            print('===> TTS finished successfully.')
 
 # 主功能
 async def main():
-    global stop_playing
     appId = "2657638375"
     token = "NHt65iYV2xQ-0Uv6VfO97BletTaOMtAn"
     
     # 添加优雅退出机制
     exit_requested = False
-    
-    loop = asyncio.get_running_loop()
     
     # 定义信号处理函数
     def signal_handler(signal, frame):
@@ -648,8 +546,7 @@ async def main():
     
     # 创建音频播放器和语音处理器
     audio_player = AudioPlayer()
-    # 创建语音处理器时传入 appId 和 token
-    speech_handler = SpeechControlHandler(audio_player, appId, token, loop)
+    speech_handler = SpeechControlHandler(audio_player)
     
     try:
         # 主循环：监听DDS消息并处理
@@ -657,13 +554,6 @@ async def main():
         
         while not exit_requested:
             try:
-                # 检查是否有停止请求
-                if stop_playing:
-                    # 重置停止标志
-                    print("🚨 处理全局停止请求")
-                    audio_player.stop_playing()
-                    stop_playing = False
-                
                 # 读取DDS消息
                 control_msg = speech_control_sub.Read(1)
                 if control_msg is not None:
@@ -675,6 +565,17 @@ async def main():
                           
                     # 将消息添加到处理器队列
                     speech_handler.add_command(control_msg)
+                    
+                    # 如果有文本需要合成
+                    if control_msg.text_to_speak and control_msg.text_to_speak.strip():
+                        print(f"合成文本: '{control_msg.text_to_speak[:20]}...'")
+                        output_path = f"./tts_output_{int(time.time())}.pcm"
+                        
+                        # 启动语音合成任务
+                        await run_tts(
+                            appId, token, "zh_female_shuangkuaisisi_moon_bigtts", 
+                            control_msg.text_to_speak, output_path, audio_player
+                        )
                     
                 # 短暂休眠避免CPU占用过高
                 await asyncio.sleep(DDS_SLEEP_INTERVAL)
@@ -688,8 +589,6 @@ async def main():
                     print(f"DDS读取失败: {e}")
                 elif "Operation not permitted" in str(e):
                     continue  # 临时跳过权限错误
-                elif "TimeoutError" in str(e):
-                    continue  # 忽略超时错误
                 else:
                     print(f"主循环错误: {e}")
                     break

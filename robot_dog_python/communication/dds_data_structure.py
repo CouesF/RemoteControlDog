@@ -310,7 +310,7 @@ class SpeechControl(IdlStruct, typename="SpeechControl"):
     stop_speaking: bool = False
     
     # 音量控制（范围建议 0 ~ 100）
-    volume: int = 20
+    volume: int = 40
 
 
 @dataclass
