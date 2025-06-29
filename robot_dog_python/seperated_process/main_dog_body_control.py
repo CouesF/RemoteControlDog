@@ -70,12 +70,13 @@ class RobotController:
         print("DDS listener thread started.")
         while self.running:
             try:
-                msg = self.dds_subscriber.Read(timeout=0.1) # Timeout to allow checking self.running
+                msg = self.dds_subscriber.Read(timeout=0.1)
                 if msg:
                     print(f"Received DDS command: type={msg.command_type}, state={msg.state_enum}")
                     self.command_queue.put(msg)
             except Exception as e:
-                print(f"Error in DDS listener: {e}")
+                if str(e) != "[Reader] take sample error":
+                    print(f"Error in DDS listener: {e}")
             time.sleep(0.01)
         print("DDS listener thread stopped.")
 
@@ -85,13 +86,18 @@ class RobotController:
         while self.running:
             try:
                 cmd: MyMotionCommand = self.command_queue.get(timeout=0.1)
+                if cmd.command_type == 1:
+                    # 只给 LOW_LEVEL_RAISE_LEG 的低层线程处理，不归主状态机管
+                    self.command_queue.put(cmd)
+                    time.sleep(0.05)  # 防止忙等
+                    continue
                 self.process_command(cmd)
             except queue.Empty:
-                # No new command, continue in current state
                 pass
             except Exception as e:
                 print(f"Error in state machine: {e}")
         print("State machine thread stopped.")
+
 
     def process_command(self, cmd: MyMotionCommand):
         with self.state_lock:
@@ -103,20 +109,17 @@ class RobotController:
                 except ValueError:
                     print(f"Error: Invalid target state enum {cmd.state_enum}")
             elif cmd.command_type == 1 and self.current_state == RobotState.LOW_LEVEL_RAISE_LEG:
-                # This command is now passed to the queue for the leg control thread
-                # TODO: 应该已经在对应线程了
+                # 角度控制指令仍由低层线程自行消费
                 pass 
             elif cmd.command_type == 2 and self.current_state in [RobotState.HIGH_LEVEL_STAND, RobotState.HIGH_LEVEL_WALK]:
-                self.sport.Move(cmd.x, cmd.y, cmd.r, False) # TODO：修改成实际接口(test)
+                self.sport.Move(cmd.x, cmd.y, cmd.r)
                 print(f"Executing walk: x={cmd.x}, y={cmd.y}, r={cmd.r}")
 
     def handle_state_transition(self, target_state: RobotState):
-        # --- Context-aware transition to DAMP ---
         if target_state in [RobotState.HIGH_LEVEL_DAMP, RobotState.LOW_LEVEL_DAMP]:
             self.transition_to_damp()
             return
 
-        # --- Transitions from DAMP states ---
         if self.current_state == RobotState.HIGH_LEVEL_DAMP:
             if target_state == RobotState.HIGH_LEVEL_STAND:
                 self.transition_to_high_level_stand()
@@ -125,16 +128,19 @@ class RobotController:
                 print(f"Invalid transition from HIGH_LEVEL_DAMP to {target_state.name}")
 
         elif self.current_state == RobotState.LOW_LEVEL_DAMP:
-            if target_state == RobotState.LOW_LEVEL_STAND:
-                self.transition_to_low_level_stand()
-                self.current_state = RobotState.LOW_LEVEL_STAND
+            if target_state in [RobotState.HIGH_LEVEL_STAND, RobotState.HIGH_LEVEL_WALK]:
+                print("[FSM] LOW_LEVEL_DAMP → HIGH_LEVEL：将先切 ai 并站立，再执行目标高层状态")
+                self.ensure_high_level_mode()
+                self.sport.StandUp()
+                self.sport.BalanceStand()
+                self.current_state = RobotState.HIGH_LEVEL_STAND
+                print("[FSM] 已切换为 HIGH_LEVEL_STAND")
             else:
-                print(f"Invalid transition from LOW_LEVEL_DAMP to {target_state.name}")
+                print(f"[FSM] 当前为 LOW_LEVEL_DAMP，仅支持切换至 HIGH_LEVEL 状态，已忽略 {target_state.name}")
 
-        # --- Transitions from active states ---
         elif self.current_state == RobotState.LOW_LEVEL_STAND:
             if target_state == RobotState.LOW_LEVEL_RAISE_LEG:
-                self.transition_to_low_level_raise_leg() #TODO
+                self.transition_to_low_level_raise_leg()
                 self.current_state = RobotState.LOW_LEVEL_RAISE_LEG
             elif target_state == RobotState.HIGH_LEVEL_STAND:
                 self.transition_from_low_to_high()
@@ -147,13 +153,12 @@ class RobotController:
         
         elif self.current_state == RobotState.LOW_LEVEL_RAISE_LEG:
             if target_state == RobotState.LOW_LEVEL_STAND:
-                self.transition_to_low_level_stand() #TODO
+                self.transition_to_low_level_stand()
                 self.current_state = RobotState.LOW_LEVEL_STAND
 
     # --- Transition Implementations ---
 
     def transition_to_damp(self):
-        """Context-aware damp transition."""
         if self.current_state in [RobotState.HIGH_LEVEL_STAND, RobotState.HIGH_LEVEL_WALK, RobotState.HIGH_LEVEL_DAMP]:
             self.transition_to_high_level_damp()
         elif self.current_state in [RobotState.LOW_LEVEL_STAND, RobotState.LOW_LEVEL_RAISE_LEG, RobotState.LOW_LEVEL_DAMP]:
@@ -184,8 +189,8 @@ class RobotController:
     def transition_to_high_level_stand(self):
         print("Transitioning to HIGH_LEVEL_STAND...")
         self.stop_low_level_thread()
-        self.ensure_high_level_mode() # 是否每次都要ensure，因为感觉系统返回会有延迟一般。
-        self.sport.StandUp()
+        self.ensure_high_level_mode()
+        self.sport.BalanceStand()
         self.current_pose = list(self.stand_pos)
         print("State is now HIGH_LEVEL_STAND.")
         clear_queue(self.command_queue)
@@ -193,27 +198,75 @@ class RobotController:
     def transition_to_low_level_stand(self):
         print("Transitioning to LOW_LEVEL_STAND...")
         self.stop_low_level_thread()
-        self.ensure_low_level_mode() # TODO: 测试是否过于冗余。
-        self.current_pose = list(self.stand_pos)
-        self.start_low_level_thread(self.maintain_static_pose) # 这里相当于直接切stand pose，没有差值。
+        self.ensure_low_level_mode()
+
+        if self.current_state == RobotState.LOW_LEVEL_RAISE_LEG:
+            print("[LowLevelRaiseLeg → Stand] 分阶段恢复腿部姿态")
+            pose_buffer = self.current_pose[:]
+            stand_pos = self.stand_pos
+
+            def interpolate_selected_joints(start, end, joint_indices, duration_ms):
+                steps = int(duration_ms / 2)
+                for step in range(steps):
+                    alpha = step / steps
+                    current = start[:]
+                    for j in joint_indices:
+                        current[j] = (1 - alpha) * start[j] + alpha * end[j]
+                    for i in range(12):
+                        self.low_cmd.motor_cmd[i].mode = 0x01
+                        self.low_cmd.motor_cmd[i].q = current[i]
+                        self.low_cmd.motor_cmd[i].dq = 0
+                        self.low_cmd.motor_cmd[i].kp = 100.0
+                        self.low_cmd.motor_cmd[i].kd = 8.0
+                        self.low_cmd.motor_cmd[i].tau = 0
+                    self.low_cmd.crc = self.crc.Crc(self.low_cmd)
+                    self.low_cmd_publisher.Write(self.low_cmd)
+                    time.sleep(0.002)
+
+            restore_step1 = pose_buffer[:]
+            restore_step1[0] = stand_pos[0]
+            interpolate_selected_joints(pose_buffer, restore_step1, [0], 300)
+
+            restore_step2 = restore_step1[:]
+            restore_step2[1] = stand_pos[1]
+            interpolate_selected_joints(restore_step1, restore_step2, [1], 300)
+
+            restore_step3 = restore_step2[:]
+            restore_step3[2] = stand_pos[2]
+            interpolate_selected_joints(restore_step2, restore_step3, [2], 300)
+
+            restore_step4 = restore_step3[:]
+            restore_step4[9] = stand_pos[9]
+            interpolate_selected_joints(restore_step3, restore_step4, [9], 400)
+
+            restore_step5 = restore_step4[:]
+            restore_step5[10] = stand_pos[10]
+            interpolate_selected_joints(restore_step4, restore_step5, [10], 400)
+
+            restore_step6 = restore_step5[:]
+            restore_step6[11] = stand_pos[11]
+            interpolate_selected_joints(restore_step5, restore_step6, [11], 400)
+
+            self.current_pose = list(stand_pos)
+
+        else:
+            self.current_pose = list(self.stand_pos)
+
+        self.start_low_level_thread(self.maintain_static_pose)
         print("State is now LOW_LEVEL_STAND.")
         clear_queue(self.command_queue)
-        
+
     def transition_to_low_level_raise_leg(self):
         print("Transitioning to LOW_LEVEL_RAISE_LEG...")
-        self.stop_low_level_thread() #TODO 如果本来是low stand，停止，是否来得及切到抬腿stand。
-        # self.ensure_low_level_mode() # Should already be in it
+        self.stop_low_level_thread()
         self.start_low_level_thread(self.maintain_raise_leg_pose)
         print("State is now LOW_LEVEL_RAISE_LEG.")
         clear_queue(self.command_queue)
 
     def transition_from_high_to_low(self):
         print("Transitioning from HIGH_LEVEL to LOW_LEVEL...")
-        # This is a complex process. For now, we just switch modes.
-        # A more robust implementation would send low-level commands during the switch.
-        # TODO: 需要测试
         self.sport.StandUp()
-        time.sleep(0.6) # Settle
+        time.sleep(0.6)
         self.stop_low_level_thread()
         self.ensure_low_level_mode()
         self.current_pose = list(self.stand_pos)
@@ -224,33 +277,29 @@ class RobotController:
     def transition_from_low_to_high(self):
         print("Transitioning from LOW_LEVEL to HIGH_LEVEL...")
         self.stop_low_level_thread()
-        # 1. Go to lie down pose in low-level
+        _, result = self.msc.CheckMode()
+        print(f"[DEBUG] Before interpolate_pose, mode is: {result.get('name')}")
         self.interpolate_pose(self.current_pose, self.lie_down_pos, 1500)
         self.current_pose = list(self.lie_down_pos)
-        time.sleep(0.5) # Settle
-        # 2. Switch to high-level mode
+        time.sleep(0.5)
         self.ensure_high_level_mode()
-        # 3. Stand up in high-level mode
-        self.sport.StandUp()
+        self.sport.BalanceStand()
         self.current_pose = list(self.stand_pos)
         print("Transition complete to HIGH_LEVEL_STAND.")
         clear_queue(self.command_queue)
-
-    # --- Mode Switching Helpers ---
 
     def ensure_high_level_mode(self):
         print("Ensuring high-level (AI) mode...")
         _, result = self.msc.CheckMode()
         if result.get("name") != "ai":
             self.msc.SelectMode("ai")
-            time.sleep(1.0) # Give time for the switch
+            time.sleep(1.0)
             print("Switched to AI mode.")
         else:
             print("Already in AI mode.")
 
     def ensure_low_level_mode(self):
         print("Ensuring low-level mode...")
-        
         while True:
             self.msc.ReleaseMode()
             time.sleep(0.01)
@@ -260,13 +309,10 @@ class RobotController:
                 break
             print("Waiting for mode release...")
 
-    # --- Low-Level Control Threads ---
-
     def start_low_level_thread(self, target_func):
         if self.low_level_thread and self.low_level_thread.is_alive():
             print("Warning: A low-level thread is already running. Stopping it first.")
             self.stop_low_level_thread()
-        
         self.low_level_stop_event.clear()
         self.low_level_thread = threading.Thread(target=target_func)
         self.low_level_thread.start()
@@ -280,40 +326,92 @@ class RobotController:
         self.low_level_thread = None
 
     def maintain_static_pose(self):
-        """Maintains the robot's current_pose."""
         print(f"Maintaining static pose: {self.current_pose}")
         while not self.low_level_stop_event.is_set():
             self.send_low_level_pose_cmd(self.current_pose)
             time.sleep(0.002)
 
     def maintain_raise_leg_pose(self):
-        """Maintains pose while allowing one leg to be controlled via DDS."""
-        print("Maintaining raise leg pose...")
-        local_pose = list(self.current_pose)
-        # TODO: 初始化，肩关节等抬腿初始位置。
-        # TODO: 前面已经停止low stand指令，需要快速衔接上stand-然后转抬腿。
-        
-        while not self.low_level_stop_event.is_set():
-            
-            try:
-                cmd: MyMotionCommand = self.command_queue.get_nowait()
-                if cmd.command_type == 1: # Leg control
-                    # Basic implementation: directly set angles
-                    # A better one would use interpolation 
-                    # TODO: interpolation
-                    leg_idx = cmd.leg_selection
-                    base_joint_idx = leg_idx * 3
-                    
-                    # WARNING: This is a simplified example.
-                    # TODO 这里必须改。需要有阈值。
-                    # Real implementation needs safety checks and smooth interpolation.
-                    local_pose[base_joint_idx + 1] = cmd.angle1
-                    local_pose[base_joint_idx + 2] = cmd.angle2
-            except queue.Empty:
-                pass
-            
-            self.send_low_level_pose_cmd(local_pose)
-            time.sleep(0.002)
+        print("[LowLevelRaiseLeg] 开始执行完整抬腿流程")
+
+        def clamp_warning(index, new_val, min_val, max_val):
+            if new_val < min_val or new_val > max_val:
+                print(f"[Warning] 超过限制值，关节 {index} 的目标角度 {new_val:.2f} 超出范围 [{min_val}, {max_val}]，忽略本次输入")
+                return False
+            return True
+
+        self.interpolate_pose(self.current_pose, self.stand_pos, 1500)
+        self.current_pose = list(self.stand_pos)
+
+        step1 = self.stand_pos[:]
+        step1[11] -= 0.3
+        step1[9]  += 0.3
+        self.interpolate_pose(self.current_pose, step1, 650)
+
+        step2 = step1[:]; step2[2] -= 0.8
+        self.interpolate_pose(step1, step2, 250)
+        step3 = step2[:]; step3[0] -= 0.8
+        self.interpolate_pose(step2, step3, 300)
+        step4 = step3[:]; step4[1] -= 1.0
+        self.interpolate_pose(step3, step4, 250)
+        step5 = step4[:]; step5[2] = self.stand_pos[2]
+        self.interpolate_pose(step4, step5, 250)
+
+        pose_buffer = step5[:]
+        self.current_pose = list(pose_buffer)
+        high_kp = [100.0]*12; high_kd = [8.0]*12
+        for i in [0,1,2,3,4,5,9,10,11]:
+            high_kp[i] = 160.0
+            high_kd[i] = 10.0
+
+        def maintain_dynamic():
+            while not self.low_level_stop_event.is_set():
+                for j in range(12):
+                    self.low_cmd.motor_cmd[j].mode = 0x01
+                    self.low_cmd.motor_cmd[j].q = pose_buffer[j]
+                    self.low_cmd.motor_cmd[j].dq = 0
+                    self.low_cmd.motor_cmd[j].kp = high_kp[j]
+                    self.low_cmd.motor_cmd[j].kd = high_kd[j]
+                    self.low_cmd.motor_cmd[j].tau = 0
+                self.low_cmd.crc = self.crc.Crc(self.low_cmd)
+                self.low_cmd_publisher.Write(self.low_cmd)
+                time.sleep(0.002)
+
+        def receive_angle_command():
+            print("[LowLevelRaiseLeg] 开始监听DDS角度指令...")
+            while not self.low_level_stop_event.is_set():
+                try:
+                    cmd: MyMotionCommand = self.command_queue.get(timeout=0.1)
+                    if cmd.command_type == 1:
+                        print(f"[DDS] 接收角度命令: angle1={cmd.angle1:.2f}, angle2={cmd.angle2:.2f}")
+                        joint1_idx = 1  # RF_1
+                        joint2_idx = 2  # RF_2
+                        target1 = cmd.angle1
+                        target2 = cmd.angle2
+                        if not clamp_warning(joint1_idx, target1, -1.5, 3.4) or not clamp_warning(joint2_idx, target2, -2.7, -0.8):
+                            continue
+                        while (abs(pose_buffer[joint1_idx] - target1) > 0.05 or
+                               abs(pose_buffer[joint2_idx] - target2) > 0.05) and not self.low_level_stop_event.is_set():
+                            if pose_buffer[joint1_idx] < target1:
+                                pose_buffer[joint1_idx] = min(pose_buffer[joint1_idx] + 0.1, target1)
+                            else:
+                                pose_buffer[joint1_idx] = max(pose_buffer[joint1_idx] - 0.1, target1)
+                            if pose_buffer[joint2_idx] < target2:
+                                pose_buffer[joint2_idx] = min(pose_buffer[joint2_idx] + 0.1, target2)
+                            else:
+                                pose_buffer[joint2_idx] = max(pose_buffer[joint2_idx] - 0.1, target2)
+                            time.sleep(0.05)
+                except queue.Empty:
+                    continue
+
+        thread_hold = threading.Thread(target=maintain_dynamic)
+        thread_cmd = threading.Thread(target=receive_angle_command)
+        thread_hold.start()
+        thread_cmd.start()
+        thread_cmd.join()
+        thread_hold.join()
+
+        print("[LowLevelRaiseLeg] 抬腿线程正常退出，控制权已交还主状态机")
 
     def send_low_level_pose_cmd(self, pose, kp=100.0, kd=8.0):
         for i in range(12):
@@ -339,47 +437,40 @@ class RobotController:
 
     def interpolate_pose(self, start, end, duration_ms):
         print(f"Interpolating pose over {duration_ms}ms")
-        steps = int(duration_ms / 2) # 2ms per step
+        steps = int(duration_ms / 2)
         for step in range(steps):
             alpha = min(1.0, step / steps)
             q_interp = [(1 - alpha) * s + alpha * e for s, e in zip(start, end)]
             self.send_low_level_pose_cmd(q_interp)
             time.sleep(0.002)
-        self.send_low_level_pose_cmd(end) # Ensure final pose is sent
+        self.send_low_level_pose_cmd(end)
         self.current_pose = list(end)
 
     def run(self):
-        """Starts all threads and runs the controller."""
-        self.transition_to_high_level_damp() # Start in a safe, high-level damp state
-
+        self.transition_to_high_level_damp()
         main_sm_thread = threading.Thread(target=self.state_machine_thread)
         dds_thread = threading.Thread(target=self.dds_listener_thread)
-
         main_sm_thread.start()
         dds_thread.start()
-
         try:
             while self.running:
                 time.sleep(1)
         except KeyboardInterrupt:
             print("Shutdown requested.")
-        
         self.shutdown()
         main_sm_thread.join()
         dds_thread.join()
         print("All threads terminated. Exiting.")
 
     def maintain_low_level_damp(self):
-        """Continuously sends low-level damp commands."""
         print("Maintaining low-level damp...")
         while not self.low_level_stop_event.is_set():
             self.send_low_level_damp_cmd()
-            time.sleep(0.01) # Can be a bit slower than pose control
+            time.sleep(0.01)
 
     def shutdown(self):
         self.running = False
         self.stop_low_level_thread()
-        # Attempt a final damp command based on the last known mode
         try:
             print("Attempting final shutdown damp...")
             self.transition_to_damp()

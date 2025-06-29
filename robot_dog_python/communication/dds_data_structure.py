@@ -310,7 +310,7 @@ class SpeechControl(IdlStruct, typename="SpeechControl"):
     stop_speaking: bool = False
     
     # 音量控制（范围建议 0 ~ 100）
-    volume: int = 40
+    volume: int = 20
 
 
 @dataclass
@@ -336,7 +336,7 @@ class MyMotionCommand(IdlStruct, typename="MyMotionCommand"):
     """
     command_type: int          # 0=状态切换, 1=抬腿控制, 2=导航控制
     state_enum: int            # 目标状态，参考main_body_control.py中的RobotState枚举
-    leg_selection: int = 0     # 目标腿选择: 0=FR, 1=FL, 2=RR, 3=RL
+    leg_selection: int = 0     # 目标腿选择: 0=FR, 1=FL
     angle1: float = 0.0        # 抬腿控制参数1
     angle2: float = 0.0        # 抬腿控制参数2
     x: float = 0.0             # 高级模式下x轴速度
