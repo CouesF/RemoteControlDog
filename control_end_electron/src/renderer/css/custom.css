@@ -1,0 +1,35 @@
+/* JA Target List Styles */
+.ja-target-item {
+    cursor: pointer;
+    transition: background-color 0.2s ease-in-out;
+}
+
+.ja-target-item:hover {
+    background-color: #f8f9fa;
+}
+
+.ja-target-item.active {
+    background-color: #007bff;
+    color: white;
+    border-color: #007bff;
+}
+
+.ja-target-item.active .completion-status {
+    color: white;
+}
+
+.completion-status.badge-success {
+    background-color: #28a745;
+    color: white;
+}
+
+.completion-status.badge-danger {
+    background-color: #dc3545;
+    color: white;
+}
+
+/* JA Target Detail Styles */
+#ja-target-detail-container img {
+    max-height: 200px;
+    object-fit: cover;
+}

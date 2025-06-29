@@ -34,31 +34,31 @@
         <div id="robot-control-container"></div>
     </div>
 </div>
-<!-- 实验操作区域 -->
+    <!-- 实验操作区域 -->
 <div class="row">
     <div class="col-md-4">
         <div class="card">
             <div class="card-header">
-                <h5><i class="fas fa-tasks"></i> RJA指令控制</h5>
+                <h5><i class="fas fa-tasks"></i> JA目标进度</h5>
             </div>
-            <div class="card-body">
-                <p class="text-muted">控制RJA训练指令的执行和记录</p>
-                <div class="btn-group-vertical d-block">
-                    <button id="start-instruction-btn" class="btn btn-primary btn-block mb-2">
-                        <i class="fas fa-play"></i> 开始指令
-                    </button>
-                    <button id="instruction-success-btn" class="btn btn-success btn-block mb-2">
-                        <i class="fas fa-check"></i> 指令成功
-                    </button>
-                    <button id="instruction-failure-btn" class="btn btn-warning btn-block">
-                        <i class="fas fa-times"></i> 指令失败
-                    </button>
-                </div>
-                <!-- TODO: 添加目标点选择、等级选择等 -->
+            <div id="ja-target-list-container" class="card-body" style="height: 300px; overflow-y: auto;">
+                <!-- JA Target 列表将在这里动态加载 -->
             </div>
         </div>
     </div>
-    
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-bullseye"></i> JA Target详情</h5>
+            </div>
+            <div id="ja-target-detail-container" class="card-body">
+                <!-- JA Target 详情将在这里动态加载 -->
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-4">
     <div class="col-md-4">
         <div class="card">
             <div class="card-header">
