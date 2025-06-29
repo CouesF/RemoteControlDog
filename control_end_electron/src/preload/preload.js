@@ -59,6 +59,7 @@ contextBridge.exposeInMainWorld('api', {
     // --- Generic UDP API ---
     connectUDP: (options) => ipcRenderer.invoke('connect-udp', options),
     disconnectUDP: (connectionId) => ipcRenderer.send('disconnect-udp', connectionId),
+    sendUDP: (connectionId, message) => ipcRenderer.send('send-udp', connectionId, message),
     onUDPMessage: (connectionId, callback) => {
         const channel = `udp-message-${connectionId}`;
         ipcRenderer.on(channel, (event, ...args) => callback(...args));

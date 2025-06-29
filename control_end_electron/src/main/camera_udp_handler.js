@@ -114,7 +114,7 @@ class CameraUDPHandler {
     }
 
     _attemptConnection() {
-        logger.info('Attempting to connect to camera gateway...');
+        // logger.info('Attempting to connect to camera gateway...');
         this._sendPacket({ request_type: 'get_camera_list' });
     }
 
@@ -180,7 +180,7 @@ class CameraUDPHandler {
         headerLenPacked.writeUInt16BE(headerBytes.length, 0);
 
         const fullPacket = Buffer.concat([headerLenPacked, headerBytes, payloadBytes]);
-        logger.info(`Sending packet to camera gateway${SERVER_HOST} ${SERVER_PORT}: ${fullPacket.length} bytes`);
+        // logger.info(`Sending packet to camera gateway${SERVER_HOST} ${SERVER_PORT}: ${fullPacket.length} bytes`);
         this.socket.send(fullPacket, SERVER_PORT, SERVER_HOST, (err) => {
             if (err) logger.error(`Failed to send packet: ${err}`);
         });

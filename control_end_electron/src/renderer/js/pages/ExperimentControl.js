@@ -1,6 +1,6 @@
 // 实验控制页面
 import BasePage from './BasePage.js';
-import RobotController from '../components/RobotController.js';
+import RobotDogController from '../components/RobotDogController.js';
 import '../components/camera/MultiCameraMonitor.js';
 import SessionsAPI from '../api/sessions.js';
 import MapsAPI from '../api/maps.js';
@@ -86,9 +86,9 @@ export default class ExperimentControl extends BasePage {
 
     initializeComponents() {
         try {
-            this.robotController = new RobotController('robot-control-container');
+            this.robotController = new RobotDogController('robot-control-container');
             this.robotController.render();
-            Logger.info('Robot controller initialized');
+            Logger.info('Robot dog controller initialized');
 
             this.cameraMonitor = this.querySelector('multi-camera-monitor');
             Logger.info('Camera monitor initialized');
