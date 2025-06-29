@@ -8,7 +8,7 @@ import CONFIG from '../config.js';
 class MapsAPI extends BaseAPI {
     constructor() {
         // 使用WOZ系统后端地址
-        super('http://118.31.58.101:48995/api');
+        super(`${CONFIG.API.BASE_URL}/api`);
         this.setTimeout(CONFIG.API.TIMEOUT);
         this.endpoint = '/maps';
     }

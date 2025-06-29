@@ -17,7 +17,7 @@ const { logger } = require('./utils/logger');
 
 // --- Constants ---
 const SERVER_HOST = '118.31.58.101';
-const SERVER_PORT = 48991;
+const SERVER_PORT = 58991;
 const MAX_UDP_SIZE = 65507;
 const FRAGMENT_TIMEOUT = 5000; // 5 seconds
 const CONNECTION_RETRY_INTERVAL = 3000; // 3 seconds
@@ -35,6 +35,7 @@ class CameraUDPHandler {
         this.sessionId = null;
         this.subscribedCameras = new Set();
         this.fragmentBuffer = new Map();
+        this.frameCache = new Map(); // Cache for the latest frame from each camera
 
         // Connection state management
         this.connectionState = 'disconnected'; // 'disconnected', 'connecting', 'connected'
@@ -77,6 +78,14 @@ class CameraUDPHandler {
         });
         ipcMain.on('camera-unsubscribe', (event, cameraIds) => {
             this.unsubscribe(cameraIds);
+        });
+
+        // New listener for renderer to request a frame
+        ipcMain.on('request-camera-frame', (event, cameraId) => {
+            if (this.frameCache.has(cameraId)) {
+                event.sender.send('camera-frame', this.frameCache.get(cameraId));
+                this.frameCache.delete(cameraId); // Optional: clear cache after sending
+            }
         });
     }
 
@@ -171,6 +180,7 @@ class CameraUDPHandler {
         headerLenPacked.writeUInt16BE(headerBytes.length, 0);
 
         const fullPacket = Buffer.concat([headerLenPacked, headerBytes, payloadBytes]);
+        logger.info(`Sending packet to camera gateway${SERVER_HOST} ${SERVER_PORT}: ${fullPacket.length} bytes`);
         this.socket.send(fullPacket, SERVER_PORT, SERVER_HOST, (err) => {
             if (err) logger.error(`Failed to send packet: ${err}`);
         });
@@ -207,18 +217,18 @@ class CameraUDPHandler {
             const dataLength = data.readUInt32BE(24); // This ends at byte 28
             const frameData = data.slice(headerSize, headerSize + dataLength);
 
-            // Convert buffer to Base64 in the main process to avoid IPC issues.
+            // Instead of sending directly, update the cache with the latest frame.
             const frameDataB64 = frameData.toString('base64');
-
-            this.mainWindow.webContents.send('camera-frame', {
+            this.frameCache.set(cameraId, {
                 cameraId,
-                frameData: frameDataB64, // Send as Base64 string
+                frameData: frameDataB64,
                 timestamp: Number(timestamp_us) / 1e6,
                 frameId,
                 resolution: [width, height],
                 quality,
             });
-            logger.info(`Successfully parsed binary frame for cam ${cameraId} and sent to renderer.`);
+            // The renderer will now request this frame via 'request-camera-frame'
+            // logger.info(`Cached frame for camera ${cameraId}.`);
         } catch (e) {
             logger.error(`CRITICAL: Error parsing binary frame: ${e.message}\n${e.stack}`);
         }

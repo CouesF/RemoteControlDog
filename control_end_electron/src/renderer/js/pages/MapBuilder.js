@@ -9,6 +9,7 @@ import Logger from '../utils/logger.js';
 import mapsAPI from '../api/maps.js';
 import EventBus from '../eventBus.js';
 import { formatIdDisplayWithTitle } from '../utils/idFormatter.js';
+import CONFIG from '../config.js'; // Import CONFIG
 
 export default class MapBuilder extends BasePage {
     constructor() {
@@ -563,7 +564,7 @@ export default class MapBuilder extends BasePage {
             // 根据系统规则动态构建URL
             // 后端基础URL: http://118.31.58.101:45001
             // 假设后端的静态文件服务端口是 8995，前端访问时需要+4，变成 48995
-            const backendBaseUrl = 'http://118.31.58.101:48995';
+            const backendBaseUrl = CONFIG.API.BASE_URL;
             return `${backendBaseUrl}${path}`;
         };
 

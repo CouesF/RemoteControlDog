@@ -2,7 +2,7 @@
 export const CONFIG = {
     // API配置
     API: {
-        BASE_URL: 'http://118.31.58.101:48995',
+        BASE_URL: 'http://118.31.58.101:58995',
         TIMEOUT: 10000, // 10秒超时
         ENDPOINTS: {
             PARTICIPANTS: '/api/participants',
@@ -16,7 +16,7 @@ export const CONFIG = {
     
     // WebSocket配置（如果需要）
     WEBSOCKET: {
-        URL: 'ws://118.31.58.101:48995/ws'
+        URL: 'ws://118.31.58.101:58995/ws'
     },
     
     // 应用设置

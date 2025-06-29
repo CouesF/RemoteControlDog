@@ -116,6 +116,16 @@ class CameraManager extends EventEmitter {
     }
 
     /**
+     * Requests a single frame for a specific camera from the main process.
+     * @param {number} cameraId - The ID of the camera to request a frame for.
+     */
+    requestFrame(cameraId) {
+        if (this.connectionState === 'connected' && window.api) {
+            window.api.requestCameraFrame(cameraId);
+        }
+    }
+
+    /**
      * Unsubscribes from all currently subscribed cameras.
      */
     unsubscribeAll() {
