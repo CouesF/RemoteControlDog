@@ -118,8 +118,8 @@ export default class RobotDogController extends BaseComponent {
                                     <div class="joystick-center"></div>
                                 </div>
                                 <div class="joystick-values">
-                                    <span>A1: <span id="angle1-value" class="joystick-value">0.0°</span></span>
-                                    <span>A2: <span id="angle2-value" class="joystick-value">0.0°</span></span>
+                                    <span>A1: <span id="angle1-value" class="joystick-value">0.00</span></span>
+                                    <span>A2: <span id="angle2-value" class="joystick-value">0.00</span></span>
                                 </div>
                             </div>
                         </div>
@@ -135,8 +135,8 @@ export default class RobotDogController extends BaseComponent {
                                     <div class="joystick-center"></div>
                                 </div>
                                 <div class="joystick-values">
-                                    <span>俯仰: <span id="pitch-value" class="joystick-value">0.0°</span></span>
-                                    <span>偏航: <span id="yaw-value" class="joystick-value">0.0°</span></span>
+                                    <span>俯仰: <span id="pitch-value" class="joystick-value">0.00</span></span>
+                                    <span>偏航: <span id="yaw-value" class="joystick-value">0.00</span></span>
                                 </div>
                             </div>
                         </div>
@@ -405,14 +405,14 @@ export default class RobotDogController extends BaseComponent {
         });
         
         this.setupJoystick('angle', (x, y) => {
-            this.controlState.angle1 = x * 90;  // -90到90度
-            this.controlState.angle2 = y * 90;
+            this.controlState.angle1 = x;
+            this.controlState.angle2 = y;
             this.updateAngleDisplay();
         });
         
         this.setupJoystick('head', (x, y) => {
-            this.controlState.headYaw = x * 45;    // -45到45度
-            this.controlState.headPitch = y * 45;  // -45到45度
+            this.controlState.headYaw = x;
+            this.controlState.headPitch = y;
             this.updateHeadDisplay();
         });
         
@@ -579,13 +579,13 @@ export default class RobotDogController extends BaseComponent {
     }
 
     updateAngleDisplay() {
-        this.elements.angle1Value.textContent = `${this.controlState.angle1.toFixed(1)}°`;
-        this.elements.angle2Value.textContent = `${this.controlState.angle2.toFixed(1)}°`;
+        this.elements.angle1Value.textContent = this.controlState.angle1.toFixed(2);
+        this.elements.angle2Value.textContent = this.controlState.angle2.toFixed(2);
     }
 
     updateHeadDisplay() {
-        this.elements.pitchValue.textContent = `${this.controlState.headPitch.toFixed(1)}°`;
-        this.elements.yawValue.textContent = `${this.controlState.headYaw.toFixed(1)}°`;
+        this.elements.pitchValue.textContent = this.controlState.headPitch.toFixed(2);
+        this.elements.yawValue.textContent = this.controlState.headYaw.toFixed(2);
     }
 
     startControlLoop() {
