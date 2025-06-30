@@ -6,7 +6,7 @@ const dgram = require('dgram');
 // 测试配置
 const TEST_CONFIG = {
     host: '118.31.58.101',
-    port: 48991,
+    port: 58991,
     localPort: 0
 };
 

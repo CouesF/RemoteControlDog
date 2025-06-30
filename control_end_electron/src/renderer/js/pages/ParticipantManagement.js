@@ -516,6 +516,7 @@ export default class ParticipantManagement extends BasePage {
                 }
                 if (map) {
                     sessionStorage.setItem('currentMapName', map.mapName);
+                    sessionStorage.setItem('currentMapId', map.mapId);
                 }
 
                 this.hideLoading();

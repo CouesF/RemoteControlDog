@@ -21,6 +21,10 @@ class UDPHandler {
         ipcMain.on('disconnect-udp', (event, connectionId) => {
             this.closeConnection(connectionId);
         });
+
+        ipcMain.on('send-udp', (event, connectionId, message) => {
+            this.sendMessage(connectionId, message);
+        });
     }
 
     createConnection(options) {
@@ -72,6 +76,24 @@ class UDPHandler {
         this.connections.set(connectionId, socket);
 
         return { success: true, connectionId };
+    }
+
+    sendMessage(connectionId, message) {
+        const socket = this.connections.get(connectionId);
+        if (!socket) {
+            logger.error(`[UDPHandler] No connection found for ${connectionId}`);
+            return;
+        }
+
+        const buffer = Buffer.from(message);
+        socket.send(buffer, (err) => {
+            if (err) {
+                logger.error(`[UDPHandler] Error sending message on ${connectionId}: ${err.message}`);
+                this.mainWindow.webContents.send(`udp-error-${connectionId}`, { error: err.message });
+            } else {
+                logger.info(`[UDPHandler] Message sent on ${connectionId}: ${message}`);
+            }
+        });
     }
 
     closeConnection(connectionId) {

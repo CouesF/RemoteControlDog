@@ -1,107 +1,97 @@
-<div class="page-header">
-    <h1>实验控制</h1>
-    <div>
-        <button id="end-experiment-btn" class="btn btn-danger">
-            <i class="fas fa-stop"></i> 结束实验
-        </button>
-    </div>
-</div>
-<!-- 会话信息 -->
-<div class="row mb-4">
-    <div class="col-12">
-        <div class="card">
-            <div class="card-body">
-                <div id="session-info">
-                    <!-- 会话信息将在这里动态加载 -->
-                </div>
-            </div>
+<div class="experiment-control-page">
+    <!-- 1. Top Bar -->
+    <div class="top-bar">
+        <div class="session-details">
+            <span><strong>被试:</strong> <span id="exp-participant-name">N/A</span></span>
+            <span><strong>场地:</strong> <span id="exp-map-name">N/A</span></span>
+            <span><strong>开始时间:</strong> <span id="exp-start-time">--:--</span></span>
+            <span><strong>持续时间:</strong> <span id="exp-duration">00:00</span></span>
+        </div>
+        <div class="session-actions">
+            <button id="emergency-stop-btn" class="btn btn-warning mr-2">
+                <i class="fas fa-exclamation-triangle"></i> 紧急停止 (Damp)
+            </button>
+            <button id="end-experiment-btn" class="btn btn-danger">
+                <i class="fas fa-stop"></i> 结束实验
+            </button>
         </div>
     </div>
-</div>
-<!-- 机器人控制区域 -->
-<div class="row mb-4">
-    <div class="col-md-8">
-        <div class="card">
+
+    <!-- 2. Middle Row -->
+    <div class="middle-row">
+        <!-- Left Column: JA Target Progress -->
+        <div class="card column-left">
+            <div class="card-header">
+                <h5><i class="fas fa-tasks"></i> JA目标进度</h5>
+            </div>
+            <div id="ja-target-list-container" class="card-body">
+                <!-- JA Target 列表将在这里动态加载 -->
+            </div>
+        </div>
+
+        <!-- Middle Column: Camera Monitor -->
+        <div class="card column-middle">
             <div class="card-header">
                 <h5 class="card-title mb-0">摄像头监控</h5>
             </div>
-            <div class="card-body" style="height: 500px; padding: 0;">
+            <div class="card-body">
                 <multi-camera-monitor></multi-camera-monitor>
             </div>
         </div>
-    </div>
-    <div class="col-md-4">
-        <div id="robot-control-container"></div>
-    </div>
-</div>
-<!-- 实验操作区域 -->
-<div class="row">
-    <div class="col-md-4">
-        <div class="card">
+
+        <!-- Right Column: JA Target Details -->
+        <div class="card column-right">
             <div class="card-header">
-                <h5><i class="fas fa-tasks"></i> RJA指令控制</h5>
+                <h5><i class="fas fa-bullseye"></i> JA Target详情</h5>
             </div>
-            <div class="card-body">
-                <p class="text-muted">控制RJA训练指令的执行和记录</p>
-                <div class="btn-group-vertical d-block">
-                    <button id="start-instruction-btn" class="btn btn-primary btn-block mb-2">
-                        <i class="fas fa-play"></i> 开始指令
-                    </button>
-                    <button id="instruction-success-btn" class="btn btn-success btn-block mb-2">
-                        <i class="fas fa-check"></i> 指令成功
-                    </button>
-                    <button id="instruction-failure-btn" class="btn btn-warning btn-block">
-                        <i class="fas fa-times"></i> 指令失败
-                    </button>
-                </div>
-                <!-- TODO: 添加目标点选择、等级选择等 -->
+            <div id="ja-target-detail-container" class="card-body">
+                <!-- JA Target 详情将在这里动态加载 -->
             </div>
         </div>
     </div>
-    
-    <div class="col-md-4">
+
+    <!-- 3. Bottom Row -->
+    <div class="bottom-row">
         <div class="card">
-            <div class="card-header">
-                <h5><i class="fas fa-microphone"></i> 语音合成</h5>
-            </div>
-            <div class="card-body">
-                <div class="form-group">
-                    <label for="speech-text">输入语音内容:</label>
-                    <textarea id="speech-text" class="form-control" rows="3" placeholder="输入要合成的语音内容..."></textarea>
+            <div id="robot-control-container"></div>
+        </div>
+    </div>
+
+    <!-- Other components (can be moved or integrated as needed) -->
+    <div class="other-components-row mt-4">
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5><i class="fas fa-microphone"></i> 语音合成</h5>
                 </div>
-                <button id="generate-speech-btn" class="btn btn-primary btn-block">
-                    <i class="fas fa-volume-up"></i> 生成语音
-                </button>
-                
-                <!-- 快捷语音按钮 -->
-                <div id="quick-speech-container" class="mt-3">
-                    <!-- 快捷语音按钮将在这里动态生成 -->
+                <div class="card-body">
+                    <div class="form-group">
+                        <label for="speech-text">输入语音内容:</label>
+                        <textarea id="speech-text" class="form-control" rows="3" placeholder="输入要合成的语音内容..."></textarea>
+                    </div>
+                    <button id="generate-speech-btn" class="btn btn-primary btn-block">
+                        <i class="fas fa-volume-up"></i> 生成语音
+                    </button>
+                    <div id="quick-speech-container" class="mt-3"></div>
                 </div>
             </div>
         </div>
-    </div>
-    
-    <div class="col-md-4">
-        <div class="card">
-            <div class="card-header">
-                <h5><i class="fas fa-chart-line"></i> 实验状态</h5>
-            </div>
-            <div class="card-body">
-                <div id="experiment-stats">
-                    <!-- TODO: 添加实验统计信息 -->
-                    <p class="text-muted">实验统计信息</p>
-                    <ul class="list-unstyled">
-                        <li><strong>完成指令:</strong> <span id="completed-instructions">0</span></li>
-                        <li><strong>成功率:</strong> <span id="success-rate">0%</span></li>
-                        <li><strong>实验时长:</strong> <span id="experiment-duration">00:00:00</span></li>
-                    </ul>
+        <div class="col-md-4" style="display: none;">
+            <div class="card">
+                <div class="card-header">
+                    <h5><i class="fas fa-chart-line"></i> 实验状态</h5>
                 </div>
-                
-                <!-- 事件日志 -->
-                <div class="mt-3">
-                    <h6>事件日志</h6>
-                    <div id="event-log" class="bg-light p-2" style="height: 150px; overflow-y: auto; font-size: 0.875rem;">
-                        <!-- 事件日志将在这里显示 -->
+                <div class="card-body">
+                    <div id="experiment-stats">
+                        <p class="text-muted">实验统计信息</p>
+                        <ul class="list-unstyled">
+                            <li><strong>完成指令:</strong> <span id="completed-instructions">0</span></li>
+                            <li><strong>成功率:</strong> <span id="success-rate">0%</span></li>
+                        </ul>
+                    </div>
+                    <div class="mt-3">
+                        <h6>事件日志</h6>
+                        <div id="event-log" class="bg-light p-2" style="height: 150px; overflow-y: auto; font-size: 0.875rem;"></div>
                     </div>
                 </div>
             </div>

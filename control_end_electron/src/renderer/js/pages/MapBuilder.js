@@ -1,6 +1,6 @@
 // 地图构建页面 - 支持摄像头监控、机器狗控制、目标点管理
 import BasePage from './BasePage.js';
-import RobotControlPanel from '../components/RobotControlPanel.js';
+import RobotDogController from '../components/RobotDogController.js';
 import Modal from '../components/modal.js';
 import '../components/camera/MultiCameraMonitor.js';
 import { EVENTS, PAGES } from '../utils/constants.js';
@@ -9,6 +9,7 @@ import Logger from '../utils/logger.js';
 import mapsAPI from '../api/maps.js';
 import EventBus from '../eventBus.js';
 import { formatIdDisplayWithTitle } from '../utils/idFormatter.js';
+import CONFIG from '../config.js'; // Import CONFIG
 
 export default class MapBuilder extends BasePage {
     constructor() {
@@ -109,12 +110,7 @@ export default class MapBuilder extends BasePage {
     async initializeComponents() {
         try {
             // 初始化机器狗控制组件
-            this.robotControl = new RobotControlPanel('robot-control-container', {
-                showJoystick: true,
-                showStateControls: true,
-                showObjectControls: true,
-                enableKeyboard: true
-            });
+            this.robotControl = new RobotDogController('robot-control-container');
             await this.robotControl.render();
             
             // 获取摄像头监控组件
@@ -561,9 +557,7 @@ export default class MapBuilder extends BasePage {
         const getImageUrl = (path) => {
             if (!path) return '';
             // 根据系统规则动态构建URL
-            // 后端基础URL: http://118.31.58.101:45001
-            // 假设后端的静态文件服务端口是 8995，前端访问时需要+4，变成 48995
-            const backendBaseUrl = 'http://118.31.58.101:48995';
+            const backendBaseUrl = CONFIG.API.BASE_URL;
             return `${backendBaseUrl}${path}`;
         };
 

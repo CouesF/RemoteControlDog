@@ -2,6 +2,7 @@
 import BaseComponent from './BaseComponent.js';
 import { EVENTS } from '../utils/constants.js';
 import Logger from '../utils/logger.js';
+import CONFIG from '../config.js';
 
 export default class UDPConnectionManager extends BaseComponent {
     constructor() {
@@ -16,14 +17,14 @@ export default class UDPConnectionManager extends BaseComponent {
         // 连接配置
         this.connectionConfigs = {
             control: {
-                host: '118.31.58.101',
-                port: 48990,
+                host: new URL(CONFIG.API.BASE_URL).hostname,
+                port: 58990,
                 type: 'control',
                 autoReconnect: true
             },
             camera: {
-                host: '118.31.58.101', 
-                port: 48991,
+                host: new URL(CONFIG.API.BASE_URL).hostname, 
+                port: 58991,
                 type: 'camera',
                 autoReconnect: true
             }
@@ -324,6 +325,8 @@ class UDPConnection {
         this.isConnected = false;
         this.lastActivity = null;
         this.messageHandlers = new Map();
+        this.lastFrameRequestTime = 0; // Track the time of the last frame request
+        this.frameRequestCooldown = 1000 / 30; // Cooldown for frame requests (e.g., 30 FPS)
         this.stats = {
             messagesSent: 0,
             messagesReceived: 0,
@@ -399,6 +402,21 @@ class UDPConnection {
             this.stats.lastError = error.message;
             Logger.error(`发送消息失败 [${this.id}]:`, error);
             return false;
+        }
+    }
+
+    /**
+     * Request a new frame from the main process.
+     */
+    requestFrame() {
+        const now = Date.now();
+        if (now - this.lastFrameRequestTime < this.frameRequestCooldown) {
+            return; // Cooldown active
+        }
+
+        if (this.isConnected && window.electronAPI?.send) {
+            window.electronAPI.send('request-camera-frame', this.id);
+            this.lastFrameRequestTime = now;
         }
     }
 

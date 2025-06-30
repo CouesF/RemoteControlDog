@@ -48,6 +48,7 @@ contextBridge.exposeInMainWorld('api', {
     disconnectCameraGateway: () => ipcRenderer.send('camera-gateway-disconnect'),
     subscribeToCameras: (cameraIds) => ipcRenderer.send('camera-subscribe', cameraIds),
     unsubscribeFromCameras: (cameraIds) => ipcRenderer.send('camera-unsubscribe', cameraIds),
+    requestCameraFrame: (cameraId) => ipcRenderer.send('request-camera-frame', cameraId),
 
     // --- Camera Event Listeners ---
     onCameraList: (callback) => ipcRenderer.on('camera-list', (event, ...args) => callback(...args)),
@@ -58,6 +59,7 @@ contextBridge.exposeInMainWorld('api', {
     // --- Generic UDP API ---
     connectUDP: (options) => ipcRenderer.invoke('connect-udp', options),
     disconnectUDP: (connectionId) => ipcRenderer.send('disconnect-udp', connectionId),
+    sendUDP: (connectionId, message) => ipcRenderer.send('send-udp', connectionId, message),
     onUDPMessage: (connectionId, callback) => {
         const channel = `udp-message-${connectionId}`;
         ipcRenderer.on(channel, (event, ...args) => callback(...args));

@@ -76,6 +76,7 @@ class CameraDisplay extends HTMLElement {
         this.cameraId = null;
         this.frameHandler = this._handleFrame.bind(this);
         this.connectionStateHandler = this._updateConnectionStatus.bind(this);
+        this.frameRequestInterval = null; // Interval for requesting frames
     }
 
     connectedCallback() {
@@ -88,6 +89,10 @@ class CameraDisplay extends HTMLElement {
         logger.info(`CameraDisplay for camera ${this.cameraId} connected.`);
         cameraManager.on(`frame-for-camera-${this.cameraId}`, this.frameHandler);
         cameraManager.on('connection-state-updated', this.connectionStateHandler);
+        
+        // Start requesting frames periodically
+        this.frameRequestInterval = setInterval(() => this.requestFrame(), 1000 / 30); // 30 FPS
+
         // Set initial state
         this._updateConnectionStatus(cameraManager.connectionState);
     }
@@ -97,6 +102,12 @@ class CameraDisplay extends HTMLElement {
             logger.info(`CameraDisplay for camera ${this.cameraId} disconnected.`);
             cameraManager.off(`frame-for-camera-${this.cameraId}`, this.frameHandler);
             cameraManager.off('connection-state-updated', this.connectionStateHandler);
+            
+            // Stop requesting frames
+            if (this.frameRequestInterval) {
+                clearInterval(this.frameRequestInterval);
+                this.frameRequestInterval = null;
+            }
         }
     }
 
@@ -141,6 +152,15 @@ class CameraDisplay extends HTMLElement {
         image.onerror = (err) => {
             logger.error(`[CameraDisplay ${this.cameraId}] Image.onerror triggered. Failed to load image from Base64 data.`, err);
         };
+    }
+
+    /**
+     * Request a new frame from the CameraManager.
+     */
+    requestFrame() {
+        if (this.cameraId !== null) {
+            cameraManager.requestFrame(this.cameraId);
+        }
     }
 
     /**
