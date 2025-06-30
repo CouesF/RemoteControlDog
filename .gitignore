@@ -59,6 +59,7 @@ upload_cs_main.sh
 
 # VSCode settings
 .vscode/
+.clinerules/
 
 # OS files
 .DS_Store
@@ -71,3 +72,5 @@ logs/
 # Misc
 *.swp
 *.swo
+
+
