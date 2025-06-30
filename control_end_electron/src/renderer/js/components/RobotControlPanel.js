@@ -350,7 +350,7 @@ export default class RobotControlPanel extends BaseComponent {
                 display: flex;
                 gap: 20px;
                 font-family: monospace;
-                font-size: 0.875rem;
+                font-size: 0.5rem;
                 color: #495057;
             }
             

@@ -51,98 +51,97 @@ export default class RobotDogController extends BaseComponent {
     getTemplate() {
         return `
             <div class="robot-dog-control-panel">
-                <!-- 模式切换 -->
-                <div class="mode-section">
-                    <h5>机器狗模式控制</h5>
-                    <div class="mode-buttons">
-                        <button class="mode-btn" data-mode="damp">阻尼模式</button>
-                        <button class="mode-btn" data-mode="high_stand">高层站立</button>
-                        <button class="mode-btn" data-mode="low_stand">底层站立</button>
-                        <button class="mode-btn" data-mode="low_left_raise">底层左抬腿</button>
-                        <button class="mode-btn" data-mode="low_right_raise">底层右抬腿</button>
-                        <button class="mode-btn" data-mode="high_lie">高层趴下</button>
-                    </div>
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-robot"></i> 机器狗模式控制</h5>
                 </div>
-                
-                <!-- 移动控制 -->
-                <div class="movement-section">
-                    <h5>移动控制</h5>
-                    <div class="movement-controls">
-                        <!-- XR摇杆 -->
-                        <div class="joystick-wrapper">
-                            <label>前后/旋转控制</label>
-                            <div id="xr-joystick" class="joystick">
-                                <div class="joystick-handle" data-joystick="xr"></div>
-                                <div class="joystick-center"></div>
-                            </div>
-                            <div class="joystick-values">
-                                <span>X: <span id="x-value">0.00</span></span>
-                                <span>R: <span id="r-value">0.00</span></span>
-                            </div>
+                <div class="card-body">
+                    <!-- 模式切换 -->
+                    <div class="mode-section">
+                        <div class="mode-buttons">
+                            <button class="mode-btn" data-mode="damp">阻尼模式</button>
+                            <button class="mode-btn" data-mode="high_stand">高层站立</button>
+                            <button class="mode-btn" data-mode="low_stand">底层站立</button>
+                            <button class="mode-btn" data-mode="low_left_raise">底层左抬腿</button>
+                            <button class="mode-btn" data-mode="low_right_raise">底层右抬腿</button>
+                            <button class="mode-btn" data-mode="high_lie">高层趴下</button>
                         </div>
-                        
-                        <!-- Y控制按钮 -->
-                        <div class="y-control">
-                            <label>左右移动</label>
-                            <div class="y-buttons">
-                                <button id="y-left-btn" class="control-btn">
-                                    <i class="fas fa-arrow-left"></i> 左移
-                                </button>
-                                <span id="y-value">0.00</span>
-                                <button id="y-right-btn" class="control-btn">
-                                    <i class="fas fa-arrow-right"></i> 右移
-                                </button>
+                        <div id="connection-status" class="connection-status">
+                            <span class="status-dot"></span>
+                            <span id="status-text">未连接</span>
+                            <div class="debug-info ml-3">
+                                <small>控制端点: ${this.controlHost}:${this.controlPort}</small>
                             </div>
                         </div>
                     </div>
-                </div>
-                
-                <!-- 抬腿控制 -->
-                <div class="leg-section">
-                    <h5>抬腿角度控制</h5>
-                    <div class="leg-controls">
-                        <div class="joystick-wrapper">
-                            <label>角度1/角度2</label>
-                            <div id="angle-joystick" class="joystick">
-                                <div class="joystick-handle" data-joystick="angle"></div>
-                                <div class="joystick-center"></div>
+
+                <!-- Joystick Controls Wrapper -->
+                <div class="joystick-controls-wrapper">
+                    <!-- 移动控制 -->
+                    <div class="movement-section">
+                        <div class="movement-controls">
+                            <!-- XR摇杆 -->
+                            <div class="joystick-wrapper">
+                                <label>前后/旋转</label>
+                                <div id="xr-joystick" class="joystick">
+                                    <div class="joystick-handle" data-joystick="xr"></div>
+                                    <div class="joystick-center"></div>
+                                </div>
+                                <div class="joystick-values">
+                                    <span>X: <span id="x-value" class="joystick-value">0.00</span></span>
+                                    <span>R: <span id="r-value" class="joystick-value">0.00</span></span>
+                                </div>
                             </div>
-                            <div class="joystick-values">
-                                <span>角度1: <span id="angle1-value">0.0°</span></span>
-                                <span>角度2: <span id="angle2-value">0.0°</span></span>
+                            
+                            <!-- Y控制按钮 -->
+                            <div class="y-control">
+                                <label>左右移动</label>
+                                <div class="y-buttons">
+                                    <button id="y-left-btn" class="control-btn">
+                                        <i class="fas fa-arrow-left"></i>
+                                    </button>
+                                    <span id="y-value">0.00</span>
+                                    <button id="y-right-btn" class="control-btn">
+                                        <i class="fas fa-arrow-right"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- 抬腿控制 -->
+                    <div class="leg-section">
+                        <div class="leg-controls">
+                            <div class="joystick-wrapper">
+                                <label>抬腿角度</label>
+                                <div id="angle-joystick" class="joystick">
+                                    <div class="joystick-handle" data-joystick="angle"></div>
+                                    <div class="joystick-center"></div>
+                                </div>
+                                <div class="joystick-values">
+                                    <span>A1: <span id="angle1-value" class="joystick-value">0.0°</span></span>
+                                    <span>A2: <span id="angle2-value" class="joystick-value">0.0°</span></span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- 头部控制 -->
+                    <div class="head-section">
+                        <div class="head-controls">
+                            <div class="joystick-wrapper">
+                                <label>头部姿态</label>
+                                <div id="head-joystick" class="joystick">
+                                    <div class="joystick-handle" data-joystick="head"></div>
+                                    <div class="joystick-center"></div>
+                                </div>
+                                <div class="joystick-values">
+                                    <span>俯仰: <span id="pitch-value" class="joystick-value">0.0°</span></span>
+                                    <span>偏航: <span id="yaw-value" class="joystick-value">0.0°</span></span>
+                                </div>
                             </div>
                         </div>
                     </div>
                 </div>
-                
-                <!-- 头部控制 -->
-                <div class="head-section">
-                    <h5>头部控制</h5>
-                    <div class="head-controls">
-                        <div class="joystick-wrapper">
-                            <label>俯仰/偏航</label>
-                            <div id="head-joystick" class="joystick">
-                                <div class="joystick-handle" data-joystick="head"></div>
-                                <div class="joystick-center"></div>
-                            </div>
-                            <div class="joystick-values">
-                                <span>俯仰: <span id="pitch-value">0.0°</span></span>
-                                <span>偏航: <span id="yaw-value">0.0°</span></span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                
-                <!-- 状态显示 -->
-                <div class="status-section">
-                    <h5>连接状态</h5>
-                    <div id="connection-status" class="connection-status">
-                        <span class="status-dot"></span>
-                        <span id="status-text">未连接</span>
-                    </div>
-                    <div class="debug-info">
-                        <small>控制端点: ${this.controlHost}:${this.controlPort}</small>
-                    </div>
                 </div>
             </div>
         `;
@@ -155,16 +154,19 @@ export default class RobotDogController extends BaseComponent {
         const style = document.createElement('style');
         style.id = styleId;
         style.textContent = `
-            .robot-dog-control-panel {
-                padding: 20px;
-                background: white;
-                border-radius: 8px;
-                box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            .robot-dog-control-panel .card-header {
+                display: none;
+                padding: 0.75rem 0.75rem;
+                background-color: rgba(0,0,0,.03);
+                border-bottom: 1px solid rgba(0,0,0,.125);
+            }
+            .robot-dog-control-panel .card-body {
+                padding: 0rem;
             }
             
             .robot-dog-control-panel > div {
-                margin-bottom: 25px;
-                padding-bottom: 20px;
+                margin-bottom: 0rem;
+                padding-bottom: 0rem;
                 border-bottom: 1px solid #e9ecef;
             }
             
@@ -174,8 +176,9 @@ export default class RobotDogController extends BaseComponent {
             }
             
             .mode-buttons {
-                display: grid;
-                grid-template-columns: repeat(3, 1fr);
+                display: flex;
+                flex-wrap: wrap;
+                justify-content: center;
                 gap: 10px;
                 margin-top: 10px;
             }
@@ -202,9 +205,9 @@ export default class RobotDogController extends BaseComponent {
             
             .movement-controls {
                 display: flex;
-                gap: 30px;
-                align-items: flex-start;
-                margin-top: 15px;
+                flex-direction: column;
+                gap: 1rem;
+                align-items: center;
             }
             
             .joystick-wrapper {
@@ -218,8 +221,8 @@ export default class RobotDogController extends BaseComponent {
             }
             
             .joystick {
-                width: 120px;
-                height: 120px;
+                width: 100px;
+                height: 100px;
                 border: 3px solid #dee2e6;
                 border-radius: 50%;
                 position: relative;
@@ -229,8 +232,8 @@ export default class RobotDogController extends BaseComponent {
             }
             
             .joystick-handle {
-                width: 40px;
-                height: 40px;
+                width: 35px;
+                height: 35px;
                 background: #007bff;
                 border: 3px solid white;
                 border-radius: 50%;
@@ -264,7 +267,7 @@ export default class RobotDogController extends BaseComponent {
                 display: flex;
                 justify-content: center;
                 gap: 20px;
-                font-size: 0.875rem;
+                font-size: 0.5rem;
             }
             
             .joystick-values span {
@@ -272,6 +275,12 @@ export default class RobotDogController extends BaseComponent {
                 padding: 2px 8px;
                 border-radius: 3px;
                 font-family: monospace;
+            }
+
+            .joystick-value {
+                display: inline-block;
+                width: 45px;
+                text-align: right;
             }
             
             .y-control {
@@ -287,7 +296,7 @@ export default class RobotDogController extends BaseComponent {
             .y-buttons {
                 display: flex;
                 align-items: center;
-                gap: 15px;
+                gap: 10px;
             }
             
             .control-btn {
@@ -317,17 +326,12 @@ export default class RobotDogController extends BaseComponent {
             .leg-controls, .head-controls {
                 display: flex;
                 justify-content: center;
-                margin-top: 15px;
             }
             
             .connection-status {
                 display: flex;
                 align-items: center;
-                gap: 10px;
-                padding: 10px 15px;
-                background: #f8f9fa;
-                border-radius: 5px;
-                margin-top: 10px;
+                gap: 8px;
             }
             
             .status-dot {
@@ -349,8 +353,6 @@ export default class RobotDogController extends BaseComponent {
             }
             
             .debug-info {
-                margin-top: 10px;
-                text-align: center;
                 color: #6c757d;
             }
         `;
@@ -421,7 +423,7 @@ export default class RobotDogController extends BaseComponent {
         this.startControlLoop();
         
         // 设置初始模式
-        this.switchMode('damp');
+        // this.switchMode('damp');
     }
 
     setupJoystick(type, callback) {
@@ -602,13 +604,22 @@ export default class RobotDogController extends BaseComponent {
                     data: {
                         x: this.controlState.x,
                         y: this.controlState.y,
-                        r: this.controlState.r,
+                        r: this.controlState.r
+                    }
+                });
+            }
+            if (Math.abs(this.controlState.angle1) > 0.1 ||
+                Math.abs(this.controlState.angle2) > 0.1) {
+                
+                this.sendCommand({
+                    command_type: 'object_control',
+                    target: 'leg',
+                    data: {
                         angle1: this.controlState.angle1,
                         angle2: this.controlState.angle2
                     }
                 });
             }
-            
             // 发送头部控制
             if (Math.abs(this.controlState.headPitch) > 0.1 || 
                 Math.abs(this.controlState.headYaw) > 0.1) {

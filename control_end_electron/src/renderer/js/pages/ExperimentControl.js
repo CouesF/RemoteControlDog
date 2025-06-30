@@ -24,6 +24,7 @@ export default class ExperimentControl extends BasePage {
         this.currentSessionId = null;
         this.currentMapId = null;
         this.speechText = '';
+        this.durationInterval = null;
 
         this.state = {
             experimentStatus: EXPERIMENT_STATE.NAVIGATION,
@@ -66,6 +67,12 @@ export default class ExperimentControl extends BasePage {
             this.addEventListener(endExperimentBtn, 'click', () => this.handleEndExperiment());
         }
 
+        // 紧急停止按钮
+        const emergencyStopBtn = this.querySelector('#emergency-stop-btn');
+        if (emergencyStopBtn) {
+            this.addEventListener(emergencyStopBtn, 'click', () => this.handleEmergencyStop());
+        }
+
         // 语音合成按钮
         const generateSpeechBtn = this.querySelector('#generate-speech-btn');
         if (generateSpeechBtn) {
@@ -100,26 +107,41 @@ export default class ExperimentControl extends BasePage {
     }
 
     updateSessionInfo() {
-        const sessionInfoElement = this.querySelector('#session-info');
-        if (sessionInfoElement && this.currentSessionId) {
-            const startTime = sessionStorage.getItem('sessionStartTime') || new Date().toISOString();
-            const participantName = sessionStorage.getItem('currentParticipantName') || '未知';
-            const mapName = sessionStorage.getItem('currentMapName') || '未知';
+        const participantName = sessionStorage.getItem('currentParticipantName') || '未知';
+        const mapName = sessionStorage.getItem('currentMapName') || '未知';
+        const startTimeISO = sessionStorage.getItem('sessionStartTime') || new Date().toISOString();
+        const startTime = new Date(startTimeISO);
 
-            sessionInfoElement.innerHTML = `
-                <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <h6>当前实验信息</h6>
-                        <p class="mb-1"><strong>被试:</strong> ${participantName} | <strong>地图:</strong> ${mapName}</p>
-                        <p class="mb-0"><strong>开始时间:</strong> ${new Date(startTime).toLocaleString()}</p>
-                    </div>
-                    <div>
-                        <h6>实验状态</h6>
-                        <p id="experiment-status-badge" class="mb-0"></p>
-                    </div>
-                </div>
-            `;
+        this.querySelector('#exp-participant-name').textContent = participantName;
+        this.querySelector('#exp-map-name').textContent = mapName;
+        this.querySelector('#exp-start-time').textContent = startTime.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+
+        this.startDurationTimer(startTime);
+    }
+
+    startDurationTimer(startTime) {
+        if (this.durationInterval) {
+            clearInterval(this.durationInterval);
         }
+
+        const durationElement = this.querySelector('#exp-duration');
+
+        this.durationInterval = setInterval(() => {
+            const now = new Date();
+            const diff = now - startTime; // a diferença em milissegundos
+
+            const hours = Math.floor(diff / 3600000);
+            const minutes = Math.floor((diff % 3600000) / 60000);
+            const seconds = Math.floor((diff % 60000) / 1000);
+
+            let durationText;
+            if (hours > 0) {
+                durationText = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+            } else {
+                durationText = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+            }
+            durationElement.textContent = durationText;
+        }, 1000);
     }
 
     setupQuickSpeechButtons() {
@@ -156,6 +178,15 @@ export default class ExperimentControl extends BasePage {
                 this.generateSpeech(text);
             });
         });
+    }
+
+    handleEmergencyStop() {
+        if (this.robotController) {
+            this.robotController.switchMode('damp');
+            this.showInfo('已发送紧急停止(Damp)指令');
+        } else {
+            this.showWarning('机器人控制器未初始化');
+        }
     }
 
     async handleEndExperiment() {
@@ -514,6 +545,9 @@ export default class ExperimentControl extends BasePage {
         if (this.cameraMonitor) {
             // 如果 cameraMonitor 有 cleanup 方法，可以在这里调用
             this.cameraMonitor = null;
+        }
+        if (this.durationInterval) {
+            clearInterval(this.durationInterval);
         }
     }
 }
