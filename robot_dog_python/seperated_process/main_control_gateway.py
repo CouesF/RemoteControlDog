@@ -306,6 +306,7 @@ class DDSBridge:
 
         # unitree DDS Lib
         self.motion_publisher = None
+        self.head_publisher = None
         
         # 初始化DDS（如果可用）
         if DDS_AVAILABLE and self.enable_dds:
@@ -318,7 +319,8 @@ class DDSBridge:
             self.motion_publisher = ChannelPublisher("rt/my_motion_command", MyMotionCommand)
             self.motion_publisher.Init()
 
-
+            self.head_publisher = ChannelPublisher("HeadCommand", HeadCommand)
+            self.head_publisher.Init()
 
 
             # # 创建DDS参与者
@@ -487,14 +489,14 @@ class DDSBridge:
             # 处理头部控制
             head_cmd = {
                 'timestamp': int(time.time() * 1000),
-                'action': 0,  # MOVE_DIRECT
-                'pitch_deg': command.data.get('pitch', 0.0),
-                'yaw_deg': command.data.get('yaw', 0.0),
+                'action': 0,  # MOVE_DIRECT, 1 NOD, 2 SHAKE HEAD
+                'pitch_deg': command.data.get('pitch', 0.0) *30.0,
+                'yaw_deg': command.data.get('yaw', 0.0)*30.0,
                 'expression_char': command.data.get('expression', 'c')
             }
             
             # 发送到DDS
-            if self.enable_dds and self.head_writer:
+            if self.enable_dds and self.head_publisher:
                 try:
                     dds_cmd = HeadCommand(
                         timestamp=head_cmd['timestamp'],
@@ -503,7 +505,7 @@ class DDSBridge:
                         yaw_deg=head_cmd['yaw_deg'],
                         expression_char=head_cmd['expression_char']
                     )
-                    self.head_writer.write(dds_cmd)
+                    self.head_publisher.Write(dds_cmd)
                     logger.info(f"Sent head command via DDS: pitch={head_cmd['pitch_deg']:.1f}, yaw={head_cmd['yaw_deg']:.1f}")
                 except Exception as e:
                     logger.error(f"Failed to send head command via DDS: {e}")
