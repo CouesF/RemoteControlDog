@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 优化版实时UDP摄像头网关 (v4 - CSI Video Stream Support)
-端口：本地8991，FRP远程48991
+端口：本地8991，FRP远程58991
 功能：多摄像头管理、实时视频流传输、性能优化、CSI视频流支持
 """
 
@@ -44,17 +44,17 @@ HEADER_SIZE = 32  # 减小头部大小
 CAMERA_CONFIGS = {
     0: {
         "type": "csi",
-        "resolution": (640, 480),
-        "fps": 12,
-        "quality": 40,
+        "resolution": (480, 320),
+        "fps": 10,
+        "quality": 20,
         "name": "CSI摄像头-0",
         "sensor_id": 0
     },
     1: {
         "type": "csi",
-        "resolution": (640, 480),
-        "fps": 12,
-        "quality": 40,
+        "resolution": (480, 320),
+        "fps": 10,
+        "quality": 20,
         "name": "CSI摄像头-1",
         "sensor_id": 1
     },

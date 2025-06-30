@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 """
 实时UDP控制网关
-端口：本地8990，FRP远程48990
-功能：处理状态切换、XYR控制、控制对象信号
+端口：本地8990，FRP远程58990
+功能：处理状态切换、XYR控制、控制对象信号、机器狗控制
 """
 
 import asyncio
@@ -18,6 +18,22 @@ from typing import Dict, Any, Optional, Tuple
 from dataclasses import dataclass
 from collections import defaultdict
 import struct
+
+# DDS imports
+try:
+    # from cyclonedds.domain import DomainParticipant
+    # from cyclonedds.topic import Topic
+    # from cyclonedds.pub import Publisher, DataWriter
+    from unitree_sdk2py.core.channel import (ChannelPublisher, ChannelFactoryInitialize, ChannelSubscriber)
+
+    import sys
+    import os
+    sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+    from communication.dds_data_structure import MyMotionCommand, HeadCommand
+    DDS_AVAILABLE = True
+except ImportError:
+    logger.warning("DDS not available, running in test mode")
+    DDS_AVAILABLE = False
 
 # 配置日志
 logging.basicConfig(
@@ -166,7 +182,15 @@ class PacketManager:
     def process_received_packet(self, data: bytes, addr: Tuple[str, int]) -> Optional[Dict[str, Any]]:
         """处理接收到的数据包"""
         try:
-            # 解析头部大小
+            # 首先尝试直接解析为JSON（简单格式）
+            try:
+                packet = json.loads(data.decode('utf-8'))
+                logger.debug(f"Parsed simple JSON packet: {packet}")
+                return packet
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                pass
+            
+            # 如果不是简单JSON，尝试解析带头部的格式
             if len(data) < 2:
                 return None
             
@@ -248,6 +272,23 @@ class PacketManager:
             del self.fragment_buffers[fid]
             logger.warning(f"清理过期分片: {fid}")
 
+# class RobotState:
+#     """机器狗状态枚举"""
+#     DAMP = 8  # 阻尼模式
+#     HIGH_LEVEL_STAND = 5  # 高层站立
+#     LOW_LEVEL_STAND = 7  # 底层站立
+#     LOW_LEVEL_LEFT_LEG_RAISE = 3  # 底层左抬腿
+#     LOW_LEVEL_RIGHT_LEG_RAISE = 4  # 底层右抬腿
+#     HIGH_LEVEL_LIE_DOWN = 5  # 高层趴下
+# class RobotState(Enum):
+#     HIGH_LEVEL_DAMP = 8
+#     LOW_LEVEL_DAMP = 12 # TODO: 这也是8？
+#     HIGH_LEVEL_STAND = 5
+#     HIGH_LEVEL_WALK = 9 # TODO：这个没用？
+#     LOW_LEVEL_STAND = 7
+#     LOW_LEVEL_RAISE_LEG = 10
+#     LOW_LEVEL_LIE_DOWN = 11 # TODO：这个没用？应该是高层
+
 class DDSBridge:
     """DDS通信桥接器"""
     
@@ -256,6 +297,47 @@ class DDSBridge:
         self.connection_retry_count = 0
         self.max_retries = 10
         self.retry_delay = 1.0
+        self.enable_dds = True  # DDS传输开关
+        
+        # DDS相关对象
+        self.participant = None
+        self.motion_writer = None
+        self.head_writer = None
+
+        # unitree DDS Lib
+        self.motion_publisher = None
+        
+        # 初始化DDS（如果可用）
+        if DDS_AVAILABLE and self.enable_dds:
+            self._init_dds()
+    
+    def _init_dds(self):
+        """初始化DDS通信"""
+        try:
+            ChannelFactoryInitialize(0, "enP8p1s0")
+            self.motion_publisher = ChannelPublisher("rt/my_motion_command", MyMotionCommand)
+            self.motion_publisher.Init()
+
+
+
+
+            # # 创建DDS参与者
+            # self.participant = DomainParticipant()
+            
+            # # 创建运动控制主题和写入器
+            # motion_topic = Topic(self.participant, "MyMotionCommand", MyMotionCommand)
+            # motion_publisher = Publisher(self.participant)
+            # self.motion_writer = DataWriter(motion_publisher, motion_topic)
+            
+            # # 创建头部控制主题和写入器
+            # head_topic = Topic(self.participant, "HeadCommand", HeadCommand)
+            # head_publisher = Publisher(self.participant)
+            # self.head_writer = DataWriter(head_publisher, head_topic)
+            
+            logger.info("DDS initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize DDS: {e}")
+            self.enable_dds = False
         
     async def connect(self):
         """连接到DDS系统"""
@@ -298,30 +380,228 @@ class DDSBridge:
     async def _handle_state_switch(self, command: ControlCommand) -> bool:
         """处理状态切换命令"""
         logger.info(f"状态切换: {command.data}")
-        # 实际的DDS状态切换逻辑
-        await asyncio.sleep(0.01)  # 模拟处理时间
+        
+        # 解析状态
+        state_name = command.data.get('state', '')
+        leg_selection = 0
+
+        state_enum = {
+            'damp':8, # RobotState.DAMP, # 8
+            'high_stand': 5, # RobotState.HIGH_LEVEL_STAND, # 5
+            'low_stand': 7, # RobotState.LOW_LEVEL_STAND, # 7
+            'low_left_raise': 10, #RobotState.LOW_LEVEL_LEFT_LEG_RAISE, # 10 1
+            'low_right_raise': 10, # RobotState.LOW_LEVEL_RIGHT_LEG_RAISE, # 10 0
+            'high_lie': 100, #RobotState.HIGH_LEVEL_LIE_DOWN
+        }.get(state_name, 0)
+        
+        if state_name == "low_left_raise": leg_selection = 1
+        elif state_name == "low_right_raise": leg_selection = 0
+        elif state_name == "high_lie" : return False # TODO: change this
+
+        # 创建运动命令
+        motion_cmd = {
+            'command_type': 0,  # 状态切换
+            'state_enum': state_enum,
+            'leg_selection': leg_selection,
+            'angle1': 0.0,
+            'angle2': 0.0,
+            'x': 0.0,
+            'y': 0.0,
+            'r': 0.0,
+            'command_id': 0
+        }
+        
+        # 发送到DDS
+        if self.enable_dds and self.motion_publisher:
+            try:
+                dds_cmd = MyMotionCommand(
+                    command_type=motion_cmd['command_type'],
+                    state_enum=motion_cmd['state_enum'],
+                    leg_selection=motion_cmd['leg_selection'],
+                    angle1=motion_cmd['angle1'],
+                    angle2=motion_cmd['angle2'],
+                    x=motion_cmd['x'],
+                    y=motion_cmd['y'],
+                    r=motion_cmd['r'],
+                    command_id=motion_cmd['command_id']
+                )
+                # self.motion_writer.write(dds_cmd)
+                self.motion_publisher.Write(dds_cmd)
+                logger.info(f"Sent motion command via DDS: {motion_cmd}")
+            except Exception as e:
+                logger.error(f"Failed to send motion command via DDS: {e}")
+                return False
+        else:
+            logger.info(f"DDS disabled, would send motion command: {motion_cmd}")
+        
         return True
     
     async def _handle_xyr_control(self, command: ControlCommand) -> bool:
         """处理XYR控制命令"""
         logger.debug(f"XYR控制: {command.data}")
-        # 实际的DDS运动控制逻辑
-        await asyncio.sleep(0.001)  # 模拟处理时间
+        
+        # 创建运动命令
+        motion_cmd = {
+            'command_type': 2,  # 导航控制
+            'state_enum': 0,
+            'leg_selection': 0,
+            'angle1': 0.0,
+            'angle2': 0.0,
+            'x': command.data.get('x', 0.0),
+            'y': command.data.get('y', 0.0),
+            'r': command.data.get('r', 0.0),
+            'command_id': 0
+        }
+        
+        # 发送到DDS
+        if self.enable_dds and self.motion_publisher:
+            try:
+                dds_cmd = MyMotionCommand(
+                    command_type   =motion_cmd['command_type'],
+                    state_enum     =motion_cmd['state_enum'],
+                    leg_selection  =motion_cmd['leg_selection'],
+                    angle1         =motion_cmd['angle1'],
+                    angle2         =motion_cmd['angle2'],
+                    x              =motion_cmd['x'],
+                    y              =motion_cmd['y'],
+                    r              =motion_cmd['r'],
+                    command_id     =motion_cmd['command_id']
+                )
+                # self.motion_writer.write(dds_cmd)
+                self.motion_publisher.Write(dds_cmd)
+
+                logger.debug(f"Sent XYR command via DDS: x={motion_cmd['x']:.3f}, y={motion_cmd['y']:.3f}, r={motion_cmd['r']:.3f}")
+            except Exception as e:
+                logger.error(f"Failed to send XYR command via DDS: {e}")
+                return False
+        else:
+            logger.debug(f"DDS disabled, would send XYR: x={motion_cmd['x']:.3f}, y={motion_cmd['y']:.3f}, r={motion_cmd['r']:.3f}")
+        
         return True
     
     async def _handle_object_control(self, command: ControlCommand) -> bool:
         """处理对象控制命令"""
         logger.info(f"对象控制 [{command.target}]: {command.data}")
-        # 实际的DDS对象控制逻辑
-        await asyncio.sleep(0.01)  # 模拟处理时间
+        
+        if command.target == 'head':
+            # 处理头部控制
+            head_cmd = {
+                'timestamp': int(time.time() * 1000),
+                'action': 0,  # MOVE_DIRECT
+                'pitch_deg': command.data.get('pitch', 0.0),
+                'yaw_deg': command.data.get('yaw', 0.0),
+                'expression_char': command.data.get('expression', 'c')
+            }
+            
+            # 发送到DDS
+            if self.enable_dds and self.head_writer:
+                try:
+                    dds_cmd = HeadCommand(
+                        timestamp=head_cmd['timestamp'],
+                        action=head_cmd['action'],
+                        pitch_deg=head_cmd['pitch_deg'],
+                        yaw_deg=head_cmd['yaw_deg'],
+                        expression_char=head_cmd['expression_char']
+                    )
+                    self.head_writer.write(dds_cmd)
+                    logger.info(f"Sent head command via DDS: pitch={head_cmd['pitch_deg']:.1f}, yaw={head_cmd['yaw_deg']:.1f}")
+                except Exception as e:
+                    logger.error(f"Failed to send head command via DDS: {e}")
+                    return False
+            else:
+                logger.info(f"DDS disabled, would send head command: pitch={head_cmd['pitch_deg']:.1f}, yaw={head_cmd['yaw_deg']:.1f}")
+        
+        elif command.target == 'leg':
+            # 处理特殊的身体控制（如抬腿控制）
+            motion_cmd = {
+                'command_type': 1,  # 抬腿控制
+                'state_enum': 0,
+                'leg_selection': 0,
+                'angle1': command.data.get('angle1', 0.0),
+                'angle2': command.data.get('angle2', 0.0),
+                'x': 0.0,
+                'y': 0.0,
+                'r': 0.0,
+                'command_id': 0
+            }
+            
+            # 发送到DDS
+            if self.enable_dds and self.motion_publisher:
+                try:
+                    dds_cmd = MyMotionCommand(
+                        command_type=motion_cmd['command_type'],
+                        state_enum=motion_cmd['state_enum'],
+                        leg_selection=motion_cmd['leg_selection'],
+                        angle1=motion_cmd['angle1'],
+                        angle2=motion_cmd['angle2'],
+                        x=motion_cmd['x'],
+                        y=motion_cmd['y'],
+                        r=motion_cmd['r'],
+                        command_id=motion_cmd['command_id']
+                    )
+                    # self.motion_writer.write(dds_cmd)
+                    self.motion_publisher.Write(dds_cmd)
+                    logger.info(f"Sent leg control command via DDS: {motion_cmd}")
+                except Exception as e:
+                    logger.error(f"Failed to send leg control command via DDS: {e}")
+                    return False
+            else:
+                logger.info(f"DDS disabled, would send leg control: {motion_cmd}")
+        
         return True
+    
+    def set_dds_enabled(self, enabled: bool):
+        """设置DDS传输开关"""
+        if enabled and not self.enable_dds:
+            self.enable_dds = True
+            if DDS_AVAILABLE:
+                self._init_dds()
+                logger.info("DDS enabled")
+        elif not enabled and self.enable_dds:
+            self.enable_dds = False
+            logger.info("DDS disabled")
+    
+    def cleanup(self):
+        """清理DDS资源"""
+        if self.participant:
+            # 清理DDS资源
+            del self.motion_writer
+            del self.head_writer
+            del self.participant
+            logger.info("DDS resources cleaned up")
+
+
+class ControlGatewayProtocol(asyncio.DatagramProtocol):
+    def __init__(self, gateway: 'ControlGateway'):
+        self.gateway = gateway
+
+    def connection_made(self, transport: asyncio.DatagramTransport):
+        self.gateway.transport = transport
+
+    def datagram_received(self, data: bytes, addr: Tuple[str, int]):
+        self.gateway.stats['packets_received'] += 1
+        # print(data, addr)
+        # 异步处理数据包
+        asyncio.create_task(self.gateway._process_packet(data, addr))
+        # print("1")
+
+    def error_received(self, exc: Exception):
+        self.gateway.stats['errors'] += 1
+        logger.error(f"Socket error: {exc}")
+
+    def connection_lost(self, exc: Optional[Exception]):
+        logger.warning("Socket closed, stopping.")
+        if exc:
+            logger.error(f"Socket closed with error: {exc}")
+        self.gateway.is_running = False
+
 
 class ControlGateway:
     """控制网关主类"""
     
     def __init__(self, port: int = 8990):
         self.port = port
-        self.socket = None
+        self.transport: Optional['asyncio.DatagramTransport'] = None
         self.is_running = False
         self.security_manager = SecurityManager(SHARED_SECRET_KEY)
         self.packet_manager = PacketManager()
@@ -337,21 +617,25 @@ class ControlGateway:
     async def start(self):
         """启动网关服务"""
         retry_count = 0
-        max_retries = 10
+        max_retries = 15
+        loop = asyncio.get_running_loop()
         
         while retry_count < max_retries:
             try:
-                self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                self.socket.bind(('0.0.0.0', self.port))
-                self.socket.setblocking(False)
+                sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                sock.bind(('0.0.0.0', self.port))
+                sock.setblocking(False)
+
+                transport, protocol = await loop.create_datagram_endpoint(
+                    lambda: ControlGatewayProtocol(self),
+                    sock=sock)
                 
                 self.is_running = True
                 logger.info(f"控制网关启动成功，监听端口 {self.port}")
                 
                 # 启动后台任务
                 await asyncio.gather(
-                    self._receive_loop(),
                     self._cleanup_loop(),
                     self._stats_loop(),
                     self._health_check_loop()
@@ -361,37 +645,16 @@ class ControlGateway:
             except Exception as e:
                 retry_count += 1
                 logger.error(f"启动失败 (尝试 {retry_count}): {e}")
+                if 'sock' in locals() and sock:
+                    sock.close()
+                if self.transport:
+                    self.transport.close()
                 if retry_count < max_retries:
                     await asyncio.sleep(min(retry_count * 2, 30))
                 else:
                     logger.critical("启动失败，已达到最大重试次数")
                     raise
     
-    async def _receive_loop(self):
-        """接收数据循环"""
-        while self.is_running:
-            try:
-                # 使用传统的socket方法，避免asyncio兼容性问题
-                self.socket.settimeout(0.1)  # 设置短超时
-                try:
-                    data, addr = self.socket.recvfrom(MAX_UDP_SIZE)
-                    self.stats['packets_received'] += 1
-                    
-                    # 异步处理数据包
-                    asyncio.create_task(self._process_packet(data, addr))
-                except socket.timeout:
-                    # 超时是正常的，继续循环
-                    pass
-                except BlockingIOError:
-                    # 没有数据可读
-                    await asyncio.sleep(0.001)
-                
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                self.stats['errors'] += 1
-                logger.error(f"接收数据失败: {e}")
-                await asyncio.sleep(0.1)
     
     async def _process_packet(self, data: bytes, addr: Tuple[str, int]):
         """处理数据包"""
@@ -399,6 +662,7 @@ class ControlGateway:
             # 解析数据包
             packet = self.packet_manager.process_received_packet(data, addr)
             if not packet:
+                print("not packet")
                 return
             
             # 验证安全性
@@ -432,14 +696,18 @@ class ControlGateway:
     async def _handle_control_command(self, packet: Dict, addr: Tuple[str, int]):
         """处理控制命令"""
         try:
+
             data = packet.get('data', {})
             command_type = data.get('command_type')
             target = data.get('target', 'body')
             command_data = data.get('data', {})
+
             
             if not command_type:
                 logger.warning("缺少命令类型")
                 return
+            print(command_type, target,command_data)
+
             
             # 创建控制命令
             command = ControlCommand(
@@ -480,11 +748,15 @@ class ControlGateway:
     async def _send_response(self, addr: Tuple[str, int], response_data: Dict):
         """发送响应"""
         try:
+            if not self.transport:
+                logger.warning("Transport not available, cannot send response.")
+                return
+
             response_packet = self.packet_manager.prepare_packet(response_data, self.security_manager)
             fragments = self.packet_manager.auto_fragment(response_packet)
             
             for fragment in fragments:
-                self.socket.sendto(fragment, addr)
+                self.transport.sendto(fragment, addr)
             
             self.stats['packets_sent'] += 1
             
@@ -532,9 +804,12 @@ class ControlGateway:
     async def stop(self):
         """停止网关服务"""
         self.is_running = False
-        if self.socket:
-            self.socket.close()
+        if self.transport:
+            self.transport.close()
+        if self.dds_bridge:
+            self.dds_bridge.cleanup()
         logger.info("控制网关已停止")
+        await asyncio.sleep(0.1)
 
 async def main():
     """主函数"""
