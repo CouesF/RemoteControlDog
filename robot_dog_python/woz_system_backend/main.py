@@ -269,6 +269,43 @@ async def add_prompt(instruction_id: str, prompt_data: Dict):
     raise HTTPException(status_code=501, detail="Prompt addition not implemented yet")
 
 
+@app.post(f"{API_PREFIX}/sessions/{{session_id}}/call_name", status_code=202)
+async def call_name(session_id: str, data: Dict):
+    """触发呼唤名字动作"""
+    participant_name = data.get('participantName')
+    logger.info(f"Received call_name for session {session_id}, participant: {participant_name}")
+    # TODO: 实现呼唤名字的具体逻辑，例如通过DDS发送指令
+    # await dds_bridge.send_call_name_command(participant_name)
+    return {"message": f"Call name command for {participant_name} sent."}
+
+
+@app.post(f"{API_PREFIX}/sessions/{{session_id}}/voice_prompt", status_code=202)
+async def voice_prompt(session_id: str, data: Dict):
+    """触发语音提示动作"""
+    logger.info(f"Received voice_prompt for session {session_id}, data: {data}")
+    # TODO: 实现语音提示的具体逻辑
+    # await dds_bridge.send_voice_prompt_command(data)
+    return {"message": "Voice prompt command sent."}
+
+
+@app.post(f"{API_PREFIX}/sessions/{{session_id}}/end_leg_lift", status_code=202)
+async def end_leg_lift(session_id: str):
+    """触发结束抬脚动作"""
+    logger.info(f"Received end_leg_lift for session {session_id}")
+    # TODO: 实现结束抬脚的具体逻辑
+    # await dds_bridge.send_end_leg_lift_command()
+    return {"message": "End leg lift command sent."}
+
+
+@app.post(f"{API_PREFIX}/sessions/{{session_id}}/child_left_frame", status_code=200)
+async def child_left_frame(session_id: str, data: Dict):
+    """记录孩子脱离画面事件"""
+    logger.info(f"Received child_left_frame for session {session_id}, data: {data}")
+    # TODO: 实现记录孩子脱离画面的具体逻辑，可能只是记录日志或数据库
+    # await db.log_event(...)
+    return {"message": "Child left frame event recorded."}
+
+
 @app.post(f"{API_PREFIX}/sessions/{{session_id}}/actions", status_code=202)
 async def trigger_session_action(session_id: str, action_data: Dict):
     """触发会话动作"""
