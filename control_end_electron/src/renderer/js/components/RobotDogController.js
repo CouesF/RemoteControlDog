@@ -4,6 +4,7 @@ import { EVENTS } from '../utils/constants.js';
 import { Helpers } from '../utils/helpers.js';
 import Logger from '../utils/logger.js';
 import CONFIG from '../config.js';
+import GamepadManager from '../utils/GamepadManager.js';
 
 export default class RobotDogController extends BaseComponent {
     constructor(containerId) {
@@ -36,6 +37,9 @@ export default class RobotDogController extends BaseComponent {
         // UDP连接
         this.connectionId = 'robot-dog-control';
         this.isConnected = false;
+
+        // Gamepad
+        this.gamepadManager = new GamepadManager();
     }
 
     async doRender() {
@@ -401,7 +405,6 @@ export default class RobotDogController extends BaseComponent {
         this.setupJoystick('xr', (x, y) => {
             this.controlState.x = y;  // 前后
             this.controlState.r = x;  // 旋转
-            this.updateXRDisplay();
         });
         
         this.setupJoystick('angle', (x, y) => {
@@ -569,13 +572,26 @@ export default class RobotDogController extends BaseComponent {
         Logger.info(`Switched to mode: ${mode}`);
     }
 
-    updateXRDisplay() {
-        this.elements.xValue.textContent = this.controlState.x.toFixed(2);
-        this.elements.rValue.textContent = this.controlState.r.toFixed(2);
+    updateXRDisplay(gamepadState = { axes: [0,0,0,0], buttons: [] }) {
+        const speedLimit = 0.5;
+        const x_val = (gamepadState.axes[1] || 0) * -1 * speedLimit;
+        const r_val = (gamepadState.axes[0] || 0) * speedLimit;
+
+        const combinedX = this.controlState.x + x_val;
+        const combinedR = this.controlState.r + r_val;
+        this.elements.xValue.textContent = combinedX.toFixed(2);
+        this.elements.rValue.textContent = combinedR.toFixed(2);
     }
 
-    updateYDisplay() {
-        this.elements.yValue.textContent = this.controlState.y.toFixed(2);
+    updateYDisplay(gamepadState = { axes: [0,0,0,0], buttons: [] }) {
+        let y_val = 0;
+        if (gamepadState.buttons[14]) { // D-pad 左
+            y_val = 0.5;
+        } else if (gamepadState.buttons[15]) { // D-pad 右
+            y_val = -0.5;
+        }
+        const combinedY = this.controlState.y + y_val;
+        this.elements.yValue.textContent = combinedY.toFixed(2);
     }
 
     updateAngleDisplay() {
@@ -583,34 +599,69 @@ export default class RobotDogController extends BaseComponent {
         this.elements.angle2Value.textContent = this.controlState.angle2.toFixed(2);
     }
 
-    updateHeadDisplay() {
-        this.elements.pitchValue.textContent = this.controlState.headPitch.toFixed(2);
-        this.elements.yawValue.textContent = this.controlState.headYaw.toFixed(2);
+    updateHeadDisplay(gamepadState = { axes: [0,0,0,0] }) {
+        const combinedPitch = this.controlState.headPitch + (gamepadState.axes[3] || 0);
+        const combinedYaw = this.controlState.headYaw + (gamepadState.axes[2] || 0);
+        this.elements.pitchValue.textContent = combinedPitch.toFixed(2);
+        this.elements.yawValue.textContent = combinedYaw.toFixed(2);
     }
 
     startControlLoop() {
         // 定期发送控制命令
         this.sendInterval = setInterval(() => {
-            // 发送XYR控制
-            if (Math.abs(this.controlState.x) > 0.01 || 
-                Math.abs(this.controlState.y) > 0.01 || 
-                Math.abs(this.controlState.r) > 0.01 ||
-                Math.abs(this.controlState.angle1) > 0.1 ||
-                Math.abs(this.controlState.angle2) > 0.1) {
-                
+            // 获取手柄状态
+            const gamepadState = this.gamepadManager.getState();
+    
+            // 更新显示
+            this.updateXRDisplay(gamepadState);
+            this.updateYDisplay(gamepadState);
+            this.updateHeadDisplay(gamepadState);
+    
+            // --- 摇杆和按钮映射 ---
+            // 左摇杆: axes[0] (左右), axes[1] (前后)
+            // 右摇杆: axes[2] (左右), axes[3] (前后)
+            // D-pad: buttons[14] (左), buttons[15] (右)
+    
+            // --- 速度和控制逻辑 ---
+            const speedLimit = 0.5;
+    
+            // 前后控制 (左摇杆 Y轴)
+            const x_val = (gamepadState.axes[1] || 0) * -1 * speedLimit; // Y轴反向
+            // 旋转控制 (左摇杆 X轴)
+            const r_val = (gamepadState.axes[0] || 0) * speedLimit;
+    
+            // 左右移动控制 (D-pad)
+            let y_val = 0;
+            if (gamepadState.buttons[14]) { // D-pad 左
+                y_val = 0.5;
+            } else if (gamepadState.buttons[15]) { // D-pad 右
+                y_val = -0.5;
+            }
+    
+            // 头部控制 (右摇杆)
+            const head_yaw = this.controlState.headYaw + (gamepadState.axes[2] || 0);
+            const head_pitch = this.controlState.headPitch + (gamepadState.axes[3] || 0) * -1; // Y轴反向
+    
+            // 合并UI和手柄控制
+            const combinedX = this.controlState.x + x_val;
+            const combinedY = this.controlState.y + y_val;
+            const combinedR = this.controlState.r + r_val;
+    
+            // 发送身体控制命令
+            if (Math.abs(combinedX) > 0.01 || Math.abs(combinedY) > 0.01 || Math.abs(combinedR) > 0.01) {
                 this.sendCommand({
                     command_type: 'xyr_control',
                     target: 'body',
                     data: {
-                        x: this.controlState.x,
-                        y: this.controlState.y,
-                        r: this.controlState.r
+                        x: combinedX,
+                        y: combinedY,
+                        r: combinedR
                     }
                 });
             }
-            if (Math.abs(this.controlState.angle1) > 0.1 ||
-                Math.abs(this.controlState.angle2) > 0.1) {
-                
+    
+            // 发送抬腿控制 (如果UI有输入)
+            if (Math.abs(this.controlState.angle1) > 0.1 || Math.abs(this.controlState.angle2) > 0.1) {
                 this.sendCommand({
                     command_type: 'object_control',
                     target: 'leg',
@@ -620,16 +671,15 @@ export default class RobotDogController extends BaseComponent {
                     }
                 });
             }
+    
             // 发送头部控制
-            if (Math.abs(this.controlState.headPitch) > 0.1 || 
-                Math.abs(this.controlState.headYaw) > 0.1) {
-                
+            if (Math.abs(head_pitch) > 0.01 || Math.abs(head_yaw) > 0.01) {
                 this.sendCommand({
                     command_type: 'object_control',
                     target: 'head',
                     data: {
-                        pitch: this.controlState.headPitch,
-                        yaw: this.controlState.headYaw,
+                        pitch: head_pitch,
+                        yaw: head_yaw,
                         expression: 'c'
                     }
                 });
