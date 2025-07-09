@@ -232,6 +232,36 @@ class SessionsAPI extends BaseAPI {
         }
     }
 
+    async callName(sessionId, participantName) {
+        const endpoint = `${this.endpoint}/${sessionId}/call_name`;
+        return await this.post(endpoint, { participantName });
+    }
+
+    async sendVoicePrompt(sessionId, data) {
+        const endpoint = `${this.endpoint}/${sessionId}/voice_prompt`;
+        return await this.post(endpoint, data);
+    }
+
+    async endLegLift(sessionId) {
+        const endpoint = `${this.endpoint}/${sessionId}/end_leg_lift`;
+        return await this.post(endpoint);
+    }
+
+    async childLeftFrame(sessionId, data) {
+        const endpoint = `${this.endpoint}/${sessionId}/child_left_frame`;
+        return await this.post(endpoint, data);
+    }
+
+    async jaSuccess(sessionId, data) {
+        const endpoint = `${this.endpoint}/${sessionId}/ja_success`;
+        return await this.post(endpoint, data);
+    }
+
+    async jaFailure(sessionId, data) {
+        const endpoint = `${this.endpoint}/${sessionId}/ja_failure`;
+        return await this.post(endpoint, data);
+    }
+
     // Mock方法
     createMockSession(participantId, mapId) {
         return {

@@ -350,26 +350,45 @@ export default class ExperimentControl extends BasePage {
 
     getJADetailInstructionHtml(target) {
         const { instructionLevel } = this.state;
+    
+        const buttons = {
+            1: '<button id="call-name-btn" class="btn btn-info mr-2">呼唤名字</button>',
+            2: `
+                <button id="call-name-btn" class="btn btn-info mr-2">呼唤名字</button>
+                <button id="voice-prompt-btn" class="btn btn-info mr-2">语言提示</button>
+            `,
+            3: `
+                <button id="call-name-btn" class="btn btn-info mr-2">呼唤名字</button>
+                <button id="voice-prompt-btn" class="btn btn-info mr-2">语言提示</button>
+                <button id="end-leg-lift-btn" class="btn btn-warning mr-2">结束抬脚</button>
+            `
+        };
+    
         return `
-            <h5>${target.targetName} - 指示中</h5>
-            <div class="form-group">
-                <label for="instruction-level-select"><strong>指示等级:</strong></label>
+            <h5>
+                ${target.targetName} - 指示中
                 <select id="instruction-level-select" class="form-control" style="width: auto; display: inline-block; margin-left: 10px;">
                     <option value="1" ${instructionLevel === 1 ? 'selected' : ''}>等级 1</option>
                     <option value="2" ${instructionLevel === 2 ? 'selected' : ''}>等级 2</option>
                     <option value="3" ${instructionLevel === 3 ? 'selected' : ''}>等级 3</option>
                 </select>
-            </div>
+            </h5>
             <div class="alert alert-info mt-3" id="instruction-description">
-                <!-- 等级描述将在这里动态加载 -->
                 ${this.getInstructionDescription(instructionLevel)}
             </div>
+            <div class="mt-3" id="instruction-buttons">
+                ${buttons[instructionLevel] || ''}
+            </div>
+            <hr>
             <div class="mt-3">
                 <button id="ja-success-btn" class="btn btn-success mr-2">
                     <i class="fas fa-check"></i> JA成功
                 </button>
-                <button id="ja-failure-btn" class="btn btn-danger">
+                <button id="ja-failure-btn" class="btn btn-danger mr-2">
                     <i class="fas fa-times"></i> JA失败
+                </button>
+                <button id="child-left-btn" class="btn btn-warning">
+                    <i class="fas fa-exclamation-triangle"></i> 如果孩子脱离画面
                 </button>
             </div>
         `;
@@ -393,11 +412,39 @@ export default class ExperimentControl extends BasePage {
         if (failureBtn) {
             this.addEventListener(failureBtn, 'click', () => this.handleJAInstructionResult('failure'));
         }
+
+        const callNameBtn = this.querySelector('#call-name-btn');
+        if (callNameBtn) {
+            this.addEventListener(callNameBtn, 'click', () => this.handleCallName());
+        }
+
+        const voicePromptBtn = this.querySelector('#voice-prompt-btn');
+        if (voicePromptBtn) {
+            this.addEventListener(voicePromptBtn, 'click', () => this.handleVoicePrompt());
+        }
+
+        const endLegLiftBtn = this.querySelector('#end-leg-lift-btn');
+        if (endLegLiftBtn) {
+            this.addEventListener(endLegLiftBtn, 'click', () => this.handleEndLegLift());
+        }
+
+        const childLeftBtn = this.querySelector('#child-left-btn');
+        if (childLeftBtn) {
+            this.addEventListener(childLeftBtn, 'click', () => this.handleChildLeftFrame());
+        }
     }
 
     getInstructionDescription(level) {
-        // TODO: 根据不同等级提供不同的描述
-        return `这是等级 ${level} 的指示描述。请根据此描述完成操作。`;
+        switch (level) {
+            case 1:
+                return '请你遥控狗头，使其先看向小孩，呼唤其名字。<br>当他注视你的时候<br>狗头提示（重复两次）<br>观察5s内是否成功看向对象';
+            case 2:
+                return '请你遥控狗头，使其先看向小孩，呼唤其名字。<br>当他注视你的时候➡️<br>语音提示➡️狗头提示（重复两次）<br>观察5s内是否成功看向对象';
+            case 3:
+                return '请你遥控狗头，使其先看向小孩，呼唤其名字。<br>当他注视你的时候➡️点击语音提示➡️<br>抬手-手部提示➡️<br>狗头提示（重复两次）。<br>观察5s内是否成功看向对象';
+            default:
+                return '未知的指示等级';
+        }
     }
 
     handleSelectJATarget(targetId) {
@@ -410,6 +457,71 @@ export default class ExperimentControl extends BasePage {
         items.forEach(item => {
             item.classList.toggle('active', item.getAttribute('data-target-id') === targetId);
         });
+    }
+
+    async handleCallName() {
+        const participantName = sessionStorage.getItem('currentParticipantName') || '未知';
+        Logger.info(`Calling name: ${participantName}`);
+        try {
+            await SessionsAPI.callName(this.currentSessionId, participantName);
+            this.showSuccess(`已发送呼唤名字指令: ${participantName}`);
+        } catch (error) {
+            Logger.error('Failed to call name:', error);
+            this.showError('呼唤名字失败', error.message);
+        }
+    }
+
+    async handleVoicePrompt() {
+        const { currentTarget } = this.state;
+        const participantName = sessionStorage.getItem('currentParticipantName') || '未知';
+        if (!currentTarget) {
+            this.showWarning('没有选择JA目标');
+            return;
+        }
+        Logger.info(`Sending voice prompt for target: ${currentTarget.targetName}`);
+        try {
+            await SessionsAPI.sendVoicePrompt(this.currentSessionId, {
+                participantName,
+                targetId: currentTarget.targetId,
+                targetName: currentTarget.targetName,
+            });
+            this.showSuccess('已发送语音提示指令');
+        } catch (error) {
+            Logger.error('Failed to send voice prompt:', error);
+            this.showError('发送语音提示失败', error.message);
+        }
+    }
+
+    async handleEndLegLift() {
+        Logger.info('Ending leg lift');
+        try {
+            await SessionsAPI.endLegLift(this.currentSessionId);
+            this.showSuccess('已发送结束抬脚指令');
+        } catch (error) {
+            Logger.error('Failed to end leg lift:', error);
+            this.showError('结束抬脚失败', error.message);
+        }
+    }
+
+    async handleChildLeftFrame() {
+        const { currentTarget } = this.state;
+        const participantName = sessionStorage.getItem('currentParticipantName') || '未知';
+        if (!currentTarget) {
+            this.showWarning('没有选择JA目标');
+            return;
+        }
+        Logger.info(`Child left frame for target: ${currentTarget.targetName}`);
+        try {
+            await SessionsAPI.childLeftFrame(this.currentSessionId, {
+                participantName,
+                targetId: currentTarget.targetId,
+                targetName: currentTarget.targetName,
+            });
+            this.showSuccess('已记录孩子脱离画面事件');
+        } catch (error) {
+            Logger.error('Failed to record child left frame:', error);
+            this.showError('记录孩子脱离画面失败', error.message);
+        }
     }
 
     async handleStartJAInstruction() {
@@ -433,14 +545,29 @@ export default class ExperimentControl extends BasePage {
                 this.showSuccess(`JA成功，等级: ${instructionLevel}`);
                 this.updateTargetCompletionStatus(currentTarget.targetId, `完成 (L${instructionLevel})`, 'success');
                 
+                await SessionsAPI.jaSuccess(this.currentSessionId, {
+                    participantName,
+                    targetId: currentTarget.targetId,
+                    targetName: currentTarget.targetName,
+                    instructionLevel: instructionLevel
+                });
+
                 // TODO: 执行奖励指令
+                // deprecated
                 await this.executeRewardSequence(currentTarget, instructionLevel);
                 
                 // TODO: 记录成功结果到后端
+                // deprecated
                 await this.recordInstructionResult(currentTarget.targetId, instructionLevel, 'success');
                 
                 this.updateExperimentState(EXPERIMENT_STATE.NAVIGATION);
             } else { // failure
+                await SessionsAPI.jaFailure(this.currentSessionId, {
+                    participantName,
+                    targetId: currentTarget.targetId,
+                    targetName: currentTarget.targetName,
+                    instructionLevel: instructionLevel
+                });
                 if (instructionLevel < 3) {
                     this.state.instructionLevel++;
                     this.showWarning(`JA失败，进入下一等级: ${this.state.instructionLevel}`);
@@ -451,9 +578,11 @@ export default class ExperimentControl extends BasePage {
                     this.updateTargetCompletionStatus(currentTarget.targetId, '失败', 'danger');
                     
                     // TODO: 记录失败结果到后端
+                    // deprecated
                     await this.recordInstructionResult(currentTarget.targetId, 3, 'failure');
                     
                     // TODO: 执行失败后的处理流程
+                    // deprecated
                     await this.handleTargetFailure(currentTarget);
                     
                     this.updateExperimentState(EXPERIMENT_STATE.NAVIGATION);
