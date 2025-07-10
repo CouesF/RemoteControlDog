@@ -309,7 +309,7 @@ class SpeechControl(IdlStruct, typename="SpeechControl"):
     # 是否立即停止当前正在播报的语音
     stop_speaking: bool = False
     
-    # 音量控制（范围建议 0 ~ 100）
+    # 音量控制（范围建议 0 ~ 100） -1为不调整
     volume: int = 20
 
 
@@ -344,6 +344,16 @@ class MyMotionCommand(IdlStruct, typename="MyMotionCommand"):
     r: float = 0.0             # 高级模式下旋转速度
     command_id: int = 0        # 特殊指令, e.g., 'q' to exit
 
+@dataclass
+class RobotLog(IdlStruct, typename="RobotLog"):
+    """
+    用于main_body_control.py的返回值。
+    """
+    level: int = 0
+    event_id: int = 0
+    param1: float = 0.0
+    param2: float = 0.0
+
 
 # --------------------------------------------------------------------------
 # 模块: system_power_control
@@ -362,3 +372,49 @@ class PowerControl(IdlStruct, typename="PowerControl"):
     command_id: int = 0
     # 额外消息，可用于未来扩展
     message: str = ""
+
+
+
+# --------------------------------------------------------------------------
+# 模块: process_manager (FINAL v2 - No Lists)
+# 订阅主题: ProcessCommand
+# 发布主题: ProcessStatus
+# 描述: 用于控制一组进程。状态通过一个包含手动命名字段的单一消息进行传输。
+# --------------------------------------------------------------------------
+
+class ProcessAction(IntEnum):
+    """Enumeration for multi-process control commands."""
+    START = 0; STOP = 1; RESTART = 2;
+    START_ALL = 10; STOP_ALL = 11; RESTART_ALL = 12; STATUS_ALL = 13;
+    SHUTDOWN_SERVER = 20
+
+@dataclass
+class ProcessCommand(IdlStruct, typename="ProcessCommand"):
+    """DDS message for sending commands to the process manager server."""
+    timestamp: int = 0
+    action: int = ProcessAction.STATUS_ALL.value
+    target_script: str = ""
+
+@dataclass
+class ScriptStatus(IdlStruct, typename="ScriptStatus"):
+    """DDS message describing the state of a single managed script."""
+    script_name: str = ""
+    status: str = "STOPPED"
+    pid: int = 0
+
+@dataclass
+class ProcessStatus(IdlStruct, typename="ProcessStatus"):
+    """
+    DDS message for receiving the status of all managed processes in a single,
+    manually-listed report.
+    """
+    timestamp: int = 0
+    # Manually define a field for each of the 8 scripts
+    cam_gateway: ScriptStatus = field(default_factory=ScriptStatus)
+    ctrl_gateway: ScriptStatus = field(default_factory=ScriptStatus)
+    body_ctrl: ScriptStatus = field(default_factory=ScriptStatus)
+    head_ctrl: ScriptStatus = field(default_factory=ScriptStatus)
+    dog_status: ScriptStatus = field(default_factory=ScriptStatus)
+    power_srv: ScriptStatus = field(default_factory=ScriptStatus)
+    speech_synth: ScriptStatus = field(default_factory=ScriptStatus)
+    state_machine: ScriptStatus = field(default_factory=ScriptStatus)

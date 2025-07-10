@@ -158,6 +158,8 @@ class AudioPlayer:
     
     def set_system_volume(self, volume_percent: int):
         """设置系统音量（通过ALSA）"""
+        if volume_percent == -1:
+            return
         volume = max(0, min(100, volume_percent))
         self.current_volume = volume
         cmd = f"amixer -D hw:0 sset 'PCM' {volume}% >/dev/null 2>&1"
@@ -199,7 +201,9 @@ class AudioPlayer:
                     continue
                 
                 # 音量放大
-                amplified_audio = self.amplify_audio(audio_data)
+
+                # amplified_audio = self.amplify_audio(audio_data)
+                amplified_audio = audio_data
                 
                 # 播放当前块
                 with self.stream_lock:
@@ -370,6 +374,7 @@ class SpeechControlHandler:
                 
                 # 处理音量设置
                 if hasattr(control_msg, 'volume') and control_msg.volume is not None:
+                    if control_msg.volume == -1: continue
                     print(f"🔈 设置系统音量: {control_msg.volume}%")
                     self.audio_player.set_system_volume(control_msg.volume)
                 
@@ -800,6 +805,7 @@ async def main():
                     
                     # 如果有文本需要合成
                     if hasattr(control_msg, 'text_to_speak') and control_msg.text_to_speak.strip():
+                        if control_msg.text_to_speak == "":continue
                         print(f"🔊 启动语音合成: '{control_msg.text_to_speak[:20]}...'")
                         timestamp = int(time.time())
                         output_path = f"./tts_output_{timestamp}.pcm"

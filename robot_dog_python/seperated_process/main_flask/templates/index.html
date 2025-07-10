@@ -161,6 +161,57 @@
             font-size: 0.9rem;
         }
         .hidden { display: none !important; }
+        
+        /* ADDED: Joystick Styling */
+        .joystick-container {
+            width: 100px;
+            height: 100px;
+            background-color: #e0e0e0;
+            border-radius: 50%;
+            position: relative;
+            border: 2px solid #b0b0b0;
+            touch-action: none; /* Prevent scrolling on touch */
+        }
+        .joystick-handle {
+            width: 40px;
+            height: 40px;
+            background-color: #555;
+            border-radius: 50%;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            cursor: grab;
+        }
+        .joystick-handle:active {
+            cursor: grabbing;
+        }
+        .process-item {
+            display: grid;
+            grid-template-columns: 2fr 1fr 1fr auto;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            background-color: #f9fafb;
+            border: 1px solid #e5e7eb;
+        }
+        .process-item .name { font-family: 'Roboto Mono', monospace; }
+        .process-item .status-stopped { color: #be123c; font-weight: bold; }
+        .process-item .status-running { color: #166534; font-weight: bold; }
+        .process-item .pid { font-family: 'Roboto Mono', monospace; color: #6b7280; }
+        .process-item .actions button {
+            padding: 2px 8px;
+            font-size: 0.7rem;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .process-item .actions button:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
     </style>
 </head>
 <body class="flex items-center justify-center min-h-screen">
@@ -173,30 +224,38 @@
             <button id="toggle-page-btn" class="toggle-button">View Motor Details</button>
         </div>
 
-        <!-- Page 1: Main Dashboard -->
-        <div id="page-system-overview" class="hidden"> <!-- Initially hidden -->
-            <!-- LEFT COLUMN: INFORMATION -->
+        <div id="page-system-overview" class="hidden">
             <div id="info-column">
                 <div class="info-section">
                     <h2>System Status</h2>
                     <div id="stat-grid" class="stat-grid">
-                        <!-- Populated by JS -->
                     </div>
                 </div>
                 <div class="info-section">
                     <h2>Motor Error Report</h2>
                     <div id="motor-error-grid">
-                        <!-- Populated by JS -->
+                    </div>
+                </div>
+                <div class="info-section">
+                    <h2>Process Manager</h2>
+                    <div id="process-manager-controls" class="flex flex-col gap-3">
+                        <div class="grid grid-cols-4 gap-2 text-sm">
+                            <button data-command="start_all" class="control-btn bg-green-600 text-white">Start All</button>
+                            <button data-command="stop_all" class="control-btn bg-yellow-600 text-white">Stop All</button>
+                            <button data-command="restart_all" class="control-btn bg-blue-600 text-white">Restart All</button>
+                            <button data-command="shutdown_all" class="control-btn bg-red-700 text-white">Shutdown Server</button>
+                        </div>
+                        <div id="process-manager-grid" class="mt-2 flex flex-col gap-2">
+                            </div>
+                        <div id="process-manager-status" class="status-box status-idle">Status: Idle</div>
                     </div>
                 </div>
             </div>
 
-            <!-- RIGHT COLUMN: CONTROLS -->
             <div id="control-column">
                 <div class="control-section flex flex-col h-full">
                     <h2>Control Panel</h2>
                     <div class="flex flex-col gap-6">
-                        <!-- Speech Control -->
                         <div>
                             <h3 class="font-bold mb-2">Speech Control</h3>
                             <div class="flex flex-col gap-3">
@@ -208,13 +267,11 @@
                                 </div>
                                 <div class="flex gap-2">
                                     <button id="speak-btn" class="control-btn bg-blue-600 text-white">Speak</button>
-                                    <button id="pause-speak-btn" class="control-btn bg-orange-500 text-white">Pause</button>
                                     <button id="stop-speak-btn" class="control-btn bg-red-600 text-white">Stop</button>
                                 </div>
                                 <div id="speech-status" class="status-box status-idle">Status: Idle</div>
                             </div>
                         </div>
-                        <!-- Head Control -->
                         <div class="border-t pt-4">
                             <h3 class="font-bold mb-2">Head & Expression</h3>
                             <div class="flex flex-col gap-3">
@@ -238,7 +295,6 @@
                                 <div id="head-status" class="status-box status-idle">Status: Idle</div>
                             </div>
                         </div>
-                        <!-- New: System Power Control -->
                         <div class="border-t pt-4">
                             <h3 class="font-bold mb-2">System Power</h3>
                             <div class="flex flex-col gap-3">
@@ -249,20 +305,62 @@
                                 <div id="power-status" class="status-box status-idle">Status: Idle</div>
                             </div>
                         </div>
+                        <div class="border-t pt-4">
+                            <h3 class="font-bold mb-2">Motion Control</h3>
+                            <div class="flex flex-col gap-4">
+                                <div>
+                                    <h4 class="font-semibold text-sm mb-2">Robot State</h4>
+                                    <div class="grid grid-cols-2 gap-2">
+                                        <button id="state-high-stand-btn" class="control-btn bg-sky-600 text-white text-xs">High-Lvl Stand</button>
+                                        <button id="state-damp-btn" class="control-btn bg-sky-600 text-white text-xs">Damp</button>
+                                        <button id="state-low-stand-btn" class="control-btn bg-cyan-600 text-white text-xs">Low-Lvl Stand</button>
+                                        <button id="state-exit-leg-btn" class="control-btn bg-orange-600 text-white text-xs">Exit Leg Mode</button>
+                                        <button id="prep-raise-l-btn" class="control-btn bg-teal-600 text-white text-xs">Prep Raise L-Leg</button>
+                                        <button id="prep-raise-r-btn" class="control-btn bg-teal-600 text-white text-xs">Prep Raise R-Leg</button>
+                                    </div>
+                                </div>
+                                <div>
+                                    <h4 class="font-semibold text-sm mb-1">Front Leg Angle Control (rad)</h4>
+                                    <div class="flex items-center gap-4">
+                                        <div id="leg-joystick" class="joystick-container">
+                                            <div id="leg-joystick-handle" class="joystick-handle"></div>
+                                        </div>
+                                        <div class="text-xs font-mono">
+                                            <p>Angle 1: <span id="leg-angle1-val">0.00</span></p>
+                                            <p>Angle 2: <span id="leg-angle2-val">0.00</span></p>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div>
+                                    <h4 class="font-semibold text-sm mb-1">Robot Movement</h4>
+                                    <div class="flex items-center gap-4">
+                                            <div id="move-joystick" class="joystick-container">
+                                            <div id="move-joystick-handle" class="joystick-handle"></div>
+                                        </div>
+                                        <div class="flex-grow flex flex-col gap-2 text-xs font-mono">
+                                            <p>Fwd/Bwd (x): <span id="move-x-val">0.00</span> m/s</p>
+                                            <p>Rotate (r): <span id="move-r-val">0.00</span> rad/s</p>
+                                        </div>
+                                    </div>
+                                        <div class="mt-2">
+                                        <label for="move-y-slider" class="text-sm">Strafe L/R (y): <span id="move-y-val">0.00</span> m/s</label>
+                                        <input type="range" id="move-y-slider" min="-0.3" max="0.3" value="0" step="0.01" class="w-full">
+                                    </div>
+                                </div>
+                                <div id="motion-status" class="status-box status-idle">Status: Idle</div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- Page 2: Detailed Motor Status -->
-        <div id="page-motor-status" class="hidden"> <!-- Initially hidden -->
-            <div id="motor-grid" class="motor-grid">
-                <!-- Populated by JS -->
+        <div id="page-motor-status" class="hidden">
+             <div id="motor-grid" class="motor-grid">
             </div>
         </div>
     </div>
 
-    <!-- Custom Confirmation Modal -->
     <div id="confirmation-modal" class="modal-overlay hidden">
         <div class="modal-content">
             <h3 id="modal-title">Confirm Action</h3>
@@ -274,9 +372,8 @@
         </div>
     </div>
 
-    <!-- New: Login Modal -->
-    <div id="login-modal" class="modal-overlay"> <!-- Initially visible -->
-        <div class="modal-content">
+    <div id="login-modal" class="modal-overlay">
+         <div class="modal-content">
             <h3>Login to Dog Hybrid Console</h3>
             <input type="text" id="username-input" placeholder="Username" autocomplete="username">
             <input type="password" id="password-input" placeholder="Password" autocomplete="current-password">
@@ -289,6 +386,11 @@
     <script>
         const socket = io();
         const motorNames = ['FR_hip', 'FR_thigh', 'FR_calf', 'FL_hip', 'FL_thigh', 'FL_calf', 'RR_hip', 'RR_thigh', 'RR_calf', 'RL_hip', 'RL_thigh', 'RL_calf'];
+        const managedScripts = [
+            "main_camera_gateway.py", "main_control_gateway.py", "main_dog_body_control.py",
+            "main_dog_head_control.py", "main_dog_status.py", "main_jetson_power_server.py",
+            "main_speech_synthesis.py", "main_state_machine.py",
+        ];
         const statMetrics = [
             { id: 'battery_percent', label: 'Battery', unit: ' %', warn: 30, danger: 15, precision: 1, isLowerBad: true },
             { id: 'cpu_usage_percent', label: 'CPU Usage', unit: ' %', warn: 70, danger: 90, precision: 1 },
@@ -340,19 +442,18 @@
 
         // --- Get Control Elements ---
         const controlElements = {};
-        ['speak-btn', 'pause-speak-btn', 'stop-speak-btn', 'speech-text', 'volume-slider', 'volume-label', 'speech-status', 'nod-btn', 'shake-btn', 'set-pos-expr-btn', 'motor1-slider', 'motor2-slider', 'motor1-label', 'motor2-label', 'expression-input', 'head-status', 'shutdown-btn', 'reboot-btn', 'power-status'].forEach(id => {
+        ['speak-btn', 'stop-speak-btn', 'speech-text', 'volume-slider', 'volume-label', 'speech-status', 'nod-btn', 'shake-btn', 'set-pos-expr-btn', 'motor1-slider', 'motor2-slider', 'motor1-label', 'motor2-label', 'expression-input', 'head-status', 'shutdown-btn', 'reboot-btn', 'power-status'].forEach(id => {
             controlElements[id.replace(/-/g, '')] = document.getElementById(id);
         });
         
         // --- Event Listeners ---
-        const { speakbtn, pausespeakbtn, stopspeakbtn, speechtext, volumeslider, volumelabel, nodbtn, shakebtn, setposexprbtn, motor1slider, motor2slider, motor1label, motor2label, expressioninput, shutdownbtn, rebootbtn, powerstatus } = controlElements;
+        const { speakbtn, stopspeakbtn, speechtext, volumeslider, volumelabel, nodbtn, shakebtn, setposexprbtn, motor1slider, motor2slider, motor1label, motor2label, expressioninput, shutdownbtn, rebootbtn, powerstatus } = controlElements;
 
         // Speech Control
         speakbtn.addEventListener('click', () => {
             const text = speechtext.value.trim();
             if (text) socket.emit('speech_command', { text: text, volume: parseInt(volumeslider.value) });
         });
-        pausespeakbtn.addEventListener('click', () => socket.emit('speech_command', { pause: true }));
         stopspeakbtn.addEventListener('click', () => socket.emit('speech_command', { stop: true }));
         volumeslider.addEventListener('input', () => volumelabel.textContent = `${volumeslider.value}%`);
         volumeslider.addEventListener('change', () => socket.emit('speech_command', { volume: parseInt(volumeslider.value) }));
@@ -446,6 +547,7 @@
                 loginModal.classList.add('hidden');
                 pageSystem.classList.remove('hidden'); // Show main dashboard on successful login
                 loginErrorMessage.classList.add('hidden'); // Hide any previous error
+                socket.emit('request_initial_process_status');
             } else {
                 loginErrorMessage.textContent = data.message;
                 loginErrorMessage.classList.remove('hidden');
@@ -457,7 +559,7 @@
             loginModal.classList.remove('hidden');
             pageSystem.classList.add('hidden');
             pageMotors.classList.add('hidden');
-            loginErrorMessage.textContent = data.message || "Authentication required. Please log in.";
+            loginErrorMessage.textContent = (data && data.message) ? data.message : "Authentication required. Please log in.";
             loginErrorMessage.classList.remove('hidden');
         });
 
@@ -466,8 +568,100 @@
             loginModal.classList.remove('hidden');
             pageSystem.classList.add('hidden');
             pageMotors.classList.add('hidden');
-            loginErrorMessage.textContent = data.message || "Unauthorized action. Please log in.";
+            loginErrorMessage.textContent = (data && data.message) ? data.message : "Unauthorized action. Please log in.";
             loginErrorMessage.classList.remove('hidden');
+        });
+
+        // --- ADDED: Process Manager UI Logic ---
+        const processGrid = document.getElementById('process-manager-grid');
+        const processControls = document.getElementById('process-manager-controls');
+        const processStatusBox = document.getElementById('process-manager-status');
+
+        // Dynamically create the UI rows for each script
+        managedScripts.forEach(scriptName => {
+            const item = document.createElement('div');
+            item.className = 'process-item';
+            item.id = `process-item-${scriptName}`;
+            item.innerHTML = `
+                <span class="name">${scriptName.replace('main_', '').replace('.py', '')}</span>
+                <span id="process-status-${scriptName}" class="status-stopped">UNKNOWN</span>
+                <span id="process-pid-${scriptName}" class="pid">PID: --</span>
+                <span class="actions flex gap-1">
+                    <button data-command="start" data-target="${scriptName}" id="proc-start-${scriptName}">▶</button>
+                    <button data-command="stop" data-target="${scriptName}" id="proc-stop-${scriptName}">■</button>
+                    <button data-command="restart" data-target="${scriptName}" id="proc-restart-${scriptName}">↻</button>
+                </span>
+            `;
+            processGrid.appendChild(item);
+        });
+
+        // Listen for clicks on any control button (individual, all, or shutdown)
+        processControls.addEventListener('click', (e) => {
+            if (e.target.tagName === 'BUTTON') {
+                const command = e.target.dataset.command;
+                const target = e.target.dataset.target || 'all'; // Default to 'all' for top-level buttons
+
+                if (command === 'shutdown_all') {
+                     showConfirmationModal('shutdown the process server');
+                } else {
+                    socket.emit('process_command', { command, target });
+                }
+            }
+        });
+        
+        // When the confirmation modal is confirmed, handle the specific shutdown case
+        // We modify the existing modal listener slightly
+        modalConfirmBtn.addEventListener('click', () => {
+            if (pendingPowerCommand) {
+                if (pendingPowerCommand === 'shutdown the process server') {
+                    socket.emit('process_command', { command: 'shutdown_server', target: 'all' });
+                    processStatusBox.textContent = `Sending server shutdown command...`;
+                    processStatusBox.className = 'status-box status-speaking';
+                } else {
+                    socket.emit('power_command', { command: pendingPowerCommand });
+                    powerstatus.textContent = `Sending ${pendingPowerCommand} command...`;
+                    powerstatus.className = 'status-box status-speaking';
+                }
+            }
+            hideConfirmationModal();
+        });
+
+
+        // Listen for status updates from the server
+        socket.on('process_status_update', (data) => {
+            for (const scriptName in data) {
+                if (data.hasOwnProperty(scriptName)) {
+                    const status = data[scriptName].status;
+                    const pid = data[scriptName].pid;
+                    
+                    const statusEl = document.getElementById(`process-status-${scriptName}`);
+                    const pidEl = document.getElementById(`process-pid-${scriptName}`);
+                    const startBtn = document.getElementById(`proc-start-${scriptName}`);
+                    const stopBtn = document.getElementById(`proc-stop-${scriptName}`);
+                    const restartBtn = document.getElementById(`proc-restart-${scriptName}`);
+
+                    if (statusEl && pidEl && startBtn && stopBtn && restartBtn) {
+                        statusEl.textContent = status;
+                        statusEl.className = status === 'RUNNING' ? 'status-running' : 'status-stopped';
+                        pidEl.textContent = status === 'RUNNING' ? `PID: ${pid}` : 'PID: --';
+                        
+                        startBtn.disabled = (status === 'RUNNING');
+                        stopBtn.disabled = (status !== 'RUNNING');
+                        restartBtn.disabled = (status !== 'RUNNING');
+                    }
+                }
+            }
+        });
+        
+        socket.on('process_response', (data) => {
+            if(processStatusBox) {
+                processStatusBox.textContent = `Status: ${data.message}`;
+                processStatusBox.className = `status-box status-${data.status === 'success' ? 'speaking' : 'error'}`;
+                setTimeout(() => {
+                    processStatusBox.textContent = 'Status: Idle';
+                    processStatusBox.className = 'status-box status-idle';
+                }, 3000);
+            }
         });
 
         // --- Socket Listeners for UI Updates (remaining) ---
@@ -491,7 +685,6 @@
             speechstatus.className = `status-box status-${status}`;
             speechstatus.textContent = `Status: ${status.charAt(0).toUpperCase() + status.slice(1)}`;
             speakbtn.disabled = (status === 'speaking');
-            pausespeakbtn.textContent = (status === 'paused') ? 'Resume' : 'Pause';
         });
 
         socket.on('head_response', (data) => {
@@ -515,6 +708,176 @@
                 }, 3000);
             }
         });
+
+        // --- ADDED: Motion Control Logic ---
+        const motionElements = {};
+        ['state-high-stand-btn', 'state-damp-btn', 'state-low-stand-btn', 'state-exit-leg-btn', 'prep-raise-l-btn', 'prep-raise-r-btn', 'motion-status', 'move-y-slider', 'move-y-val', 'move-x-val', 'move-r-val', 'leg-angle1-val', 'leg-angle2-val', 'leg-joystick', 'leg-joystick-handle', 'move-joystick', 'move-joystick-handle'].forEach(id => {
+            motionElements[id.replace(/-/g, '')] = document.getElementById(id);
+        });
+
+        // State Control Listeners
+        // Corrected Event Listeners for Motion Control
+        motionElements.statehighstandbtn.addEventListener('click', () => socket.emit('motion_command', { command_type: 0, state_enum: 5 }));
+        motionElements.statedampbtn.addEventListener('click', () => socket.emit('motion_command', { command_type: 0, state_enum: 8 }));
+        motionElements.statelowstandbtn.addEventListener('click', () => socket.emit('motion_command', { command_type: 0, state_enum: 7 }));
+        motionElements.prepraiselbtn.addEventListener('click', () => socket.emit('motion_command', { command_type: 0, state_enum: 10, leg_selection: 1 })); // FL is 1
+        motionElements.prepraiserbtn.addEventListener('click', () => socket.emit('motion_command', { command_type: 0, state_enum: 10, leg_selection: 0 })); // FR is 0
+        motionElements.stateexitlegbtn.addEventListener('click', () => socket.emit('motion_command', { command_type: 1, sub_command: 'q' }));
+
+        // Socket Listener for Motion Status
+        socket.on('motion_response', (data) => {
+            const { motionstatus } = motionElements;
+            if(motionstatus) {
+                motionstatus.textContent = `Status: ${data.message}`;
+                motionstatus.className = `status-box status-${data.status === 'success' ? 'speaking' : 'error'}`;
+                setTimeout(() => {
+                    motionstatus.textContent = 'Status: Idle';
+                    motionstatus.className = 'status-box status-idle';
+                }, 3000);
+            }
+        });
+        
+        // Generic Joystick Logic
+        function createJoystick(container, handle, options) {
+            if (!container || !handle) {
+                return;
+            }
+            const { onMove, onEnd, deadzone = 0.1 } = options;
+
+            let active = false;
+            let centerX, centerY;
+            const maxMove = container.offsetWidth / 2 - handle.offsetWidth / 2;
+            
+            function start(e) {
+                active = true;
+                handle.style.transition = 'none';
+                const rect = container.getBoundingClientRect();
+                centerX = rect.left + rect.width / 2;
+                centerY = rect.top + rect.height / 2;
+            }
+
+            function move(e) {
+                if (!active) return;
+                e.preventDefault();
+
+                let clientX, clientY;
+
+                // Explicitly check for touch or mouse events and get coordinates
+                if (e.type.startsWith('touch')) {
+                    // A touch event might be fired without any actual touches.
+                    if (e.touches && e.touches.length > 0) {
+                        clientX = e.touches[0].clientX;
+                        clientY = e.touches[0].clientY;
+                    } else {
+                        return; // No touch data, so we cannot proceed.
+                    }
+                } else {
+                    // It's a mouse event.
+                    clientX = e.clientX;
+                    clientY = e.clientY;
+                }
+
+                // The rest of the function proceeds only with valid coordinates.
+                let dx = clientX - centerX;
+                let dy = clientY - centerY;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+
+                if (distance > maxMove) {
+                    dx = (dx / distance) * maxMove;
+                    dy = (dy / distance) * maxMove;
+                }
+
+                handle.style.left = `${container.offsetWidth / 2 + dx}px`;
+                handle.style.top = `${container.offsetHeight / 2 + dy}px`;
+
+                let normX = dx / maxMove;
+                let normY = -dy / maxMove; // Invert Y-axis for standard joystick controls
+
+                // Handle division by zero if maxMove is 0
+                if (!isFinite(normX)) normX = 0;
+                if (!isFinite(normY)) normY = 0;
+
+                if (Math.abs(normX) < deadzone) normX = 0;
+                if (Math.abs(normY) < deadzone) normY = 0;
+
+                if (onMove) onMove(normX, normY);
+            }
+
+            function end() {
+                if (!active) return;
+                active = false;
+                handle.style.transition = 'left 0.2s, top 0.2s';
+                handle.style.left = '50%';
+                handle.style.top = '50%';
+                if (onEnd) onEnd();
+            }
+            
+            container.addEventListener('mousedown', start);
+            document.addEventListener('mousemove', move);
+            document.addEventListener('mouseup', end);
+            container.addEventListener('touchstart', start, { passive: false });
+            document.addEventListener('touchmove', move, { passive: false });
+            document.addEventListener('touchend', end);
+        }
+
+        // Leg Control Joystick Instance
+        createJoystick(motionElements.legjoystick, motionElements.legjoystickhandle, {
+            onMove: (x, y) => {
+                if (x === 0 && y === 0) return; // Don't transmit center values
+                // Map joystick [-1, 1] to angle ranges: angle1 [-1.5, 3.4], angle2 [-2.7, -0.8]
+                const angle1 = 0.95 + x * 2.45; 
+                const angle2 = -1.75 + y * 0.95;
+                motionElements.legangle1val.textContent = angle1.toFixed(2);
+                motionElements.legangle2val.textContent = angle2.toFixed(2);
+                socket.emit('motion_command', { command_type: 1, angle1: angle1, angle2: angle2 });
+            },
+            onEnd: () => {
+                motionElements.legangle1val.textContent = "0.00";
+                motionElements.legangle2val.textContent = "0.00";
+            }
+        });
+
+        // Movement Control Joystick & Slider
+        let currentMoveCommand = { x: 0, y: 0, r: 0 };
+        const moveUpdateInterval = 100; // ms
+        let moveIntervalId = null;
+
+        function sendMoveCommand() {
+            socket.emit('motion_command', { command_type: 2, ...currentMoveCommand });
+        }
+
+        createJoystick(motionElements.movejoystick, motionElements.movejoystickhandle, {
+            onMove: (normX, normY) => {
+                // Joystick: Y -> x (fwd/bwd), X -> r (rotate)
+                const max_x_speed = 0.5; // m/s
+                const max_r_speed = 1.0; // rad/s
+                currentMoveCommand.x = normY * max_x_speed;
+                currentMoveCommand.r = normX * max_r_speed;
+                motionElements.movexval.textContent = currentMoveCommand.x.toFixed(2);
+                motionElements.moverval.textContent = currentMoveCommand.r.toFixed(2);
+                if (!moveIntervalId) {
+                    sendMoveCommand();
+                    moveIntervalId = setInterval(sendMoveCommand, moveUpdateInterval);
+                }
+            },
+            onEnd: () => {
+                if (moveIntervalId) clearInterval(moveIntervalId);
+                moveIntervalId = null;
+                currentMoveCommand.x = 0;
+                currentMoveCommand.r = 0;
+                sendMoveCommand(); // Send a final stop command
+                motionElements.movexval.textContent = "0.00";
+                motionElements.moverval.textContent = "0.00";
+            }
+        });
+
+        motionElements.moveyslider.addEventListener('input', (e) => {
+            const y_val = parseFloat(e.target.value);
+            currentMoveCommand.y = y_val;
+            motionElements.moveyval.textContent = y_val.toFixed(2);
+            if (!moveIntervalId) sendMoveCommand();
+        });
+
 
         socket.on('dog_status_update', function(data) {
             if (!data || !data.data_received) {

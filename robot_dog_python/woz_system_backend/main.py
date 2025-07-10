@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import uvicorn
 
+
 from .config import (
     API_HOST, API_PORT, API_PREFIX, CORS_ORIGINS, 
     LOG_LEVEL, LOG_FORMAT, STATIC_ROOT
@@ -19,10 +20,58 @@ from .database import db
 from .dds_bridge import dds_bridge
 from .api_handlers import participant_handler, map_handler, target_handler
 
+import os
+import sys
+import time
+
 # 配置日志
-logging.basicConfig(level=LOG_LEVEL, format=LOG_FORMAT)
+logging.basicConfig(
+    level=LOG_LEVEL,
+    format=LOG_FORMAT,
+    handlers=[
+        logging.StreamHandler(),  # 输出到终端
+        logging.FileHandler("app.log")  # 输出到文件
+    ]
+)
 logger = logging.getLogger(__name__)
 
+
+# ==== DDS相关导入 ====
+communication_dir_path = "/home/d3lab/Projects/RemoteControlDog/robot_dog_python/communication"
+sys.path.append(communication_dir_path)
+from unitree_sdk2py.core.channel import ChannelPublisher, ChannelFactoryInitialize
+from dds_data_structure import SpeechControl
+
+
+
+class SpeechController:
+    _instance = None
+
+    def __new__(cls, *args, **kwargs):
+        if not cls._instance:
+            cls._instance = super(SpeechController, cls).__new__(cls, *args, **kwargs)
+        return cls._instance
+
+    def __init__(self):
+        if not hasattr(self, '_initialized') or not self._initialized:
+            ChannelFactoryInitialize(networkInterface="enP8p1s0")
+
+            self.dds_pub_speech_control = ChannelPublisher("SpeechControl", SpeechControl)
+            self.dds_pub_speech_control.Init()
+            self.dds_cmd_speech_control = SpeechControl()
+            self._initialized = True
+
+    def synthesis_speech(self, text, volume=-1):
+        self.dds_cmd_speech_control.text_to_speak = text
+        self.dds_cmd_speech_control.volume = volume
+        self.dds_pub_speech_control.Write(self.dds_cmd_speech_control)
+
+    def set_volume(self, volume: int):
+        self.dds_cmd_speech_control.volume = volume
+        self.dds_cmd_speech_control.text_to_speak = ""
+        self.dds_pub_speech_control.Write(self.dds_cmd_speech_control)
+
+speech_controller = SpeechController()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -271,11 +320,14 @@ async def add_prompt(instruction_id: str, prompt_data: Dict):
 
 @app.post(f"{API_PREFIX}/sessions/{{session_id}}/call_name", status_code=202)
 async def call_name(session_id: str, data: Dict):
+    global dds_cmd_speech_control, dds_pub_speech_control
+
     """触发呼唤名字动作"""
-    participant_name = data.get('participantName')
+    participant_name = data.get('participantName',"小朋友")
     logger.info(f"Received call_name for session {session_id}, participant: {participant_name}")
-    # TODO: 实现呼唤名字的具体逻辑，例如通过DDS发送指令
-    # await dds_bridge.send_call_name_command(participant_name)
+
+    speech_controller.synthesis_speech(f"{participant_name}，快看我这里")
+    
     return {"message": f"Call name command for {participant_name} sent."}
 
 
@@ -283,8 +335,11 @@ async def call_name(session_id: str, data: Dict):
 async def voice_prompt(session_id: str, data: Dict):
     """触发语音提示动作"""
     logger.info(f"Received voice_prompt for session {session_id}, data: {data}")
-    # TODO: 实现语音提示的具体逻辑
+
+    participant_name = data.get('participantName',"小朋友")
+
     # await dds_bridge.send_voice_prompt_command(data)
+    speech_controller.synthesis_speech(f"{participant_name}你看这里")
     return {"message": "Voice prompt command sent."}
 
 
@@ -303,8 +358,25 @@ async def child_left_frame(session_id: str, data: Dict):
     logger.info(f"Received child_left_frame for session {session_id}, data: {data}")
     # TODO: 实现记录孩子脱离画面的具体逻辑，可能只是记录日志或数据库
     # await db.log_event(...)
+    speech_controller.synthesis_speech(f"可不可以站到我面前来呀？", volume=-1)
     return {"message": "Child left frame event recorded."}
 
+@app.post(f"{API_PREFIX}/sessions/{{session_id}}/ja_success", status_code=200)
+async def ja_success(session_id: str, data: Dict):
+    """记录孩子脱离画面事件"""
+    logger.info(f"Received ja_success for session {session_id}, data: {data}")
+    participantName = data.get("participantName", "小朋友")
+    speech_controller.synthesis_speech(f"{participantName}，你太棒啦！", volume=-1)
+
+    return {"message": "JA success event recorded."}
+
+@app.post(f"{API_PREFIX}/sessions/{{session_id}}/ja_failure", status_code=200)
+async def ja_failure(session_id: str, data: Dict):
+    """记录孩子脱离画面事件"""
+    logger.info(f"Received ja_failure for session {session_id}, data: {data}")
+    participantName = data.get("participantName", "小朋友")
+    speech_controller.synthesis_speech(f"我们再试一次。", volume=-1)
+    return {"message": "JA failure event recorded."}
 
 @app.post(f"{API_PREFIX}/sessions/{{session_id}}/actions", status_code=202)
 async def trigger_session_action(session_id: str, action_data: Dict):
@@ -387,6 +459,7 @@ async def root():
 
 
 def run_server():
+
     """运行服务器"""
     uvicorn.run(
         "woz_system_backend.main:app",
