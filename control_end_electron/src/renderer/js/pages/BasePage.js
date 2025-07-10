@@ -158,30 +158,43 @@ export default class BasePage extends BaseComponent {
     showNotification(message, type = 'info', autoHide = true) {
         const notificationId = `notification-${Date.now()}`;
         const alertClass = `alert-${type}`;
-        
+        const notificationContainer = document.getElementById('notification-container');
+
+        if (!notificationContainer) {
+            console.error('Notification container not found!');
+            return;
+        }
+
         const notificationHtml = `
             <div id="${notificationId}" class="alert ${alertClass} alert-dismissible fade show" role="alert">
                 ${message}
-                <button type="button" class="close" data-dismiss="alert">
-                    <span>&times;</span>
+                <button type="button" class="close" data-dismiss="alert" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
                 </button>
             </div>
         `;
 
-        // 在页面顶部插入通知
-        const pageHeader = this.querySelector('.page-header') || this.container;
-        if (pageHeader) {
-            pageHeader.insertAdjacentHTML('afterbegin', notificationHtml);
+        notificationContainer.insertAdjacentHTML('beforeend', notificationHtml);
+
+        const notificationElement = document.getElementById(notificationId);
+
+        // 确保 "close" 按钮可以工作
+        const closeButton = notificationElement.querySelector('.close');
+        if (closeButton) {
+            closeButton.addEventListener('click', () => {
+                notificationElement.remove();
+            });
         }
 
         // 自动隐藏
         if (autoHide) {
             setTimeout(() => {
-                const notification = document.getElementById(notificationId);
-                if (notification) {
-                    notification.remove();
+                if (notificationElement) {
+                    // 添加淡出效果
+                    notificationElement.classList.remove('show');
+                    setTimeout(() => notificationElement.remove(), 150); // 等待淡出动画完成
                 }
-            }, 5000);
+            }, 2000); // 2秒后消失
         }
     }
 
