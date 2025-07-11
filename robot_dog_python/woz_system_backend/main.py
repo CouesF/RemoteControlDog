@@ -5,11 +5,12 @@ import logging
 import asyncio
 from contextlib import asynccontextmanager
 from typing import Dict, List, Optional
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Depends
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Depends, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import uvicorn
+import pyaudio
 
 
 from .config import (
@@ -23,6 +24,7 @@ from .api_handlers import participant_handler, map_handler, target_handler
 import os
 import sys
 import time
+import json
 
 # 配置日志
 logging.basicConfig(
@@ -436,6 +438,99 @@ async def send_robot_command(command_data: Dict):
         raise HTTPException(status_code=500, detail="Failed to send robot command")
 
 
+# ==================== 麦克风音频流API ====================
+
+# 音频流参数 (调整以降低延迟和优化语音)
+CHUNK = 256  # 减小块大小以降低延迟
+FORMAT = pyaudio.paInt16
+CHANNELS = 1
+RATE = 16000 # 恢复至16000Hz，因为硬件不支持8000Hz
+
+def find_input_device(p: pyaudio.PyAudio):
+    """辅助函数，查找可用的音频输入设备"""
+    device_index = None
+    device_list = []
+    for i in range(p.get_device_count()):
+        dev_info = p.get_device_info_by_index(i)
+        if dev_info['maxInputChannels'] > 0:
+            logger.info(f"Found input device: {dev_info['name']} (Index: {i})")
+            # 优先选择包含'USB'或'mic'的设备
+            if 'usb' in dev_info['name'].lower() or 'mic' in dev_info['name'].lower():
+                logger.info(f"Prioritizing USB/Mic device: {dev_info['name']}")
+                device_list.append(i)
+                # return i
+            if device_index is None: # 备用选项
+                device_index = i
+    if device_list:
+        device_index = device_list[0]
+    else:
+        logger.warning("No USB or Mic device found, using first available input device.")
+    # 如果没有找到合适的设备，记录错误
+    if device_index is None:
+        logger.error("No suitable audio input device found!")
+    return device_index
+@app.websocket(f"{API_PREFIX}/ws/mic")
+async def websocket_mic_stream(websocket: WebSocket):
+    await websocket.accept()
+    logger.info("Microphone WebSocket connection established.")
+    
+    p = pyaudio.PyAudio()
+    stream = None
+    
+    try:
+        input_device_index = find_input_device(p)
+        if input_device_index is None:
+            raise RuntimeError("No suitable audio input device found.")
+
+        stream = p.open(format=FORMAT,
+                        channels=CHANNELS,
+                        rate=RATE,
+                        input=True,
+                        frames_per_buffer=CHUNK,
+                        input_device_index=input_device_index)
+        
+        logger.info("Microphone stream opened.")
+
+        while True:
+            try:
+                # 记录读取时间
+                read_start = time.time()
+                data = await asyncio.to_thread(stream.read, CHUNK)
+                read_end = time.time()
+                
+                # 创建带时间戳的数据包
+                timestamp = int(time.time() * 1000)  # 毫秒级时间戳
+                
+                # 发送时间戳信息（可选，用于调试）
+                metadata = {
+                    "timestamp": timestamp,
+                    "read_time": (read_end - read_start) * 1000,
+                    "data_size": len(data)
+                }
+                
+                # 先发送元数据，再发送音频数据
+                await websocket.send_text(json.dumps(metadata))
+                await websocket.send_bytes(data)
+                
+                # 记录发送时间
+                # logger.debug(f"Audio chunk sent: {len(data)} bytes, read_time: {metadata['read_time']:.2f}ms")
+                
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"Error during audio streaming: {e}")
+                break
+                
+    except WebSocketDisconnect:
+        logger.info("WebSocket client disconnected.")
+    except Exception as e:
+        logger.error(f"Failed to open microphone stream: {e}")
+    finally:
+        if stream and stream.is_active():
+            stream.stop_stream()
+            stream.close()
+        p.terminate()
+        logger.info("Microphone WebSocket connection closed.")
 # ==================== 健康检查API ====================
 
 @app.get("/health")

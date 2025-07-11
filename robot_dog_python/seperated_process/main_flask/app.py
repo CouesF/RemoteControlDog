@@ -10,6 +10,12 @@ import uuid
 import hashlib
 import secrets
 import subprocess
+import signal
+import atexit
+from cyclonedds.domain import DomainParticipant
+from cyclonedds.topic import Topic
+from cyclonedds.pub import DataWriter
+from cyclonedds.sub import DataReader
 
 # --- Real DDS Imports ---
 COMMUNICATION_DIR = "/home/d3lab/Projects/RemoteControlDog/robot_dog_python/communication"
@@ -38,6 +44,10 @@ except ImportError as e:
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your_super_secret_key_here_please_change_this_for_production'
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
+
+# --- Global Shutdown Control ---
+shutdown_event = threading.Event()
+process_manager_process = None
 
 # --- Authentication Configuration ---
 def hash_password(password):
@@ -71,7 +81,15 @@ speech_control_pub = None
 head_command_pub = None
 power_control_pub = None
 motion_command_pub = None
-process_command_pub = None
+process_command_writer = None
+
+dds_participant = None
+process_command_writer = None
+process_status_reader = None
+
+# --- Global DDS Subscribers ---
+dog_status_sub = None
+process_status_sub = None
 
 # --- Speech Command Queue and Thread Control ---
 speech_command_queue = queue.Queue()
@@ -87,12 +105,17 @@ MOTOR_ERROR_MAP = {
 PROCESS_COMMAND_TOPIC = "ProcessCommand"
 PROCESS_STATUS_TOPIC = "ProcessStatus"
 SERVER_SCRIPT_NAME = "main_process_manager.py"
+
+'''
 SCRIPTS_TO_MANAGE = [
     "main_camera_gateway.py", "main_control_gateway.py", "main_dog_body_control.py",
     "main_dog_head_control.py", "main_dog_status.py", "main_jetson_power_server.py",
-    "main_speech_synthesis.py",
+    "main_speech_synthesis.py", "start_woz_backend.py"
 ]
 process_statuses = {name: {"script_name": name, "status": "UNKNOWN", "pid": 0} for name in SCRIPTS_TO_MANAGE}
+'''
+process_statuses = {}
+status_lock = threading.Lock()
 
 def decode_motor_errors(reserve0_val):
     """Decodes motor error bits into a human-readable string."""
@@ -135,22 +158,21 @@ DDS_NETWORK_INTERFACE = "enP8p1s0"
 
 def dds_subscriber_thread():
     """Thread function for subscribing to DogStatus DDS topic."""
-    global latest_dog_status
-    sub = None
+    global latest_dog_status, dog_status_sub
+    
     try:
-        sub = ChannelSubscriber(DOG_STATUS_TOPIC, DogStatus)
-        sub.Init()
+        dog_status_sub = ChannelSubscriber(DOG_STATUS_TOPIC, DogStatus)
+        dog_status_sub.Init()
     except Exception as e:
         print(f"DDS Subscriber setup failed: {e}")
         latest_dog_status["status_message"] = f"DDS Setup Error: {e}. Check network interface & SDK."
         socketio.emit('dog_status_update', latest_dog_status)
-        if sub: sub.Close()
         return
 
     print(f"DDS subscriber thread listening on topic: '{DOG_STATUS_TOPIC}'...")
     try:
-        while True:
-            msg = sub.Read(100)
+        while not shutdown_event.is_set():
+            msg = dog_status_sub.Read(100)
             if msg:
                 raw_timestamp_ns = getattr(msg, 'timestamp_ns', None)
                 timestamp_ns_val = 0
@@ -195,7 +217,6 @@ def dds_subscriber_thread():
                             memory_usage_percent_val = float(raw_memory)
                         except (ValueError, TypeError):
                             print(f"Warning: Could not convert memory_usage_percent '{raw_memory}' to float. Using 0.0.")
-
 
                     latest_dog_status.update({
                         "battery_percent": battery_percent_val,
@@ -248,8 +269,7 @@ def dds_subscriber_thread():
         latest_dog_status["status_message"] = f"Critical DDS Stream Error: {e}"
         socketio.emit('dog_status_update', latest_dog_status, {"data_received": False})
     finally:
-        if sub: sub.Close()
-        print("DDS subscriber thread stopped.")
+        print("DDS subscriber thread stopping...")
 
 def _speech_publisher_thread():
     """
@@ -259,7 +279,7 @@ def _speech_publisher_thread():
     global speech_control_pub, speech_publisher_active
 
     print("Speech publisher thread started.")
-    while speech_publisher_active:
+    while speech_publisher_active and not shutdown_event.is_set():
         try:
             command_msg = speech_command_queue.get(timeout=0.1)
             
@@ -415,7 +435,6 @@ def handle_speech_command(data):
             print(f"Warning: Could not parse volume '{volume}'. Ignoring.")
             emit('speech_response', {'status': 'error', 'action': 'volume_change', 'message': 'Invalid volume format.'})
 
-
 @socketio.on('head_control_command')
 @check_authentication
 def handle_head_control_command(data):
@@ -471,7 +490,6 @@ def handle_head_control_command(data):
     except Exception as e:
         print(f"Error publishing head control command to DDS: {e}")
         emit('head_response', {'status': 'error', 'message': f'DDS publish error: {e}'})
-
 
 @socketio.on('power_command')
 @check_authentication
@@ -591,51 +609,71 @@ def handle_motion_command(data):
         emit('motion_response', {'status': 'error', 'message': f'DDS publish error: {e}'})
 
 def process_status_subscriber_thread():
-    """
-    Thread function for subscribing to ProcessStatus DDS topic and broadcasting to clients.
-    """
-    global process_statuses
-    sub = None
-    try:
-        sub = ChannelSubscriber(PROCESS_STATUS_TOPIC, ProcessStatus)
-        sub.Init()
-    except Exception as e:
-        print(f"Process Status DDS Subscriber setup failed: {e}")
+    """Thread function for subscribing to ProcessStatus DDS topic using cyclonedds."""
+    global process_statuses, process_status_reader
+    
+    if dds_participant is None:
+        print("Error: CycloneDDS participant not initialized for process status subscriber.")
         return
 
-    print(f"Process Status subscriber listening on topic: '{PROCESS_STATUS_TOPIC}'...")
+    # Use cyclonedds Topic and DataReader
+    status_topic = Topic(dds_participant, PROCESS_STATUS_TOPIC, ProcessStatus)
+    process_status_reader = DataReader(dds_participant, status_topic)
+
+    print(f"Process Status (cyclonedds) subscriber listening on topic: '{PROCESS_STATUS_TOPIC}'...")
     try:
-        while True:
-            # FIX 1: Read returns a single message object, not a list.
-            msg = sub.Read(1) 
-            if msg:
-                # The ProcessStatus message has fixed attribute names for each script status
-                status_objects = [
-                    msg.cam_gateway, msg.ctrl_gateway, msg.body_ctrl, msg.head_ctrl,
-                    msg.dog_status, msg.power_srv, msg.speech_synth, msg.state_machine
-                ]
-                
-                # Update the global dictionary with the received statuses
-                for status_obj in status_objects:
-                    if status_obj and hasattr(status_obj, 'script_name'):
-                        process_statuses[status_obj.script_name] = {
+        while not shutdown_event.is_set():
+            # DataReader's take() returns a list of samples
+            for msg in process_status_reader.take():
+                print(f"[{time.ctime()}] Received status update from manager: {msg.timestamp}")
+                # The ProcessStatus message has fixed attribute names
+                # We need to get the list of script names from the ProcessStatus dataclass definition
+                # This is a bit advanced, but robust.
+                from dataclasses import fields
+                script_field_names = [f.name for f in fields(ProcessStatus) if f.name != 'timestamp']
+
+                current_statuses = {}
+                for field_name in script_field_names:
+                    status_obj = getattr(msg, field_name)
+                    if status_obj:
+                        current_statuses[status_obj.script_name] = {
                             "script_name": status_obj.script_name,
                             "status": status_obj.status,
                             "pid": status_obj.pid
                         }
-                
-                # Broadcast the complete, updated status to all web clients
-                socketio.emit('process_status_update', process_statuses)
-            else:
-                time.sleep(0.2) # Wait a bit if no message is received
+                with status_lock:
+                    process_statuses = current_statuses
+                # Atomically update the global dictionary and emit
+                # socketio.emit('process_status_update', process_statuses)
+            
+            time.sleep(0.1) # Wait a bit between checks
     except Exception as e:
-        # The "is not subscriptable" error will be caught here
         print(f"Process Status subscriber thread error: {e}")
     finally:
-        if sub: 
-            sub.Close()
         print("Process Status subscriber thread stopped.")
 
+def status_broadcaster_thread():
+    """
+    Dedicated thread to broadcast the latest process status to all clients
+    at a regular interval.
+    """
+    global process_statuses, status_lock
+    print("Status broadcaster thread started.")
+    while not shutdown_event.is_set():
+        try:
+            # Broadcast every 2 seconds.
+            time.sleep(2) 
+            with status_lock:
+                # Make a copy to avoid issues if the dict is updated while emitting.
+                status_to_send = process_statuses.copy()
+
+            if status_to_send: # Only emit if we have some status data.
+                socketio.emit('process_status_update', status_to_send)
+        
+        except Exception as e:
+            print(f"Status broadcaster thread error: {e}")
+    print("Status broadcaster thread stopped.")
+    
 @socketio.on('request_initial_process_status')
 @check_authentication
 def handle_request_initial_process_status():
@@ -645,14 +683,15 @@ def handle_request_initial_process_status():
     sid = request.sid
     print(f"Client {sid} requested initial process status.")
     
-    # Send the last known status immediately
-    emit('process_status_update', process_statuses)
+    # Send the last known status immediately to this specific client
+    with status_lock:
+        emit('process_status_update', process_statuses)
     
-    # Request a fresh status from the process manager server
-    if process_command_pub:
+    # Request a fresh status from the process manager (this part is correct)
+    if process_command_writer:
         try:
-            msg = ProcessCommand(action=ProcessAction.STATUS_ALL.value, timestamp=time.time_ns())
-            process_command_pub.Write(msg)
+            msg = ProcessCommand(action=ProcessAction.STATUS_ALL.value, target_script="", timestamp=time.time_ns())
+            process_command_writer.write(msg)
             print("Published STATUS_ALL request to process manager.")
         except Exception as e:
             print(f"Error publishing STATUS_ALL request: {e}")
@@ -661,12 +700,6 @@ def handle_request_initial_process_status():
 @check_authentication
 def handle_process_command(data):
     """Handles process control commands (start/stop/etc.) from the web UI."""
-    global process_command_pub
-
-    if process_command_pub is None:
-        print("Error: Process control DDS publisher is not initialized.")
-        emit('process_response', {'status': 'error', 'message': 'Backend DDS publisher not ready.'})
-        return
 
     command = data.get('command')
     target = data.get('target')
@@ -680,23 +713,29 @@ def handle_process_command(data):
         'shutdown_server': ProcessAction.SHUTDOWN_SERVER
     }
 
+    # --- MODIFIED to use cyclonedds DataWriter ---
+    if process_command_writer is None:
+        print("Error: Process control DDS writer is not initialized.")
+        emit('process_response', {'status': 'error', 'message': 'Backend DDS writer not ready.'})
+        return
+    
     # The command from the button (e.g., 'start_all' or 'start') is the correct key.
     action_key = command
-
     if action_key not in action_map:
         # Add this check to see what invalid key is being generated
         print(f"Error: Invalid action_key '{action_key}' generated.") 
         emit('process_response', {'status': 'error', 'message': 'Invalid command.'})
         return
-
+    
     msg = ProcessCommand(timestamp=int(time.time_ns()))
     msg.action = action_map[action_key].value
-    # Set the target script only if the command is for a single process
     if target and target != 'all':
         msg.target_script = target
+    else:
+        msg.target_script = "" # Ensure it's not None
 
     try:
-        process_command_pub.Write(msg)
+        process_command_writer.write(msg)
         message = f"Command '{command}' for '{target or 'all'}' sent."
         print(f"Published ProcessCommand to DDS: {message}")
         emit('process_response', {'status': 'success', 'message': message})
@@ -704,6 +743,7 @@ def handle_process_command(data):
         message = f"DDS publish error for process command: {e}"
         print(f"Error publishing process command: {e}")
         emit('process_response', {'status': 'error', 'message': message})
+
 
 def launch_process_manager_server():
     """Checks for and launches the main_process_manager.py script."""
@@ -729,9 +769,71 @@ def launch_process_manager_server():
         print(f"CRITICAL: Failed to launch process manager server: {e}")
         return None
 
+def cleanup_resources():
+    """Clean up all resources before shutdown."""
+    global speech_publisher_active, process_manager_process
+    global speech_control_pub, head_command_pub, power_control_pub, motion_command_pub, process_command_writer
+    global dog_status_sub, process_status_sub
+    
+    print("Starting cleanup...")
+    
+    # Set shutdown flag
+    shutdown_event.set()
+    
+    # Stop speech publisher
+    speech_publisher_active = False
+    
+    # Close all DDS publishers
+    publishers = [
+        ('speech_control_pub', speech_control_pub),
+        ('head_command_pub', head_command_pub),
+        ('power_control_pub', power_control_pub),
+        ('motion_command_pub', motion_command_pub),
+        ('process_command_writer', process_command_writer)
+    ]
+    
+    for name, pub in publishers:
+        if pub:
+            try:
+                pub.Close()
+                print(f"Closed DDS publisher: {name}")
+            except Exception as e:
+                print(f"Error closing DDS publisher {name}: {e}")
+    
+    # Close all DDS subscribers
+    subscribers = [
+        ('dog_status_sub', dog_status_sub),
+        ('process_status_sub', process_status_sub)
+    ]
+    
+    # Terminate process manager if it exists
+    if process_manager_process:
+        try:
+            process_manager_process.terminate()
+            process_manager_process.wait(timeout=5)
+            print(f"Terminated process manager server (PID: {process_manager_process.pid})")
+        except subprocess.TimeoutExpired:
+            print("Process manager didn't terminate gracefully, killing it...")
+            process_manager_process.kill()
+        except Exception as e:
+            print(f"Error terminating process manager: {e}")
+    
+    print("Cleanup completed.")
+
+def signal_handler(signum, frame):
+    """Handle shutdown signals."""
+    print(f"Received signal {signum}, shutting down...")
+    cleanup_resources()
+    sys.exit(0)
+
+# Register signal handlers
+signal.signal(signal.SIGINT, signal_handler)
+signal.signal(signal.SIGTERM, signal_handler)
+
+# Register cleanup function to run on exit
+atexit.register(cleanup_resources)
 
 if __name__ == '__main__':
-
     print("--- Launching Dependent Services ---")
     process_manager_process = launch_process_manager_server()
     if not process_manager_process:
@@ -741,9 +843,13 @@ if __name__ == '__main__':
         print(f"Initializing DDS factory for main process on network interface: {DDS_NETWORK_INTERFACE}")
         ChannelFactoryInitialize(networkInterface=DDS_NETWORK_INTERFACE)
 
-        process_command_pub = ChannelPublisher(PROCESS_COMMAND_TOPIC, ProcessCommand)
-        process_command_pub.Init()
-        print(f"DDS Publisher for '{PROCESS_COMMAND_TOPIC}' initialized.")
+        print("Initializing CycloneDDS participant...")
+        dds_participant = DomainParticipant()
+        
+        # Create the writer for process commands
+        process_cmd_topic = Topic(dds_participant, PROCESS_COMMAND_TOPIC, ProcessCommand)
+        process_command_writer = DataWriter(dds_participant, process_cmd_topic)
+        print(f"CycloneDDS DataWriter for '{PROCESS_COMMAND_TOPIC}' initialized.")
         
         speech_control_pub = ChannelPublisher(SPEECH_CONTROL_TOPIC, SpeechControl)
         speech_control_pub.Init()
@@ -763,8 +869,10 @@ if __name__ == '__main__':
 
     except Exception as e:
         print(f"FATAL: DDS initialization failed: {e}. The application cannot start.")
+        cleanup_resources()
         sys.exit(1)
         
+    # Start threads
     subscriber_thread = threading.Thread(target=dds_subscriber_thread, daemon=True)
     subscriber_thread.start()
 
@@ -774,16 +882,15 @@ if __name__ == '__main__':
     process_status_thread = threading.Thread(target=process_status_subscriber_thread, daemon=True)
     process_status_thread.start()
 
+    broadcaster_thread = threading.Thread(target=status_broadcaster_thread, daemon=True)
+    broadcaster_thread.start()
+
     try:
-        socketio.run(app, host='0.0.0.0', port=5001, debug=True, allow_unsafe_werkzeug=True)
+        print("Starting Flask-SocketIO server...")
+        socketio.run(app, host='0.0.0.0', port=5004, debug=False, allow_unsafe_werkzeug=True)
+    except KeyboardInterrupt:
+        print("Received keyboard interrupt, shutting down...")
+    except Exception as e:
+        print(f"Server error: {e}")
     finally:
-        speech_publisher_active = False
-        if speech_publisher_thread.is_alive():
-            speech_publisher_thread.join(timeout=1.0)
-            for _ in range(5):  # Wait a bit for the thread to finish
-                if not speech_publisher_thread.is_alive():
-                    break
-                time.sleep(0.1)
-                speech_publisher_thread.join(timeout=1.0)
-            if speech_publisher_thread.is_alive():
-                print("Warning: Speech publisher thread did not terminate gracefully.")
+        cleanup_resources()

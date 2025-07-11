@@ -11,7 +11,7 @@
         .cpp-container { background-color: #ffffff; border: 1px solid #c0c0c0; max-width: 1600px; margin: 15px auto; padding: 0; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
         .cpp-header { background-color: #e8e8e8; border-bottom: 1px solid #c0c0c0; padding: 1rem 1.5rem; display: flex; justify-content: space-between; align-items: center; }
         .cpp-header-text h1 { font-family: 'Roboto Mono', monospace; font-size: 1.5rem; font-weight: 700; color: #1c365f; }
-        .toggle-button { font-family: 'Roboto Mono', monospace; padding: 0.5rem 1rem; border: 1px solid #1c365f; color: #1c365f; background-color: #fff; cursor: pointer; transition: all 0.2s; }
+        .toggle-button { font-family: 'Roboto Mono', monospace; padding: 0.5rem 1rem; border: 1px solid #1c365f; color: #1c365f; background-color: #fff; cursor: pointer; transition: all 0.2s; border-radius: 4px; }
         .toggle-button:hover { background-color: #1c365f; color: #fff; }
 
         /* Main Dashboard Layout: Info on Left, Controls on Right */
@@ -19,44 +19,96 @@
         #info-column { display: flex; flex-direction: column; gap: 1rem; }
         #control-column { display: flex; flex-direction: column; gap: 1rem; }
 
-        .info-section, .control-section { background-color: #fcfcfc; border: 1px solid #e0e0e0; padding: 1rem; }
-        .info-section h2, .control-section h2 { font-family: 'Roboto Mono', monospace; font-weight: 700; font-size: 1.1rem; margin-bottom: 0.75rem; border-bottom: 1px solid #ddd; padding-bottom: 0.5rem; }
+        .info-section, .control-section { background-color: #fcfcfc; border: 1px solid #e0e0e0; padding: 1rem; border-radius: 6px; }
+        .info-section h2, .control-section h2 { font-family: 'Roboto Mono', monospace; font-weight: 700; font-size: 1.1rem; margin-bottom: 0.75rem; border-bottom: 1px solid #ddd; padding-bottom: 0.5rem; display: flex; justify-content: space-between; align-items: center; }
 
-        /* System Status Styling */
-        .stat-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.25rem 1.5rem; }
-        .stat-item { display: flex; justify-content: space-between; align-items: baseline; padding: 0.2rem 0.5rem; border-radius: 3px; }
-        .stat-label { font-family: 'Roboto Mono', monospace; font-size: 0.85rem; color: #444; }
-        .stat-value { font-family: 'Roboto Mono', monospace; font-weight: 700; font-size: 1rem; }
+        /* NEW: Flexible System Status Layout */
+        .stat-flex { 
+            display: flex; 
+            flex-wrap: wrap; 
+            gap: 0.5rem; 
+        }
+        .stat-item { 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+            padding: 0.4rem 0.8rem; 
+            border-radius: 4px; 
+            background-color: #f9fafb;
+            border: 1px solid #e5e7eb;
+            min-width: 140px;
+            flex: 1 1 calc(33.333% - 0.5rem); /* 3 columns by default */
+        }
+        .stat-label { 
+            font-family: 'Roboto Mono', monospace; 
+            font-size: 0.8rem; 
+            color: #4b5563; 
+            margin-right: 0.5rem; /* Reduced spacing */
+        }
+        .stat-value { 
+            font-family: 'Roboto Mono', monospace; 
+            font-weight: 700; 
+            font-size: 0.9rem; 
+            white-space: nowrap;
+        }
         
-        /* Motor Error Styling */
-        #motor-error-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0.4rem; }
-        .motor-error-item { display: flex; justify-content: space-between; font-size: 0.85rem; padding: 0.25rem 0.5rem; border-radius: 3px;}
-        .motor-error-ok { background-color: #ecfdf5; color: #065f46; }
-        .motor-error-fault { background-color: #fef2e2; color: #c2410c; font-weight: bold; }
+        /* Responsive breakpoints for stat items */
+        @media (max-width: 1200px) {
+            .stat-item { flex: 1 1 calc(50% - 0.5rem); } /* 2 columns on medium screens */
+        }
+        @media (max-width: 768px) {
+            .stat-item { flex: 1 1 100%; } /* 1 column on small screens */
+        }
+        
+        /* Motor Error Styling - Improved */
+        #motor-error-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 0.5rem; }
+        .motor-error-item { display: flex; justify-content: space-between; font-size: 0.8rem; padding: 0.4rem 0.6rem; border-radius: 4px; background-color: #f9fafb; border: 1px solid #e5e7eb; }
+        .motor-error-ok { background-color: #ecfdf5; color: #065f46; border-color: #a7f3d0; }
+        .motor-error-fault { background-color: #fef2e2; color: #c2410c; font-weight: bold; border-color: #fde68a; }
 
         /* Color Warning Styles */
-        .bg-warn { background-color: #fef9c3 !important; }
-        .bg-danger { background-color: #fee2e2 !important; }
+        .bg-warn { background-color: #fef9c3 !important; border-color: #fbbf24 !important; }
+        .bg-danger { background-color: #fee2e2 !important; border-color: #f87171 !important; }
         .text-warn { color: #d97706 !important; }
         .text-danger { color: #dc2626 !important; }
         
-        /* Control Panel Styling */
-        .control-btn { flex-grow: 1; padding: 0.6rem; border: none; cursor: pointer; font-family: 'Roboto Mono'; font-weight: 700; transition: all 0.2s; opacity: 0.9; }
-        .control-btn:hover:not(:disabled) { opacity: 1; }
+        /* Control Panel Styling - Enhanced */
+        .control-btn { 
+            flex-grow: 1; 
+            padding: 0.6rem 0.8rem; 
+            border: none; 
+            cursor: pointer; 
+            font-family: 'Roboto Mono'; 
+            font-weight: 700; 
+            transition: all 0.2s; 
+            opacity: 0.9; 
+            border-radius: 4px;
+            font-size: 0.85rem;
+        }
+        .control-btn:hover:not(:disabled) { opacity: 1; transform: translateY(-1px); box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
         .control-btn:disabled { opacity: 0.4; cursor: not-allowed; background-color: #9ca3af !important; }
-        .status-box { font-weight: 700; text-align: center; padding: 0.5rem; transition: all 0.3s; margin-top: auto; }
+        
+        .status-box { 
+            font-weight: 700; 
+            text-align: center; 
+            padding: 0.6rem; 
+            transition: all 0.3s; 
+            margin-top: auto; 
+            border-radius: 4px;
+            font-size: 0.85rem;
+        }
         .status-idle { background-color: #e5e7eb; color: #4b5563; }
         .status-speaking { background-color: #dcfce7; color: #166534; animation: pulse-speaking 1.5s infinite; }
         .status-paused { background-color: #ffedd5; color: #9a3412; }
         .status-error { background-color: #fee2e2; color: #991b1b; }
-        @keyframes pulse-speaking { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.01); } }
+        @keyframes pulse-speaking { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.02); } }
 
         /* Motor Detail Page (Page 2) */
         #page-motor-status { padding: 2rem; }
         .motor-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1rem; }
-        .motor-card { border: 1px solid #d0d0d0; padding: 0.75rem; background-color: #f8f8f8; }
-        .motor-title { font-family: 'Roboto Mono'; font-weight: 700; font-size: 1.1rem; border-bottom: 1px solid #e0e0e0; padding-bottom: 0.5rem; margin-bottom: 0.5rem; }
-        .motor-details { display: grid; grid-template-columns: 100px 1fr; gap: 0.25rem; font-size: 0.9rem; }
+        .motor-card { border: 1px solid #d0d0d0; padding: 1rem; background-color: #f8f8f8; border-radius: 6px; }
+        .motor-title { font-family: 'Roboto Mono'; font-weight: 700; font-size: 1.1rem; border-bottom: 1px solid #e0e0e0; padding-bottom: 0.5rem; margin-bottom: 0.75rem; }
+        .motor-details { display: grid; grid-template-columns: 100px 1fr; gap: 0.4rem; font-size: 0.9rem; }
 
         /* Custom Confirmation Modal Styling */
         .modal-overlay {
@@ -103,32 +155,32 @@
             transition: background-color 0.2s, color 0.2s;
         }
         .modal-btn.confirm {
-            background-color: #ef4444; /* red-500 */
+            background-color: #ef4444;
             color: white;
         }
         .modal-btn.confirm:hover {
-            background-color: #dc2626; /* red-600 */
+            background-color: #dc2626;
         }
         .modal-btn.cancel {
-            background-color: #e5e7eb; /* gray-200 */
-            color: #374151; /* gray-700 */
+            background-color: #e5e7eb;
+            color: #374151;
         }
         .modal-btn.cancel:hover {
-            background-color: #d1d5db; /* gray-300 */
+            background-color: #d1d5db;
         }
 
-        /* New: Login Modal Styling */
+        /* Login Modal Styling */
         #login-modal {
             position: fixed;
             top: 0;
             left: 0;
             width: 100%;
             height: 100%;
-            background-color: rgba(0, 0, 0, 0.8); /* Darker overlay for login */
+            background-color: rgba(0, 0, 0, 0.8);
             display: flex;
             justify-content: center;
             align-items: center;
-            z-index: 2000; /* Higher z-index than confirmation modal */
+            z-index: 2000;
         }
         #login-modal .modal-content {
             padding: 2rem;
@@ -141,10 +193,10 @@
             margin-bottom: 1rem;
             border: 1px solid #ccc;
             border-radius: 5px;
-            box-sizing: border-box; /* Include padding in width */
+            box-sizing: border-box;
         }
         #login-modal .login-btn {
-            background-color: #2563eb; /* blue-600 */
+            background-color: #2563eb;
             color: white;
             padding: 0.75rem 1.5rem;
             border-radius: 5px;
@@ -153,45 +205,50 @@
             transition: background-color 0.2s;
         }
         #login-modal .login-btn:hover {
-            background-color: #1d4ed8; /* blue-700 */
+            background-color: #1d4ed8;
         }
         #login-error-message {
-            color: #ef4444; /* red-500 */
+            color: #ef4444;
             margin-top: 0.5rem;
             font-size: 0.9rem;
         }
         .hidden { display: none !important; }
         
-        /* ADDED: Joystick Styling */
+        /* Joystick Styling - Enhanced */
         .joystick-container {
-            width: 100px;
-            height: 100px;
-            background-color: #e0e0e0;
+            width: 90px;
+            height: 90px;
+            background-color: #e5e7eb;
             border-radius: 50%;
             position: relative;
-            border: 2px solid #b0b0b0;
-            touch-action: none; /* Prevent scrolling on touch */
+            border: 2px solid #9ca3af;
+            touch-action: none;
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.1);
         }
         .joystick-handle {
-            width: 40px;
-            height: 40px;
-            background-color: #555;
+            width: 32px;
+            height: 32px;
+            background-color: #374151;
             border-radius: 50%;
             position: absolute;
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
             cursor: grab;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            transition: box-shadow 0.2s;
         }
         .joystick-handle:active {
             cursor: grabbing;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
         }
+        
         .process-item {
             display: grid;
             grid-template-columns: 2fr 1fr 1fr auto;
             align-items: center;
             gap: 0.5rem;
-            padding: 0.25rem 0.5rem;
+            padding: 0.4rem 0.6rem;
             border-radius: 4px;
             font-size: 0.8rem;
             background-color: #f9fafb;
@@ -202,15 +259,57 @@
         .process-item .status-running { color: #166534; font-weight: bold; }
         .process-item .pid { font-family: 'Roboto Mono', monospace; color: #6b7280; }
         .process-item .actions button {
-            padding: 2px 8px;
+            padding: 3px 8px;
             font-size: 0.7rem;
             border: 1px solid #ccc;
-            border-radius: 4px;
+            border-radius: 3px;
             cursor: pointer;
+            transition: all 0.2s;
+        }
+        .process-item .actions button:hover:not(:disabled) {
+            background-color: #f3f4f6;
         }
         .process-item .actions button:disabled {
             opacity: 0.3;
             cursor: not-allowed;
+        }
+
+        /* Enhanced Control Sections */
+        .control-section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .control-subsection {
+            padding: 0.75rem;
+            background-color: #f8fafc;
+            border-radius: 4px;
+            border: 1px solid #e2e8f0;
+        }
+
+        .control-subsection h4 {
+            font-family: 'Roboto Mono', monospace;
+            font-size: 0.85rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+            color: #475569;
+        }
+
+        /* Responsive Design Improvements */
+        @media (max-width: 1024px) {
+            #page-system-overview { grid-template-columns: 1fr; }
+            .joystick-container { width: 80px; height: 80px; }
+            .joystick-handle { width: 28px; height: 28px; }
+        }
+
+        @media (max-width: 768px) {
+            .cpp-container { margin: 10px; }
+            .cpp-header { padding: 1rem; }
+            #page-system-overview { padding: 1rem; }
+            .motor-grid { grid-template-columns: 1fr; }
+            .process-item { grid-template-columns: 1fr; }
         }
     </style>
 </head>
@@ -221,18 +320,20 @@
                 <h1>Dog Hybrid Control Console</h1>
                 <p id="page-subtitle">Main Dashboard</p>
             </div>
-            <button id="toggle-page-btn" class="toggle-button">View Motor Details</button>
         </div>
 
         <div id="page-system-overview" class="hidden">
             <div id="info-column">
                 <div class="info-section">
                     <h2>System Status</h2>
-                    <div id="stat-grid" class="stat-grid">
+                    <div id="stat-flex" class="stat-flex">
                     </div>
                 </div>
                 <div class="info-section">
-                    <h2>Motor Error Report</h2>
+                    <h2>
+                        Motor Error Report
+                        <button id="toggle-page-btn" class="toggle-button">View Motor Details</button>
+                    </h2>
                     <div id="motor-error-grid">
                     </div>
                 </div>
@@ -246,7 +347,7 @@
                             <button data-command="shutdown_all" class="control-btn bg-red-700 text-white">Shutdown Server</button>
                         </div>
                         <div id="process-manager-grid" class="mt-2 flex flex-col gap-2">
-                            </div>
+                        </div>
                         <div id="process-manager-status" class="status-box status-idle">Status: Idle</div>
                     </div>
                 </div>
@@ -255,15 +356,15 @@
             <div id="control-column">
                 <div class="control-section flex flex-col h-full">
                     <h2>Control Panel</h2>
-                    <div class="flex flex-col gap-6">
-                        <div>
-                            <h3 class="font-bold mb-2">Speech Control</h3>
+                    <div class="flex flex-col gap-4">
+                        <div class="control-subsection">
+                            <h4>Speech Control</h4>
                             <div class="flex flex-col gap-3">
-                                <textarea id="speech-text" class="w-full p-2 border text-sm" rows="3" placeholder="Enter text..."></textarea>
+                                <textarea id="speech-text" class="w-full p-2 border text-sm border-gray-300 rounded" rows="2" placeholder="Enter text to speak..."></textarea>
                                 <div class="flex items-center gap-2">
-                                    <label for="volume-slider" class="text-sm">Vol</label>
+                                    <label for="volume-slider" class="text-sm font-medium">Vol</label>
                                     <input type="range" id="volume-slider" min="0" max="100" value="70" class="flex-grow">
-                                    <span id="volume-label" class="text-sm w-8 text-right">70%</span>
+                                    <span id="volume-label" class="text-sm w-10 text-right font-mono">70%</span>
                                 </div>
                                 <div class="flex gap-2">
                                     <button id="speak-btn" class="control-btn bg-blue-600 text-white">Speak</button>
@@ -272,56 +373,48 @@
                                 <div id="speech-status" class="status-box status-idle">Status: Idle</div>
                             </div>
                         </div>
-                        <div class="border-t pt-4">
-                            <h3 class="font-bold mb-2">Head & Expression</h3>
+                        
+                        <div class="control-subsection">
+                            <h4>Head & Expression</h4>
                             <div class="flex flex-col gap-3">
                                 <div class="flex gap-2">
                                     <button id="nod-btn" class="control-btn bg-indigo-600 text-white">Nod</button>
                                     <button id="shake-btn" class="control-btn bg-indigo-600 text-white">Shake</button>
                                 </div>
                                 <div>
-                                    <label for="motor1-slider" class="text-sm">M1 (Up/Down): <span id="motor1-label">0°</span></label>
+                                    <label for="motor1-slider" class="text-sm font-medium">Up/Down: <span id="motor1-label" class="font-mono">0°</span></label>
                                     <input type="range" id="motor1-slider" min="-34" max="13" value="0" class="w-full">
                                 </div>
                                 <div>
-                                    <label for="motor2-slider" class="text-sm">M2 (L/R): <span id="motor2-label">0°</span></label>
+                                    <label for="motor2-slider" class="text-sm font-medium">Left/Right: <span id="motor2-label" class="font-mono">0°</span></label>
                                     <input type="range" id="motor2-slider" min="-39" max="39" value="0" class="w-full">
                                 </div>
                                 <div class="flex items-center gap-2">
-                                    <label for="expression-input" class="text-sm">Expr:</label>
-                                    <input type="text" id="expression-input" maxlength="1" class="w-10 p-1 border text-center" placeholder="c">
-                                    <button id="set-pos-expr-btn" class="control-btn bg-teal-600 text-white">Set Manual</button>
+                                    <label for="expression-input" class="text-sm font-medium">Expression:</label>
+                                    <input type="text" id="expression-input" maxlength="1" class="w-12 p-1 border text-center rounded" placeholder="c">
+                                    <button id="set-pos-expr-btn" class="control-btn bg-teal-600 text-white">Set Position</button>
                                 </div>
                                 <div id="head-status" class="status-box status-idle">Status: Idle</div>
                             </div>
                         </div>
-                        <div class="border-t pt-4">
-                            <h3 class="font-bold mb-2">System Power</h3>
-                            <div class="flex flex-col gap-3">
-                                <div class="flex gap-2">
-                                    <button id="shutdown-btn" class="control-btn bg-red-700 text-white">Shutdown Robot</button>
-                                    <button id="reboot-btn" class="control-btn bg-yellow-600 text-white">Reboot Robot</button>
-                                </div>
-                                <div id="power-status" class="status-box status-idle">Status: Idle</div>
-                            </div>
-                        </div>
-                        <div class="border-t pt-4">
-                            <h3 class="font-bold mb-2">Motion Control</h3>
+                        
+                        <div class="control-subsection">
+                            <h4>Motion Control</h4>
                             <div class="flex flex-col gap-4">
                                 <div>
-                                    <h4 class="font-semibold text-sm mb-2">Robot State</h4>
+                                    <h5 class="font-semibold text-sm mb-2">Robot State</h5>
                                     <div class="grid grid-cols-2 gap-2">
-                                        <button id="state-high-stand-btn" class="control-btn bg-sky-600 text-white text-xs">High-Lvl Stand</button>
+                                        <button id="state-high-stand-btn" class="control-btn bg-sky-600 text-white text-xs">High Stand</button>
                                         <button id="state-damp-btn" class="control-btn bg-sky-600 text-white text-xs">Damp</button>
-                                        <button id="state-low-stand-btn" class="control-btn bg-cyan-600 text-white text-xs">Low-Lvl Stand</button>
-                                        <button id="state-exit-leg-btn" class="control-btn bg-orange-600 text-white text-xs">Exit Leg Mode</button>
-                                        <button id="prep-raise-l-btn" class="control-btn bg-teal-600 text-white text-xs">Prep Raise L-Leg</button>
-                                        <button id="prep-raise-r-btn" class="control-btn bg-teal-600 text-white text-xs">Prep Raise R-Leg</button>
+                                        <button id="state-low-stand-btn" class="control-btn bg-cyan-600 text-white text-xs">Low Stand</button>
+                                        <button id="state-exit-leg-btn" class="control-btn bg-orange-600 text-white text-xs">Exit Leg</button>
+                                        <button id="prep-raise-l-btn" class="control-btn bg-teal-600 text-white text-xs">Raise L-Leg</button>
+                                        <button id="prep-raise-r-btn" class="control-btn bg-teal-600 text-white text-xs">Raise R-Leg</button>
                                     </div>
                                 </div>
                                 <div>
-                                    <h4 class="font-semibold text-sm mb-1">Front Leg Angle Control (rad)</h4>
-                                    <div class="flex items-center gap-4">
+                                    <h5 class="font-semibold text-sm mb-2">Front Leg Control</h5>
+                                    <div class="flex items-center gap-3">
                                         <div id="leg-joystick" class="joystick-container">
                                             <div id="leg-joystick-handle" class="joystick-handle"></div>
                                         </div>
@@ -332,22 +425,33 @@
                                     </div>
                                 </div>
                                 <div>
-                                    <h4 class="font-semibold text-sm mb-1">Robot Movement</h4>
-                                    <div class="flex items-center gap-4">
-                                            <div id="move-joystick" class="joystick-container">
+                                    <h5 class="font-semibold text-sm mb-2">Robot Movement</h5>
+                                    <div class="flex items-center gap-3">
+                                        <div id="move-joystick" class="joystick-container">
                                             <div id="move-joystick-handle" class="joystick-handle"></div>
                                         </div>
-                                        <div class="flex-grow flex flex-col gap-2 text-xs font-mono">
-                                            <p>Fwd/Bwd (x): <span id="move-x-val">0.00</span> m/s</p>
-                                            <p>Rotate (r): <span id="move-r-val">0.00</span> rad/s</p>
+                                        <div class="flex-grow text-xs font-mono">
+                                            <p>Forward: <span id="move-x-val">0.00</span> m/s</p>
+                                            <p>Rotate: <span id="move-r-val">0.00</span> rad/s</p>
                                         </div>
                                     </div>
-                                        <div class="mt-2">
-                                        <label for="move-y-slider" class="text-sm">Strafe L/R (y): <span id="move-y-val">0.00</span> m/s</label>
+                                    <div class="mt-2">
+                                        <label for="move-y-slider" class="text-sm font-medium">Strafe: <span id="move-y-val" class="font-mono">0.00</span> m/s</label>
                                         <input type="range" id="move-y-slider" min="-0.3" max="0.3" value="0" step="0.01" class="w-full">
                                     </div>
                                 </div>
                                 <div id="motion-status" class="status-box status-idle">Status: Idle</div>
+                            </div>
+                        </div>
+                        
+                        <div class="control-subsection">
+                            <h4>System Power</h4>
+                            <div class="flex flex-col gap-3">
+                                <div class="flex gap-2">
+                                    <button id="shutdown-btn" class="control-btn bg-red-700 text-white">Shutdown</button>
+                                    <button id="reboot-btn" class="control-btn bg-yellow-600 text-white">Reboot</button>
+                                </div>
+                                <div id="power-status" class="status-box status-idle">Status: Idle</div>
                             </div>
                         </div>
                     </div>
@@ -356,7 +460,11 @@
         </div>
 
         <div id="page-motor-status" class="hidden">
-             <div id="motor-grid" class="motor-grid">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold">Detailed Motor Status</h2>
+                <button id="back-to-dashboard-btn" class="toggle-button">← Back to Dashboard</button>
+            </div>
+            <div id="motor-grid" class="motor-grid">
             </div>
         </div>
     </div>
@@ -366,14 +474,14 @@
             <h3 id="modal-title">Confirm Action</h3>
             <p id="modal-message">Are you sure you want to perform this action?</p>
             <div class="modal-buttons">
-                <button id="modal-cancel-btn" class="modal-btn cancel">No, Cancel</button>
-                <button id="modal-confirm-btn" class="modal-btn confirm">Yes, Proceed</button>
+                <button id="modal-cancel-btn" class="modal-btn cancel">Cancel</button>
+                <button id="modal-confirm-btn" class="modal-btn confirm">Confirm</button>
             </div>
         </div>
     </div>
 
     <div id="login-modal" class="modal-overlay">
-         <div class="modal-content">
+        <div class="modal-content">
             <h3>Login to Dog Hybrid Console</h3>
             <input type="text" id="username-input" placeholder="Username" autocomplete="username">
             <input type="password" id="password-input" placeholder="Password" autocomplete="current-password">
@@ -386,31 +494,37 @@
     <script>
         const socket = io();
         const motorNames = ['FR_hip', 'FR_thigh', 'FR_calf', 'FL_hip', 'FL_thigh', 'FL_calf', 'RR_hip', 'RR_thigh', 'RR_calf', 'RL_hip', 'RL_thigh', 'RL_calf'];
-        const managedScripts = [
-            "main_camera_gateway.py", "main_control_gateway.py", "main_dog_body_control.py",
-            "main_dog_head_control.py", "main_dog_status.py", "main_jetson_power_server.py",
-            "main_speech_synthesis.py", "main_state_machine.py",
-        ];
+        // --- REPLACED a simple array with a more informative map ---
+        const SCRIPT_MAP = {
+            "main_camera_gateway.py": "cam_gateway",
+            "main_control_gateway.py": "ctrl_gateway",
+            "main_dog_body_control.py": "body_ctrl",
+            "main_dog_head_control.py": "head_ctrl",
+            "main_dog_status.py": "dog_status",
+            "main_jetson_power_server.py": "power_srv",
+            "main_speech_synthesis.py": "speech_synth",
+            "start_woz_backend.py": "woz_backend" // <-- ADDED new script
+        };
         const statMetrics = [
-            { id: 'battery_percent', label: 'Battery', unit: ' %', warn: 30, danger: 15, precision: 1, isLowerBad: true },
-            { id: 'cpu_usage_percent', label: 'CPU Usage', unit: ' %', warn: 70, danger: 90, precision: 1 },
-            { id: 'gpu_usage_percent', label: 'GPU Usage', unit: ' %', warn: 70, danger: 90, precision: 1 },
-            { id: 'memory_usage_percent', label: 'Memory', unit: ' %', warn: 75, danger: 90, precision: 1 },
-            { id: 'latency_ms', label: 'DDS Latency', unit: ' ms', warn: 50, danger: 100, precision: 2 },
-            { id: 'temp_cpu', label: 'Temp CPU', unit: ' °C', warn: 75, danger: 90, precision: 0 },
-            { id: 'temp_gpu', label: 'Temp GPU', unit: ' °C', warn: 75, danger: 90, precision: 0 },
-            { id: 'power_nv_power_total', label: 'Power Total', unit: ' mW', precision: 0 },
-            { id: 'hardware_uptime_seconds', label: 'Uptime', unit: ' min', precision: 1 },
+            { id: 'battery_percent', label: 'Battery', unit: '%', warn: 30, danger: 15, precision: 1, isLowerBad: true },
+            { id: 'cpu_usage_percent', label: 'CPU', unit: '%', warn: 70, danger: 90, precision: 1 },
+            { id: 'gpu_usage_percent', label: 'GPU', unit: '%', warn: 70, danger: 90, precision: 1 },
+            { id: 'memory_usage_percent', label: 'Memory', unit: '%', warn: 75, danger: 90, precision: 1 },
+            { id: 'latency_ms', label: 'Latency', unit: 'ms', warn: 50, danger: 100, precision: 1 },
+            { id: 'temp_cpu', label: 'CPU Temp', unit: '°C', warn: 75, danger: 90, precision: 0 },
+            { id: 'temp_gpu', label: 'GPU Temp', unit: '°C', warn: 75, danger: 90, precision: 0 },
+            { id: 'power_nv_power_total', label: 'Power', unit: 'mW', precision: 0 },
+            { id: 'hardware_uptime_seconds', label: 'Uptime', unit: 'min', precision: 0 },
         ];
 
         // --- Element Initialization ---
-        const statGrid = document.getElementById('stat-grid');
+        const statFlex = document.getElementById('stat-flex');
         statMetrics.forEach(m => {
             const item = document.createElement('div');
             item.className = 'stat-item';
             item.id = `${m.id}-item`;
             item.innerHTML = `<span class="stat-label">${m.label}</span><span id="${m.id}" class="stat-value">--${m.unit}</span>`;
-            statGrid.appendChild(item);
+            statFlex.appendChild(item);
         });
 
         const motorErrorGrid = document.getElementById('motor-error-grid');
@@ -419,7 +533,7 @@
             const errorItem = document.createElement('div');
             errorItem.id = `motor-error-item-${i}`;
             errorItem.className = 'motor-error-item';
-            errorItem.innerHTML = `<span class="font-mono">${motorNames[i]}</span><span id="motor-error-status-${i}">--</span>`;
+            errorItem.innerHTML = `<span class="font-mono text-xs">${motorNames[i]}</span><span id="motor-error-status-${i}">--</span>`;
             motorErrorGrid.appendChild(errorItem);
             const card = document.createElement('div');
             card.className = 'motor-card';
@@ -431,14 +545,23 @@
         const pageSystem = document.getElementById('page-system-overview');
         const pageMotors = document.getElementById('page-motor-status');
         const toggleBtn = document.getElementById('toggle-page-btn');
+        const backBtn = document.getElementById('back-to-dashboard-btn');
         const pageSubtitle = document.getElementById('page-subtitle');
-        toggleBtn.addEventListener('click', () => {
-            const isMotorPageVisible = pageSystem.classList.contains('hidden');
-            pageSystem.classList.toggle('hidden', !isMotorPageVisible);
-            pageMotors.classList.toggle('hidden', isMotorPageVisible);
-            toggleBtn.textContent = isMotorPageVisible ? 'View Motor Details' : 'View Dashboard';
-            pageSubtitle.textContent = isMotorPageVisible ? 'Main Dashboard' : 'Detailed Motor Status';
-        });
+
+        function showMotorDetails() {
+            pageSystem.classList.add('hidden');
+            pageMotors.classList.remove('hidden');
+            pageSubtitle.textContent = 'Detailed Motor Status';
+        }
+
+        function showDashboard() {
+            pageSystem.classList.remove('hidden');
+            pageMotors.classList.add('hidden');
+            pageSubtitle.textContent = 'Main Dashboard';
+        }
+
+        toggleBtn.addEventListener('click', showMotorDetails);
+        backBtn.addEventListener('click', showDashboard);
 
         // --- Get Control Elements ---
         const controlElements = {};
@@ -495,9 +618,16 @@
 
         modalConfirmBtn.addEventListener('click', () => {
             if (pendingPowerCommand) {
-                socket.emit('power_command', { command: pendingPowerCommand });
-                powerstatus.textContent = `Sending ${pendingPowerCommand} command...`;
-                powerstatus.className = 'status-box status-speaking';
+                if (pendingPowerCommand === 'shutdown the process server') {
+                    socket.emit('process_command', { command: 'shutdown_server', target: 'all' });
+                    const processStatusBox = document.getElementById('process-manager-status');
+                    processStatusBox.textContent = `Sending server shutdown command...`;
+                    processStatusBox.className = 'status-box status-speaking';
+                } else {
+                    socket.emit('power_command', { command: pendingPowerCommand });
+                    powerstatus.textContent = `Sending ${pendingPowerCommand} command...`;
+                    powerstatus.className = 'status-box status-speaking';
+                }
             }
             hideConfirmationModal();
         });
@@ -511,15 +641,13 @@
         shutdownbtn.addEventListener('click', () => showConfirmationModal('shutdown'));
         rebootbtn.addEventListener('click', () => showConfirmationModal('reboot'));
 
-        // --- New: Login Modal Logic ---
+        // --- Login Modal Logic ---
         const loginModal = document.getElementById('login-modal');
         const usernameInput = document.getElementById('username-input');
         const passwordInput = document.getElementById('password-input');
         const loginBtn = document.getElementById('login-btn');
         const loginErrorMessage = document.getElementById('login-error-message');
-        const mainContent = document.querySelector('.cpp-container > div:not(.cpp-header):not(.modal-overlay)'); // Selects page-system-overview and page-motor-status
 
-        // Initially hide main content, show login modal
         pageSystem.classList.add('hidden');
         pageMotors.classList.add('hidden');
         loginModal.classList.remove('hidden');
@@ -530,23 +658,17 @@
             socket.emit('authenticate', { username: username, password: password });
         });
 
-        // Allow pressing Enter key to login
-        usernameInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                loginBtn.click();
-            }
-        });
-        passwordInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                loginBtn.click();
-            }
+        [usernameInput, passwordInput].forEach(input => {
+            input.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') loginBtn.click();
+            });
         });
 
         socket.on('login_response', (data) => {
             if (data.status === 'success') {
                 loginModal.classList.add('hidden');
-                pageSystem.classList.remove('hidden'); // Show main dashboard on successful login
-                loginErrorMessage.classList.add('hidden'); // Hide any previous error
+                showDashboard();
+                loginErrorMessage.classList.add('hidden');
                 socket.emit('request_initial_process_status');
             } else {
                 loginErrorMessage.textContent = data.message;
@@ -555,7 +677,6 @@
         });
 
         socket.on('authentication_required', (data) => {
-            // This can happen if the server restarts or if authentication expires
             loginModal.classList.remove('hidden');
             pageSystem.classList.add('hidden');
             pageMotors.classList.add('hidden');
@@ -564,7 +685,6 @@
         });
 
         socket.on('unauthorized', (data) => {
-            // This is for commands sent while unauthenticated
             loginModal.classList.remove('hidden');
             pageSystem.classList.add('hidden');
             pageMotors.classList.add('hidden');
@@ -572,18 +692,20 @@
             loginErrorMessage.classList.remove('hidden');
         });
 
-        // --- ADDED: Process Manager UI Logic ---
+        // --- Process Manager UI Logic ---
         const processGrid = document.getElementById('process-manager-grid');
         const processControls = document.getElementById('process-manager-controls');
         const processStatusBox = document.getElementById('process-manager-status');
 
+        // --- UPDATED CODE (replace with this) ---
         // Dynamically create the UI rows for each script
-        managedScripts.forEach(scriptName => {
+        Object.keys(SCRIPT_MAP).forEach(scriptName => {
             const item = document.createElement('div');
             item.className = 'process-item';
+            // The rest of this block is unchanged...
             item.id = `process-item-${scriptName}`;
             item.innerHTML = `
-                <span class="name">${scriptName.replace('main_', '').replace('.py', '')}</span>
+                <span class="name">${scriptName.replace('main_', '').replace('.py', '').replace('start_', '')}</span>
                 <span id="process-status-${scriptName}" class="status-stopped">UNKNOWN</span>
                 <span id="process-pid-${scriptName}" class="pid">PID: --</span>
                 <span class="actions flex gap-1">
@@ -595,44 +717,32 @@
             processGrid.appendChild(item);
         });
 
-        // Listen for clicks on any control button (individual, all, or shutdown)
         processControls.addEventListener('click', (e) => {
             if (e.target.tagName === 'BUTTON') {
                 const command = e.target.dataset.command;
-                const target = e.target.dataset.target || 'all'; // Default to 'all' for top-level buttons
+                const target = e.target.dataset.target || 'all';
 
                 if (command === 'shutdown_all') {
-                     showConfirmationModal('shutdown the process server');
+                    showConfirmationModal('shutdown the process server');
                 } else {
                     socket.emit('process_command', { command, target });
                 }
             }
         });
-        
-        // When the confirmation modal is confirmed, handle the specific shutdown case
-        // We modify the existing modal listener slightly
-        modalConfirmBtn.addEventListener('click', () => {
-            if (pendingPowerCommand) {
-                if (pendingPowerCommand === 'shutdown the process server') {
-                    socket.emit('process_command', { command: 'shutdown_server', target: 'all' });
-                    processStatusBox.textContent = `Sending server shutdown command...`;
-                    processStatusBox.className = 'status-box status-speaking';
-                } else {
-                    socket.emit('power_command', { command: pendingPowerCommand });
-                    powerstatus.textContent = `Sending ${pendingPowerCommand} command...`;
-                    powerstatus.className = 'status-box status-speaking';
-                }
-            }
-            hideConfirmationModal();
-        });
 
-
-        // Listen for status updates from the server
+        // --- REPLACED the entire 'process_status_update' listener with this corrected version ---
         socket.on('process_status_update', (data) => {
+            // The 'data' object is already keyed by the full script name, which we use for element IDs.
+            // e.g., data = { "main_camera_gateway.py": { status: "RUNNING", ... } }
+            
+            // Add a debug print to see the data in the browser's console (F12)
+            console.log("Received process_status_update:", data);
+
             for (const scriptName in data) {
-                if (data.hasOwnProperty(scriptName)) {
-                    const status = data[scriptName].status;
-                    const pid = data[scriptName].pid;
+                // We check if the received script name exists in our SCRIPT_MAP,
+                // which is our "source of truth" for what should be on the page.
+                if (SCRIPT_MAP.hasOwnProperty(scriptName)) {
+                    const statusInfo = data[scriptName];
                     
                     const statusEl = document.getElementById(`process-status-${scriptName}`);
                     const pidEl = document.getElementById(`process-pid-${scriptName}`);
@@ -640,14 +750,23 @@
                     const stopBtn = document.getElementById(`proc-stop-${scriptName}`);
                     const restartBtn = document.getElementById(`proc-restart-${scriptName}`);
 
+                    // This check is important in case an element wasn't created properly
                     if (statusEl && pidEl && startBtn && stopBtn && restartBtn) {
+                        const status = statusInfo.status;
+                        const pid = statusInfo.pid;
+
                         statusEl.textContent = status;
-                        statusEl.className = status === 'RUNNING' ? 'status-running' : 'status-stopped';
+                        // Use classList for safer class manipulation
+                        statusEl.classList.remove('status-running', 'status-stopped');
+                        statusEl.classList.add(status === 'RUNNING' ? 'status-running' : 'status-stopped');
+                        
                         pidEl.textContent = status === 'RUNNING' ? `PID: ${pid}` : 'PID: --';
                         
                         startBtn.disabled = (status === 'RUNNING');
                         stopBtn.disabled = (status !== 'RUNNING');
                         restartBtn.disabled = (status !== 'RUNNING');
+                    } else {
+                        console.warn(`Could not find UI elements for script: ${scriptName}`);
                     }
                 }
             }
@@ -664,7 +783,162 @@
             }
         });
 
-        // --- Socket Listeners for UI Updates (remaining) ---
+        // --- Motion Control Logic ---
+        const motionElements = {};
+        ['state-high-stand-btn', 'state-damp-btn', 'state-low-stand-btn', 'state-exit-leg-btn', 'prep-raise-l-btn', 'prep-raise-r-btn', 'motion-status', 'move-y-slider', 'move-y-val', 'move-x-val', 'move-r-val', 'leg-angle1-val', 'leg-angle2-val', 'leg-joystick', 'leg-joystick-handle', 'move-joystick', 'move-joystick-handle'].forEach(id => {
+            motionElements[id.replace(/-/g, '')] = document.getElementById(id);
+        });
+
+        motionElements.statehighstandbtn.addEventListener('click', () => socket.emit('motion_command', { command_type: 0, state_enum: 5 }));
+        motionElements.statedampbtn.addEventListener('click', () => socket.emit('motion_command', { command_type: 0, state_enum: 8 }));
+        motionElements.statelowstandbtn.addEventListener('click', () => socket.emit('motion_command', { command_type: 0, state_enum: 7 }));
+        motionElements.prepraiselbtn.addEventListener('click', () => socket.emit('motion_command', { command_type: 0, state_enum: 10, leg_selection: 1 }));
+        motionElements.prepraiserbtn.addEventListener('click', () => socket.emit('motion_command', { command_type: 0, state_enum: 10, leg_selection: 0 }));
+        motionElements.stateexitlegbtn.addEventListener('click', () => socket.emit('motion_command', { command_type: 1, sub_command: 'q' }));
+
+        socket.on('motion_response', (data) => {
+            const { motionstatus } = motionElements;
+            if(motionstatus) {
+                motionstatus.textContent = `Status: ${data.message}`;
+                motionstatus.className = `status-box status-${data.status === 'success' ? 'speaking' : 'error'}`;
+                setTimeout(() => {
+                    motionstatus.textContent = 'Status: Idle';
+                    motionstatus.className = 'status-box status-idle';
+                }, 3000);
+            }
+        });
+        
+        // Generic Joystick Logic
+        function createJoystick(container, handle, options) {
+            if (!container || !handle) return;
+            
+            const { onMove, onEnd, deadzone = 0.1 } = options;
+            let active = false;
+            let centerX, centerY;
+            const maxMove = container.offsetWidth / 2 - handle.offsetWidth / 2;
+            
+            function start(e) {
+                active = true;
+                handle.style.transition = 'none';
+                const rect = container.getBoundingClientRect();
+                centerX = rect.left + rect.width / 2;
+                centerY = rect.top + rect.height / 2;
+            }
+
+            function move(e) {
+                if (!active) return;
+                e.preventDefault();
+
+                let clientX, clientY;
+                if (e.type.startsWith('touch')) {
+                    if (e.touches && e.touches.length > 0) {
+                        clientX = e.touches[0].clientX;
+                        clientY = e.touches[0].clientY;
+                    } else {
+                        return;
+                    }
+                } else {
+                    clientX = e.clientX;
+                    clientY = e.clientY;
+                }
+
+                let dx = clientX - centerX;
+                let dy = clientY - centerY;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+
+                if (distance > maxMove) {
+                    dx = (dx / distance) * maxMove;
+                    dy = (dy / distance) * maxMove;
+                }
+
+                handle.style.left = `${container.offsetWidth / 2 + dx}px`;
+                handle.style.top = `${container.offsetHeight / 2 + dy}px`;
+
+                let normX = dx / maxMove;
+                let normY = -dy / maxMove;
+
+                if (!isFinite(normX)) normX = 0;
+                if (!isFinite(normY)) normY = 0;
+                if (Math.abs(normX) < deadzone) normX = 0;
+                if (Math.abs(normY) < deadzone) normY = 0;
+
+                if (onMove) onMove(normX, normY);
+            }
+
+            function end() {
+                if (!active) return;
+                active = false;
+                handle.style.transition = 'left 0.2s, top 0.2s';
+                handle.style.left = '50%';
+                handle.style.top = '50%';
+                if (onEnd) onEnd();
+            }
+            
+            container.addEventListener('mousedown', start);
+            document.addEventListener('mousemove', move);
+            document.addEventListener('mouseup', end);
+            container.addEventListener('touchstart', start, { passive: false });
+            document.addEventListener('touchmove', move, { passive: false });
+            document.addEventListener('touchend', end);
+        }
+
+        // Leg Control Joystick
+        createJoystick(motionElements.legjoystick, motionElements.legjoystickhandle, {
+            onMove: (x, y) => {
+                if (x === 0 && y === 0) return;
+                const angle1 = 0.95 + x * 2.45; 
+                const angle2 = -1.75 + y * 0.95;
+                motionElements.legangle1val.textContent = angle1.toFixed(2);
+                motionElements.legangle2val.textContent = angle2.toFixed(2);
+                socket.emit('motion_command', { command_type: 1, angle1: angle1, angle2: angle2 });
+            },
+            onEnd: () => {
+                motionElements.legangle1val.textContent = "0.00";
+                motionElements.legangle2val.textContent = "0.00";
+            }
+        });
+
+        // Movement Control
+        let currentMoveCommand = { x: 0, y: 0, r: 0 };
+        const moveUpdateInterval = 100;
+        let moveIntervalId = null;
+
+        function sendMoveCommand() {
+            socket.emit('motion_command', { command_type: 2, ...currentMoveCommand });
+        }
+
+        createJoystick(motionElements.movejoystick, motionElements.movejoystickhandle, {
+            onMove: (normX, normY) => {
+                const max_x_speed = 0.5;
+                const max_r_speed = 1.0;
+                currentMoveCommand.x = normY * max_x_speed;
+                currentMoveCommand.r = normX * max_r_speed;
+                motionElements.movexval.textContent = currentMoveCommand.x.toFixed(2);
+                motionElements.moverval.textContent = currentMoveCommand.r.toFixed(2);
+                if (!moveIntervalId) {
+                    sendMoveCommand();
+                    moveIntervalId = setInterval(sendMoveCommand, moveUpdateInterval);
+                }
+            },
+            onEnd: () => {
+                if (moveIntervalId) clearInterval(moveIntervalId);
+                moveIntervalId = null;
+                currentMoveCommand.x = 0;
+                currentMoveCommand.r = 0;
+                sendMoveCommand();
+                motionElements.movexval.textContent = "0.00";
+                motionElements.moverval.textContent = "0.00";
+            }
+        });
+
+        motionElements.moveyslider.addEventListener('input', (e) => {
+            const y_val = parseFloat(e.target.value);
+            currentMoveCommand.y = y_val;
+            motionElements.moveyval.textContent = y_val.toFixed(2);
+            if (!moveIntervalId) sendMoveCommand();
+        });
+
+        // Socket Listeners for UI Updates
         function applyWarning(baseEl, textEl, value, metric) {
             baseEl.classList.remove('bg-warn', 'bg-danger');
             textEl.classList.remove('text-warn', 'text-danger');
@@ -689,7 +963,7 @@
 
         socket.on('head_response', (data) => {
             const { headstatus } = controlElements;
-            headstatus.textContent = data.message;
+            headstatus.textContent = `Status: ${data.message}`;
             headstatus.className = `status-box status-${data.status === 'success' ? 'speaking' : 'error'}`;
             setTimeout(() => {
                 headstatus.textContent = 'Status: Idle';
@@ -702,182 +976,12 @@
             powerstatus.textContent = `Status: ${data.message}`;
             powerstatus.className = `status-box status-${data.status === 'success' ? 'speaking' : 'error'}`;
             if (data.status === 'error') {
-                 setTimeout(() => {
+                setTimeout(() => {
                     powerstatus.textContent = 'Status: Idle';
                     powerstatus.className = 'status-box status-idle';
                 }, 3000);
             }
         });
-
-        // --- ADDED: Motion Control Logic ---
-        const motionElements = {};
-        ['state-high-stand-btn', 'state-damp-btn', 'state-low-stand-btn', 'state-exit-leg-btn', 'prep-raise-l-btn', 'prep-raise-r-btn', 'motion-status', 'move-y-slider', 'move-y-val', 'move-x-val', 'move-r-val', 'leg-angle1-val', 'leg-angle2-val', 'leg-joystick', 'leg-joystick-handle', 'move-joystick', 'move-joystick-handle'].forEach(id => {
-            motionElements[id.replace(/-/g, '')] = document.getElementById(id);
-        });
-
-        // State Control Listeners
-        // Corrected Event Listeners for Motion Control
-        motionElements.statehighstandbtn.addEventListener('click', () => socket.emit('motion_command', { command_type: 0, state_enum: 5 }));
-        motionElements.statedampbtn.addEventListener('click', () => socket.emit('motion_command', { command_type: 0, state_enum: 8 }));
-        motionElements.statelowstandbtn.addEventListener('click', () => socket.emit('motion_command', { command_type: 0, state_enum: 7 }));
-        motionElements.prepraiselbtn.addEventListener('click', () => socket.emit('motion_command', { command_type: 0, state_enum: 10, leg_selection: 1 })); // FL is 1
-        motionElements.prepraiserbtn.addEventListener('click', () => socket.emit('motion_command', { command_type: 0, state_enum: 10, leg_selection: 0 })); // FR is 0
-        motionElements.stateexitlegbtn.addEventListener('click', () => socket.emit('motion_command', { command_type: 1, sub_command: 'q' }));
-
-        // Socket Listener for Motion Status
-        socket.on('motion_response', (data) => {
-            const { motionstatus } = motionElements;
-            if(motionstatus) {
-                motionstatus.textContent = `Status: ${data.message}`;
-                motionstatus.className = `status-box status-${data.status === 'success' ? 'speaking' : 'error'}`;
-                setTimeout(() => {
-                    motionstatus.textContent = 'Status: Idle';
-                    motionstatus.className = 'status-box status-idle';
-                }, 3000);
-            }
-        });
-        
-        // Generic Joystick Logic
-        function createJoystick(container, handle, options) {
-            if (!container || !handle) {
-                return;
-            }
-            const { onMove, onEnd, deadzone = 0.1 } = options;
-
-            let active = false;
-            let centerX, centerY;
-            const maxMove = container.offsetWidth / 2 - handle.offsetWidth / 2;
-            
-            function start(e) {
-                active = true;
-                handle.style.transition = 'none';
-                const rect = container.getBoundingClientRect();
-                centerX = rect.left + rect.width / 2;
-                centerY = rect.top + rect.height / 2;
-            }
-
-            function move(e) {
-                if (!active) return;
-                e.preventDefault();
-
-                let clientX, clientY;
-
-                // Explicitly check for touch or mouse events and get coordinates
-                if (e.type.startsWith('touch')) {
-                    // A touch event might be fired without any actual touches.
-                    if (e.touches && e.touches.length > 0) {
-                        clientX = e.touches[0].clientX;
-                        clientY = e.touches[0].clientY;
-                    } else {
-                        return; // No touch data, so we cannot proceed.
-                    }
-                } else {
-                    // It's a mouse event.
-                    clientX = e.clientX;
-                    clientY = e.clientY;
-                }
-
-                // The rest of the function proceeds only with valid coordinates.
-                let dx = clientX - centerX;
-                let dy = clientY - centerY;
-                const distance = Math.sqrt(dx * dx + dy * dy);
-
-                if (distance > maxMove) {
-                    dx = (dx / distance) * maxMove;
-                    dy = (dy / distance) * maxMove;
-                }
-
-                handle.style.left = `${container.offsetWidth / 2 + dx}px`;
-                handle.style.top = `${container.offsetHeight / 2 + dy}px`;
-
-                let normX = dx / maxMove;
-                let normY = -dy / maxMove; // Invert Y-axis for standard joystick controls
-
-                // Handle division by zero if maxMove is 0
-                if (!isFinite(normX)) normX = 0;
-                if (!isFinite(normY)) normY = 0;
-
-                if (Math.abs(normX) < deadzone) normX = 0;
-                if (Math.abs(normY) < deadzone) normY = 0;
-
-                if (onMove) onMove(normX, normY);
-            }
-
-            function end() {
-                if (!active) return;
-                active = false;
-                handle.style.transition = 'left 0.2s, top 0.2s';
-                handle.style.left = '50%';
-                handle.style.top = '50%';
-                if (onEnd) onEnd();
-            }
-            
-            container.addEventListener('mousedown', start);
-            document.addEventListener('mousemove', move);
-            document.addEventListener('mouseup', end);
-            container.addEventListener('touchstart', start, { passive: false });
-            document.addEventListener('touchmove', move, { passive: false });
-            document.addEventListener('touchend', end);
-        }
-
-        // Leg Control Joystick Instance
-        createJoystick(motionElements.legjoystick, motionElements.legjoystickhandle, {
-            onMove: (x, y) => {
-                if (x === 0 && y === 0) return; // Don't transmit center values
-                // Map joystick [-1, 1] to angle ranges: angle1 [-1.5, 3.4], angle2 [-2.7, -0.8]
-                const angle1 = 0.95 + x * 2.45; 
-                const angle2 = -1.75 + y * 0.95;
-                motionElements.legangle1val.textContent = angle1.toFixed(2);
-                motionElements.legangle2val.textContent = angle2.toFixed(2);
-                socket.emit('motion_command', { command_type: 1, angle1: angle1, angle2: angle2 });
-            },
-            onEnd: () => {
-                motionElements.legangle1val.textContent = "0.00";
-                motionElements.legangle2val.textContent = "0.00";
-            }
-        });
-
-        // Movement Control Joystick & Slider
-        let currentMoveCommand = { x: 0, y: 0, r: 0 };
-        const moveUpdateInterval = 100; // ms
-        let moveIntervalId = null;
-
-        function sendMoveCommand() {
-            socket.emit('motion_command', { command_type: 2, ...currentMoveCommand });
-        }
-
-        createJoystick(motionElements.movejoystick, motionElements.movejoystickhandle, {
-            onMove: (normX, normY) => {
-                // Joystick: Y -> x (fwd/bwd), X -> r (rotate)
-                const max_x_speed = 0.5; // m/s
-                const max_r_speed = 1.0; // rad/s
-                currentMoveCommand.x = normY * max_x_speed;
-                currentMoveCommand.r = normX * max_r_speed;
-                motionElements.movexval.textContent = currentMoveCommand.x.toFixed(2);
-                motionElements.moverval.textContent = currentMoveCommand.r.toFixed(2);
-                if (!moveIntervalId) {
-                    sendMoveCommand();
-                    moveIntervalId = setInterval(sendMoveCommand, moveUpdateInterval);
-                }
-            },
-            onEnd: () => {
-                if (moveIntervalId) clearInterval(moveIntervalId);
-                moveIntervalId = null;
-                currentMoveCommand.x = 0;
-                currentMoveCommand.r = 0;
-                sendMoveCommand(); // Send a final stop command
-                motionElements.movexval.textContent = "0.00";
-                motionElements.moverval.textContent = "0.00";
-            }
-        });
-
-        motionElements.moveyslider.addEventListener('input', (e) => {
-            const y_val = parseFloat(e.target.value);
-            currentMoveCommand.y = y_val;
-            motionElements.moveyval.textContent = y_val.toFixed(2);
-            if (!moveIntervalId) sendMoveCommand();
-        });
-
 
         socket.on('dog_status_update', function(data) {
             if (!data || !data.data_received) {

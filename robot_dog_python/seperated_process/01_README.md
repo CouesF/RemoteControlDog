@@ -28,3 +28,11 @@ python /home/d3lab/Projects/RemoteControlDog/robot_dog_python/seperated_process/
 新开terminal
 运行python3 /home/d3lab/Projects/RemoteControlDog/robot_dog_python/seperated_process/main_dog_head_control.py
 备注：新增了头部双维度摆动限位。表情：l向左看，r向右看，c向前看，h开心表情
+
+## 功能：启动所有mian_文件
+功能描述：启动所有main_文件，并提供停止/重启所有服务、停止/重启指定服务的功能
+使用方法：
+新开terminal
+运行python3 /home/d3lab/Projects/RemoteControlDog/robot_dog_python/seperated_process/process_manager_client.py
+根据help指令给出的提示操作即可
+备注：status指令尚有漏洞，logging运行不稳定。建议ps aux |grep python 检查进程。

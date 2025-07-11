@@ -26,6 +26,8 @@ import subprocess
 import os
 import signal
 
+from main_distortion_corrector import FisheyeCorrector
+
 # 配置日志
 logging.basicConfig(
     level=logging.INFO,
@@ -62,8 +64,20 @@ CAMERA_CONFIGS = {
         "type": "usb",
         "resolution": (640, 480),
         "fps": 15,
-        "quality": 70,
-        "name": "USB摄像头-2"
+        "quality": 50,
+        "name": "USB摄像头-2",
+
+        "flip_method": "both",
+
+        "is_fisheye": True,
+        "undistorted_resolution": (640, 480), # Desired output size
+        "fisheye_params": {
+            'mappingCoeffs': np.array([684.0465, -0.0017, 0.0, 0.0]),
+            'imageSize': np.array([1080, 1920]),  # [rows, cols] from calibration
+            'distortionCenter': np.array([976.0474, 521.8287]),
+            'stretchMatrix': np.array([[1.0, 0.0], [0.0, 1.0]]),
+            'undistorted_fov_deg': 110.0 # Optional: control output FOV
+        }
     },
 }
 
@@ -87,7 +101,7 @@ class CSIVideoStreamer:
         self.fps = fps
         self.process = None
         self.is_running = False
-        self.frame_queue = Queue(maxsize=3)
+        self.frame_queue = Queue(maxsize=2)
         self.read_thread = None
         self.temp_fifo = f"/tmp/csi_fifo_{sensor_id}"
         
@@ -587,8 +601,24 @@ class SmartCameraHandler:
         self.config = config
         self.cap: Optional[cv2.VideoCapture] = None
         self.is_running = False
-        self.frame_queue = Queue(maxsize=2)
+        # self.frame_queue = Queue(maxsize=2)
         self.capture_thread = None
+
+        self._latest_frame: Optional[CameraFrame] = None
+        self._frame_lock = threading.Lock()
+
+        self.corrector: Optional[FisheyeCorrector] = None # added for distortion correction
+
+        # --- ADD THIS BLOCK to initialize the corrector ---
+        if self.config.get("is_fisheye", False):
+            try:
+                self.corrector = FisheyeCorrector(self.config)
+            except Exception as e:
+                logger.error(f"Failed to initialize FisheyeCorrector for camera {self.camera_id}: {e}")
+                # Decide if this should be a fatal error for the camera
+                self.corrector = None
+        # --- END OF ADDED BLOCK ---
+
         self.stats = {
             'frames_captured': 0,
             'frames_dropped': 0,
@@ -725,52 +755,61 @@ class SmartCameraHandler:
         return True
 
     def _capture_loop(self):
-        """Camera capture loop (now unified for both camera types)."""
+        """Camera capture loop with detailed performance timing."""
         if not self.cap:
-             logger.error(f"Capture loop for camera {self.camera_id} started without a valid VideoCapture object.")
-             return
-             
+                logger.error(f"Capture loop for camera {self.camera_id} started without a valid VideoCapture object.")
+                return
+                
         frame_interval = 1.0 / self.config['fps']
         consecutive_failures = 0
-        max_failures = 30 # Increased tolerance for temporary stalls
+        max_failures = 30
         
         logger.info(f"Camera {self.camera_id} capture loop starting with target interval {frame_interval:.3f}s")
 
         while self.is_running:
-            loop_start_time = time.time()
+            # --- Timing logic starts here ---
+            t_loop_start = time.perf_counter()
+
+            # 1. Measure frame capture time
             ret, frame = self.cap.read()
+            t_capture_done = time.perf_counter()
 
             if not ret or frame is None:
                 consecutive_failures += 1
                 logger.warning(f"Failed to read frame from camera {self.camera_id}. Failure count: {consecutive_failures}")
                 if consecutive_failures > max_failures:
                     logger.error(f"Camera {self.camera_id} exceeded max consecutive read failures. Stopping capture thread.")
-                    self.is_running = False # Signal the main loop to handle this
+                    self.is_running = False
                     break
-                time.sleep(0.1) # Wait a bit before retrying
+                time.sleep(0.1)
                 continue
             
-            consecutive_failures = 0 # Reset on success
-            capture_time = time.time()
-            self.stats['last_capture_time'] = capture_time
+            consecutive_failures = 0
+            self.stats['last_capture_time'] = time.time()
             self.stats['frames_captured'] += 1
 
-            # Process and queue the frame
+            # 2. Measure frame processing time (correction, encoding, etc.)
             jpg_bytes = self._process_frame(frame)
+            t_process_done = time.perf_counter()
+            
             if jpg_bytes:
                 cam_frame = CameraFrame(
                     camera_id=self.camera_id,
                     frame_data=jpg_bytes,
-                    timestamp=capture_time,
+                    timestamp=self.stats['last_capture_time'],
                     frame_id=uuid.uuid4().hex[:8],
                     resolution=(frame.shape[1], frame.shape[0]),
                     quality=self.config['quality']
                 )
 
-                # Manage the queue
+                with self._frame_lock:
+                    self._latest_frame = cam_frame
+
+                # 3. Measure time to put frame in queue
+                '''
                 if self.frame_queue.full():
                     try:
-                        self.frame_queue.get_nowait() # Drop oldest frame
+                        self.frame_queue.get_nowait()
                         self.stats['frames_dropped'] += 1
                     except Empty:
                         pass
@@ -779,12 +818,28 @@ class SmartCameraHandler:
                     self.frame_queue.put_nowait(cam_frame)
                 except Full:
                     self.stats['frames_dropped'] += 1
+            t_queue_done = time.perf_counter()
+            '''
             
-            # Frame rate control
-            processing_time = time.time() - loop_start_time
-            sleep_duration = frame_interval - processing_time
-            if sleep_duration > 0:
-                time.sleep(sleep_duration)
+            # 4. Calculate sleep duration and total loop time
+            # processing_time = t_queue_done - t_loop_start
+            # sleep_duration = frame_interval - processing_time
+            
+            # --- Print all timing results ---
+            capture_ms = (t_capture_done - t_loop_start) * 1000
+            process_ms = (t_process_done - t_capture_done) * 1000
+            # queue_ms = (t_queue_done - t_process_done) * 1000
+            # total_work_ms = processing_time * 1000
+            # sleep_ms = max(0, sleep_duration * 1000)
+
+            print(
+                f"Cam {self.camera_id} Loop (ms) - "
+                f"Capture: {capture_ms:.2f} | "
+                f"Process: {process_ms:.2f} "
+            )
+
+            # if sleep_duration > 0:
+                # time.sleep(sleep_duration)
         
         logger.warning(f"Capture loop for camera {self.camera_id} has exited.")
 
@@ -792,15 +847,30 @@ class SmartCameraHandler:
     def _process_frame(self, frame: np.ndarray) -> Optional[bytes]:
         """Processes the frame (resize if needed and JPEG encode)."""
         try:
-            # Note: GStreamer pipeline should already be delivering the correct resolution.
-            # This resize is a fallback, but ideally shouldn't be needed for CSI.
-            target_width, target_height = self.config['resolution']
-            if frame.shape[1] != target_width or frame.shape[0] != target_height:
-                frame = cv2.resize(frame, (target_width, target_height), interpolation=cv2.INTER_AREA)
+            # --- ADD THIS BLOCK for correction ---
+            # 1. Apply fisheye correction if a corrector exists
+            if self.corrector:
+                corrected_frame = self.corrector.correct(frame)
+            else:
+                corrected_frame = frame
+            # --- END OF ADDED BLOCK ---
 
+            # 2. Determine target size for encoding
+            if self.corrector:
+                target_width, target_height = self.config['undistorted_resolution']
+            else:
+                target_width, target_height = self.config['resolution']
+
+            # 3. Resize if the corrected/original frame doesn't match the final target size
+            if corrected_frame.shape[1] != target_width or corrected_frame.shape[0] != target_height:
+                final_frame = cv2.resize(corrected_frame, (target_width, target_height), interpolation=cv2.INTER_AREA)
+            else:
+                final_frame = corrected_frame
+
+            # 4. JPEG Encode the final frame
             encode_params = [cv2.IMWRITE_JPEG_QUALITY, self.config['quality']]
-            success, encoded_jpg = cv2.imencode('.jpg', frame, encode_params)
-            
+            success, encoded_jpg = cv2.imencode('.jpg', final_frame, encode_params)
+
             return encoded_jpg.tobytes() if success else None
         except Exception as e:
             logger.error(f"Frame processing failed for camera {self.camera_id}: {e}")
@@ -808,11 +878,12 @@ class SmartCameraHandler:
     
     # ... keep get_latest_frame and get_camera_info methods as they are ...
     def get_latest_frame(self) -> Optional[CameraFrame]:
-        """获取最新帧"""
-        try:
-            return self.frame_queue.get_nowait()
-        except Empty:
-            return None
+        """Gets the most recent frame, non-blocking."""
+        with self._frame_lock:
+            # Return the frame and immediately clear it so it's not sent twice
+            frame = self._latest_frame
+            self._latest_frame = None 
+            return frame
     
     def get_camera_info(self) -> Dict[str, Any]:
         """获取摄像头信息"""
@@ -846,11 +917,16 @@ class SmartCameraHandler:
             self.cap = None
 
         # Drain the queue
+        '''
         while not self.frame_queue.empty():
             try:
                 self.frame_queue.get_nowait()
             except Empty:
                 break
+        '''
+
+        with self._frame_lock:
+            self._latest_frame = None
         
         logger.info(f"Camera {self.camera_id} stopped.")
 

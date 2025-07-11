@@ -417,4 +417,5 @@ class ProcessStatus(IdlStruct, typename="ProcessStatus"):
     dog_status: ScriptStatus = field(default_factory=ScriptStatus)
     power_srv: ScriptStatus = field(default_factory=ScriptStatus)
     speech_synth: ScriptStatus = field(default_factory=ScriptStatus)
-    state_machine: ScriptStatus = field(default_factory=ScriptStatus)
+    # state_machine: ScriptStatus = field(default_factory=ScriptStatus)
+    woz_backend: ScriptStatus = field(default_factory=ScriptStatus)
