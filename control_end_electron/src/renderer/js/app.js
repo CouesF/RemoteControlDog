@@ -3,12 +3,16 @@ import Router from './router.js';
 import EventBus from './eventBus.js';
 import Logger from './utils/logger.js';
 import { EVENTS } from './utils/constants.js';
+import CONFIG from './config.js';
+import { AudioPlayer } from './AudioPlayer.js';
 
 export default class App {
     constructor() {
         this.router = null;
         this.initialized = false;
         this.currentSession = null;
+        this.audioPlayer = null;
+        this.isMicListening = false;
     }
 
     async initialize() {
@@ -30,6 +34,9 @@ export default class App {
             
             // 启动默认页面
             await this.router.navigate('participant_management');
+
+            // 初始化音频控制
+            this.setupAudioControls();
             
             this.initialized = true;
             Logger.info('App initialization completed');
@@ -79,5 +86,50 @@ export default class App {
 
     getCurrentSession() {
         return this.currentSession;
+    }
+
+    setupAudioControls() {
+        const micToggleButton = document.getElementById('mic-toggle-btn');
+        if (!micToggleButton) {
+            Logger.error("Microphone toggle button not found.");
+            return;
+        }
+
+        // 从config.js构建正确的WebSocket URL
+        const wsUrl = CONFIG.API.BASE_URL.replace(/^http/, 'ws') + '/api/ws/mic';
+        Logger.info(`Connecting to microphone WebSocket at: ${wsUrl}`);
+        
+        this.audioPlayer = new AudioPlayer(wsUrl, { sampleRate: 16000 });
+
+        micToggleButton.addEventListener('click', () => this.toggleMicListening());
+    }
+
+    async toggleMicListening() {
+        const micToggleButton = document.getElementById('mic-toggle-btn');
+        const icon = micToggleButton.querySelector('i');
+        const text = micToggleButton.querySelector('span');
+
+        this.isMicListening = !this.isMicListening;
+
+        if (this.isMicListening) {
+            try {
+                await this.audioPlayer.connect();
+                Logger.info("Microphone listening started.");
+                micToggleButton.classList.remove('btn-secondary');
+                micToggleButton.classList.add('btn-danger');
+                icon.className = 'fas fa-microphone';
+                text.textContent = '停止监听';
+            } catch (error) {
+                Logger.error("Failed to start microphone listening:", error);
+                this.isMicListening = false; // Revert state on failure
+            }
+        } else {
+            this.audioPlayer.disconnect();
+            Logger.info("Microphone listening stopped.");
+            micToggleButton.classList.remove('btn-danger');
+            micToggleButton.classList.add('btn-secondary');
+            icon.className = 'fas fa-microphone-slash';
+            text.textContent = '开启监听';
+        }
     }
 }

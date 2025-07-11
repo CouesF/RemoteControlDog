@@ -8,15 +8,70 @@
     <link rel="stylesheet" href="./assets/css/main.css">
     <link rel="stylesheet" href="./css/map-builder.css">
     <link rel="stylesheet" href="./css/custom.css">
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            margin: 0;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 20px;
+            height: 60px;
+            background-color: #2c3e50;
+            color: white;
+            flex-shrink: 0;
+        }
+        .header .logo {
+            font-size: 1.5rem;
+        }
+        .header .logo span {
+            margin-left: 10px;
+        }
+        .main-container {
+            display: flex;
+            flex-grow: 1;
+            overflow: hidden;
+        }
+        .sidebar {
+            width: 220px;
+            background-color: #34495e;
+            color: white;
+            padding-top: 0; /* Removed padding-top */
+            flex-shrink: 0;
+        }
+        .sidebar .logo {
+            display: none; /* Hide original logo in sidebar */
+        }
+        .content-area {
+            flex-grow: 1;
+            padding: 20px;
+            overflow-y: auto;
+            background-color: #ecf0f1;
+        }
+    </style>
 </head>
 <body>
     <div id="notification-container"></div>
+    <div class="header">
+        <div class="logo">
+            <i class="fas fa-robot"></i>
+            <span>WOZ 训练系统</span>
+        </div>
+        <div class="header-controls">
+            <button id="mic-toggle-btn" class="btn btn-secondary">
+                <i class="fas fa-microphone-slash"></i>
+                <span>开启监听</span>
+            </button>
+        </div>
+    </div>
     <div class="main-container">
         <div class="sidebar">
-            <div class="logo">
-                <i class="fas fa-robot"></i>
-                WOZ 系统
-            </div>
+            <!-- The logo is now in the main header -->
+>>>>>>>
             <ul class="nav-menu">
                 <li>
                     <a href="#" data-page="participant_management">
