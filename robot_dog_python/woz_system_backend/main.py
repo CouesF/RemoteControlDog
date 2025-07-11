@@ -9,8 +9,10 @@ from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Depends, Web
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from flask.cli import F
 import uvicorn
 import pyaudio
+import threading
 
 
 from .config import (
@@ -18,7 +20,7 @@ from .config import (
     LOG_LEVEL, LOG_FORMAT, STATIC_ROOT
 )
 from .database import db
-from .dds_bridge import dds_bridge
+# from .dds_bridge import dds_bridge
 from .api_handlers import participant_handler, map_handler, target_handler
 
 import os
@@ -37,14 +39,61 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-
 # ==== DDS相关导入 ====
 communication_dir_path = "/home/d3lab/Projects/RemoteControlDog/robot_dog_python/communication"
 sys.path.append(communication_dir_path)
-from unitree_sdk2py.core.channel import ChannelPublisher, ChannelFactoryInitialize
-from dds_data_structure import SpeechControl
+from unitree_sdk2py.core.channel import ChannelPublisher, ChannelSubscriber, ChannelFactoryInitialize
+from dds_data_structure import SpeechControl, RobotLog
+
+ChannelFactoryInitialize(networkInterface="enP8p1s0")
 
 
+class DogStatus:
+    _instance = None
+
+    def __new__(cls, *args, **kwargs):
+        if not cls._instance:
+            cls._instance = super(DogStatus, cls).__new__(cls, *args, **kwargs)
+        return cls._instance
+
+    def __init__(self):
+        if not hasattr(self, '_initialized') or not self._initialized:
+
+            self.dds_sub_dog_status = ChannelSubscriber("rt/robot_log", RobotLog)
+            self.dds_sub_dog_status.Init()
+            self.dds_cmd_dog_status = RobotLog()
+            self._initialized = True
+            self.running = True
+            self.dog_log = 0
+
+    def dds_listener_thread(self):
+        import io
+        from contextlib import redirect_stdout
+        from functools import wraps
+        while self.running:
+            try:
+                # 创建一个StringIO对象来捕获输出
+                captured_output = io.StringIO()
+                
+                # 重定向stdout并调用Read
+                with redirect_stdout(captured_output):
+                    msg = self.dds_sub_dog_status.Read(timeout=1)
+                
+                # 获取捕获的输出
+                output = captured_output.getvalue()
+                
+                # 过滤掉不想要的错误信息
+                if output and not output.startswith("[Reader] take sample error"):
+                    print(output, end='')  # end='' 因为原本的print已经包含换行
+                
+                if msg:
+                    self.dog_log = msg.event_id
+                    print(f"Received dog status: {msg}")
+                    
+            except Exception as e:
+                pass
+            time.sleep(0.4)  # 避免过于频繁的轮询
+dog_status = DogStatus()
 
 class SpeechController:
     _instance = None
@@ -56,7 +105,7 @@ class SpeechController:
 
     def __init__(self):
         if not hasattr(self, '_initialized') or not self._initialized:
-            ChannelFactoryInitialize(networkInterface="enP8p1s0")
+            
 
             self.dds_pub_speech_control = ChannelPublisher("SpeechControl", SpeechControl)
             self.dds_pub_speech_control.Init()
@@ -89,21 +138,21 @@ async def lifespan(app: FastAPI):
         logger.error(f"Failed to initialize database: {e}")
         raise
     
-    # 初始化DDS桥接器
-    try:
-        await dds_bridge.initialize()
-        logger.info("DDS bridge initialized successfully")
-    except Exception as e:
-        logger.warning(f"DDS bridge initialization failed: {e}")
+    # # 初始化DDS桥接器
+    # try:
+    #     await dds_bridge.initialize()
+    #     logger.info("DDS bridge initialized successfully")
+    # except Exception as e:
+    #     logger.warning(f"DDS bridge initialization failed: {e}")
     
     logger.info("WOZ System Backend started successfully")
     
     yield
     
     # 关闭时清理
-    logger.info("Shutting down WOZ System Backend...")
-    await dds_bridge.shutdown()
-    logger.info("WOZ System Backend shutdown complete")
+    # logger.info("Shutting down WOZ System Backend...")
+    # await dds_bridge.shutdown()
+    # logger.info("WOZ System Backend shutdown complete")
 
 
 # 创建FastAPI应用
@@ -390,16 +439,12 @@ async def trigger_session_action(session_id: str, action_data: Dict):
         if action_type == "GENERATE_SPEECH":
             text = payload.get("text", "")
             participant_name = payload.get("participantName", "")
-            success = await dds_bridge.send_speech_command(text, participant_name)
-            if not success:
-                raise HTTPException(status_code=500, detail="Failed to generate speech")
+
         
         elif action_type == "LOG_EVENT":
             event_name = payload.get("eventName", "")
             event_details = payload.get("details", {})
-            success = await dds_bridge.log_event(event_name, event_details)
-            if not success:
-                raise HTTPException(status_code=500, detail="Failed to log event")
+
         
         else:
             raise HTTPException(status_code=400, detail=f"Unknown action type: {action_type}")
@@ -418,16 +463,19 @@ async def trigger_session_action(session_id: str, action_data: Dict):
 @app.get(f"{API_PREFIX}/robot/status", response_model=Dict)
 async def get_robot_status():
     """获取机器人状态"""
-    return await dds_bridge.get_robot_status()
+    return {
+        "body_log": dog_status.dog_log
+    }
+    # return await dds_bridge.get_robot_status()
 
 
 @app.post(f"{API_PREFIX}/robot/commands", status_code=202)
 async def send_robot_command(command_data: Dict):
     """发送机器人控制命令"""
     try:
-        success = await dds_bridge.send_robot_command(command_data)
-        if not success:
-            raise HTTPException(status_code=500, detail="Failed to send robot command")
+        # success = await dds_bridge.send_robot_command(command_data)
+        # if not success:
+        #     raise HTTPException(status_code=500, detail="Failed to send robot command")
         
         return {"message": "Command sent successfully"}
         
@@ -537,9 +585,9 @@ async def websocket_mic_stream(websocket: WebSocket):
 async def health_check():
     """健康检查端点"""
     return {
-        "status": "healthy",
+        "status": "test",
         "timestamp": asyncio.get_event_loop().time(),
-        "dds_connected": dds_bridge.is_connected
+        "dds_connected": True
     }
 
 
@@ -554,6 +602,9 @@ async def root():
 
 
 def run_server():
+    dog_log_thread = threading.Thread(target=dog_status.dds_listener_thread)
+    dog_log_thread.start()
+    
 
     """运行服务器"""
     uvicorn.run(
@@ -563,6 +614,8 @@ def run_server():
         reload=False,
         log_level=LOG_LEVEL.lower()
     )
+    dog_status.running = False
+    dog_log_thread.join()
 
 
 if __name__ == "__main__":
