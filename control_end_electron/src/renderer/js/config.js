@@ -10,7 +10,8 @@ export const CONFIG = {
             SESSIONS: '/api/sessions',
             TARGETS: '/api/targets',
             IMAGES: '/api/images',
-            ROBOT: '/api/robot'
+            ROBOT: '/api/robot',
+            ROBOT_STATUS: '/api/robot/status'
         }
     },
     

@@ -40,6 +40,50 @@ export default class RobotDogController extends BaseComponent {
 
         // Gamepad
         this.gamepadManager = new GamepadManager();
+
+        // Body Log
+        this.bodyLogInterval = null;
+        this.bodyLogMapping = {
+            0: "初始化完成",
+            1: "启动主控线程",
+            2: "DDS 通道初始化成功",
+            3: "收到新指令",
+            4: "系统正常退出",
+        
+            10: "当前是HIGH_LEVEL_DAMP",
+            11: "当前是LOW_LEVEL_DAMP",
+            12: "当前是HIGH_LEVEL_STAND",
+            13: "当前是LOW_LEVEL_STAND",
+            14: "当前是LOW_LEVEL_RAISE_LEG",
+            15: "当前是HIGH_LEVEL_WALK",
+            16: "当前是HIGH_LEVEL_STAND_DOWN",
+            17: "当前是LOW_LEVEL_LIE_DOWN",
+        
+            20: "执行 StandUp",
+            21: "执行 StandDown",
+            22: "执行 BalanceStand",
+            23: "执行 Damp",
+            24: "执行 Walk",
+        
+            30: "抬腿流程开始",
+            31: "抬腿流程结束",
+            32: "接收并处理抬腿角度指令",
+            33: "抬腿坐标不可达",
+            34: "抬腿关节超限",
+        
+            90: "非法状态切换（已拒绝）",
+            91: "速度超限（已拒绝）",
+            92: "DDS 指令解析异常",
+            93: "低层线程未正常停止",
+            94: "未识别的状态机异常",
+            95: "运动模式切换失败",
+            96: "退出时尝试切阻尼失败",
+            97: "未知命令类型（忽略）",
+            98: "系统内部异常",
+            99: "CRITICAL ERROR",
+        }
+        
+
     }
 
     async doRender() {
@@ -75,6 +119,10 @@ export default class RobotDogController extends BaseComponent {
                             <div class="debug-info ml-3">
                                 <small>控制端点: ${this.controlHost}:${this.controlPort}</small>
                             </div>
+                        </div>
+                        <div id="body-log-status" class="body-log-status">
+                            <span class="log-label">状态:</span>
+                            <span id="body-log-value">--</span>
                         </div>
                     </div>
 
@@ -359,6 +407,27 @@ export default class RobotDogController extends BaseComponent {
             .debug-info {
                 color: #6c757d;
             }
+
+            .body-log-status {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                background: #f8f9fa;
+                padding: 5px 10px;
+                border-radius: 3px;
+                font-family: monospace;
+                margin-left: auto;
+            }
+
+            .log-label {
+                font-weight: 500;
+                color: #495057;
+            }
+
+            #body-log-value {
+                font-weight: bold;
+                color: #007bff;
+            }
         `;
         document.head.appendChild(style);
     }
@@ -385,7 +454,8 @@ export default class RobotDogController extends BaseComponent {
             yawValue: this.querySelector('#yaw-value'),
             // 状态
             statusDot: this.querySelector('.status-dot'),
-            statusText: this.querySelector('#status-text')
+            statusText: this.querySelector('#status-text'),
+            bodyLogValue: this.querySelector('#body-log-value')
         };
     }
 
@@ -425,6 +495,9 @@ export default class RobotDogController extends BaseComponent {
         // 开始发送控制命令
         this.startControlLoop();
         
+        // 开始获取机身日志
+        this.startBodyLogUpdates();
+
         // 设置初始模式
         // this.switchMode('damp');
     }
@@ -606,6 +679,29 @@ export default class RobotDogController extends BaseComponent {
         this.elements.yawValue.textContent = combinedYaw.toFixed(2);
     }
 
+    async fetchBodyLog() {
+        try {
+            const response = await fetch(`${CONFIG.API.BASE_URL}${CONFIG.API.ENDPOINTS.ROBOT_STATUS}`);
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            const data = await response.json();
+            const logValue = data.body_log;
+            const logText = this.bodyLogMapping[logValue] || '未知状态';
+            this.elements.bodyLogValue.textContent = `${logText} (${logValue})`;
+        } catch (error) {
+            Logger.error('Failed to fetch body log:', error);
+            this.elements.bodyLogValue.textContent = '获取失败';
+        }
+    }
+
+    startBodyLogUpdates() {
+        this.fetchBodyLog(); // Initial fetch
+        this.bodyLogInterval = setInterval(() => {
+            this.fetchBodyLog();
+        }, 500);
+    }
+
     startControlLoop() {
         // 定期发送控制命令
         this.sendInterval = setInterval(() => {
@@ -777,6 +873,11 @@ export default class RobotDogController extends BaseComponent {
         if (this.sendInterval) {
             clearInterval(this.sendInterval);
             this.sendInterval = null;
+        }
+
+        if (this.bodyLogInterval) {
+            clearInterval(this.bodyLogInterval);
+            this.bodyLogInterval = null;
         }
         
         // 发送停止命令
