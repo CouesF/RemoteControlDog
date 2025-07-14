@@ -393,12 +393,12 @@ class DDSBridge:
             'low_stand': 7, # RobotState.LOW_LEVEL_STAND, # 7
             'low_left_raise': 10, #RobotState.LOW_LEVEL_LEFT_LEG_RAISE, # 10 1
             'low_right_raise': 10, # RobotState.LOW_LEVEL_RIGHT_LEG_RAISE, # 10 0
-            'high_lie': 100, #RobotState.HIGH_LEVEL_LIE_DOWN
+            'high_lie': 13, #RobotState.HIGH_LEVEL_LIE_DOWN
         }.get(state_name, 0)
         
         if state_name == "low_left_raise": leg_selection = 1
         elif state_name == "low_right_raise": leg_selection = 0
-        elif state_name == "high_lie" : return False # TODO: change this
+        elif state_name == "high_lie" : pass # TODO: change this
 
         # 创建运动命令
         motion_cmd = {

@@ -1,20 +1,16 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# @FileName: dds_stop_test.py
-# @Description: DDS语音合成与停止功能测试
+# @FileName: dds_volume_test_fixed.py
+# @Description: 最终修复音量控制问题的测试脚本
 # @Author: OpenAI
-# @Date: 2023-10-26
+# @Date: 2023-10-27
 
 import os
 import sys
 import time
-import threading
-import asyncio
-import unittest
-from datetime import datetime
+from unitree_sdk2py.core.channel import ChannelPublisher, ChannelFactoryInitialize
 
 # ==== DDS相关导入 ====
-from unitree_sdk2py.core.channel import ChannelPublisher, ChannelSubscriber, ChannelFactoryInitialize
 current_script_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_script_dir)
 communication_dir_path = os.path.join(parent_dir, 'communication')
@@ -24,27 +20,33 @@ from dds_data_structure import SpeechControl
 def test_tts():
     # 初始化DDS
     ChannelFactoryInitialize(networkInterface="enP8p1s0")
-    
-    # 创建发布器
     pub = ChannelPublisher("SpeechControl", SpeechControl)
     pub.Init()
     
-    # 发送合成命令
+    # 1. 发送音量设置命令
+    vol_cmd = SpeechControl()
+    vol_cmd.volume = 70  # 70%音量
+    pub.Write(vol_cmd)
+    print("🔊 已发送音量设置命令 (70%)")
+    
+    # 等待足够时间让音量设置生效
+    print("🕒 等待1秒让音量设置生效...")
+    time.sleep(1.0)
+    
+    # 2. 发送合成命令 (使用独立消息，不包含音量属性)
     synth_cmd = SpeechControl()
-    synth_cmd.text_to_speak = "这是一段测试语音，将在2秒后被停止"
+    synth_cmd.text_to_speak = "我是一只机器狗，我可以说话，动来动去，并且做出可爱的表情！"
+    synth_cmd.volume = vol_cmd.volume
+    # 注意: 不设置volume属性
     pub.Write(synth_cmd)
     print("✅ 已发送合成命令")
     
-    # 等待5秒
-    time.sleep(3.0)
-    
-    # 发送停止命令
+    # 3. 等待后发送停止命令
+    time.sleep(10.0)
     stop_cmd = SpeechControl()
     stop_cmd.stop_speaking = True
     pub.Write(stop_cmd)
     print("⏹️ 已发送停止命令")
-    
-    print("👂 请确认语音是否停止")
 
 if __name__ == "__main__":
     test_tts()

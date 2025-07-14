@@ -106,14 +106,6 @@ PROCESS_COMMAND_TOPIC = "ProcessCommand"
 PROCESS_STATUS_TOPIC = "ProcessStatus"
 SERVER_SCRIPT_NAME = "main_process_manager.py"
 
-'''
-SCRIPTS_TO_MANAGE = [
-    "main_camera_gateway.py", "main_control_gateway.py", "main_dog_body_control.py",
-    "main_dog_head_control.py", "main_dog_status.py", "main_jetson_power_server.py",
-    "main_speech_synthesis.py", "start_woz_backend.py"
-]
-process_statuses = {name: {"script_name": name, "status": "UNKNOWN", "pid": 0} for name in SCRIPTS_TO_MANAGE}
-'''
 process_statuses = {}
 status_lock = threading.Lock()
 
@@ -746,6 +738,7 @@ def handle_process_command(data):
 
 
 def launch_process_manager_server():
+    time.sleep(8)  # Give time for the main process to initialize
     """Checks for and launches the main_process_manager.py script."""
     script_path = os.path.join(os.path.dirname(__file__), '..', SERVER_SCRIPT_NAME) # Assuming it's in parent dir
     # If the script path is different, adjust it. e.g., os.path.join(os.path.dirname(__file__), SERVER_SCRIPT_NAME)
@@ -760,10 +753,10 @@ def launch_process_manager_server():
         server_process = subprocess.Popen(
             [sys.executable, script_path],
             stdout=subprocess.DEVNULL, # Hide output from console
-            stderr=subprocess.DEVNULL
+            stderr=subprocess.PIPE, # Capture errors
         )
         print(f"-> Launched process manager server with PID: {server_process.pid}")
-        time.sleep(3) # Give server time to initialize
+        time.sleep(6) # Give server time to initialize
         return server_process
     except Exception as e:
         print(f"CRITICAL: Failed to launch process manager server: {e}")

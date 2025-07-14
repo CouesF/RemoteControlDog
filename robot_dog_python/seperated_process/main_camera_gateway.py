@@ -50,7 +50,19 @@ CAMERA_CONFIGS = {
         "fps": 10,
         "quality": 20,
         "name": "CSI摄像头-0",
-        "sensor_id": 0
+        "sensor_id": 0,
+
+        "flip_method": "both",
+
+        "is_fisheye": True,
+        "undistorted_resolution": (480, 320), # Desired output size
+        "fisheye_params": {
+            'mappingCoeffs': np.array([949.1611106,-0.012213581038145,0.0,0.0]), # a0, a2, a3, a4. Placeholder - adjust for this camera
+            'imageSize': np.array([320, 480]),  # rows, cols. Note the order
+            'distortionCenter': np.array([240.0, 160.0]), # Placeholder - adjust for this camera
+            'stretchMatrix': np.array([[1.5, 0.0], [0.0, 1.5]]),
+            'undistorted_fov_deg': 110.0 # Optional: control output FOV
+        }
     },
     1: {
         "type": "csi",
@@ -58,7 +70,19 @@ CAMERA_CONFIGS = {
         "fps": 10,
         "quality": 20,
         "name": "CSI摄像头-1",
-        "sensor_id": 1
+        "sensor_id": 1,
+
+        "flip_method": "both",
+
+        "is_fisheye": True,
+        "undistorted_resolution": (480, 320), # Desired output size
+        "fisheye_params": {
+            'mappingCoeffs': np.array([949.1611106,-0.012213581038145,0.0,0.0]), # a0, a2, a3, a4
+            'imageSize': np.array([320, 480]),  # rows, cols. Note the order
+            'distortionCenter': np.array([240.0, 160.0]), # Placeholder - adjust for this camera
+            'stretchMatrix': np.array([[1.5, 0.0], [0.0, 1.5]]),
+            'undistorted_fov_deg': 110.0 # Optional: control output FOV
+        }
     },
     2: {
         "type": "usb",
@@ -72,9 +96,9 @@ CAMERA_CONFIGS = {
         "is_fisheye": True,
         "undistorted_resolution": (640, 480), # Desired output size
         "fisheye_params": {
-            'mappingCoeffs': np.array([684.0465, -0.0017, 0.0, 0.0]),
-            'imageSize': np.array([1080, 1920]),  # [rows, cols] from calibration
-            'distortionCenter': np.array([976.0474, 521.8287]),
+            'mappingCoeffs': np.array([272.428,-0.002384499,0.0,0.0]), # a0, a2, a3, a4
+            'imageSize': np.array([480, 640]),  # rows, cols
+            'distortionCenter': np.array([328.71590201,234.40496395759]), # cx (horizontal), cy (vertical)
             'stretchMatrix': np.array([[1.0, 0.0], [0.0, 1.0]]),
             'undistorted_fov_deg': 110.0 # Optional: control output FOV
         }
@@ -845,38 +869,35 @@ class SmartCameraHandler:
 
 
     def _process_frame(self, frame: np.ndarray) -> Optional[bytes]:
-        """Processes the frame (resize if needed and JPEG encode)."""
-        try:
-            # --- ADD THIS BLOCK for correction ---
-            # 1. Apply fisheye correction if a corrector exists
-            if self.corrector:
-                corrected_frame = self.corrector.correct(frame)
-            else:
-                corrected_frame = frame
-            # --- END OF ADDED BLOCK ---
+            """Processes the frame (resize FIRST, then correct and JPEG encode)."""
+            try:
+                # 1. Define the final target size from the configuration
+                if self.config.get("is_fisheye", False):
+                    target_width, target_height = self.config['undistorted_resolution']
+                else:
+                    target_width, target_height = self.config['resolution']
 
-            # 2. Determine target size for encoding
-            if self.corrector:
-                target_width, target_height = self.config['undistorted_resolution']
-            else:
-                target_width, target_height = self.config['resolution']
+                # 2. Resize the original frame FIRST
+                # This creates a smaller image to be passed to the corrector
+                resized_frame = cv2.resize(frame, (target_width, target_height), interpolation=cv2.INTER_AREA)
 
-            # 3. Resize if the corrected/original frame doesn't match the final target size
-            if corrected_frame.shape[1] != target_width or corrected_frame.shape[0] != target_height:
-                final_frame = cv2.resize(corrected_frame, (target_width, target_height), interpolation=cv2.INTER_AREA)
-            else:
-                final_frame = corrected_frame
+                # 3. Apply fisheye correction on the RESIZED frame
+                if self.corrector:
+                    # The corrector's parameters MUST be calibrated for this new, smaller resolution
+                    final_frame = self.corrector.correct(resized_frame)
+                else:
+                    final_frame = resized_frame
 
-            # 4. JPEG Encode the final frame
-            encode_params = [cv2.IMWRITE_JPEG_QUALITY, self.config['quality']]
-            success, encoded_jpg = cv2.imencode('.jpg', final_frame, encode_params)
+                # 4. JPEG Encode the final frame
+                encode_params = [cv2.IMWRITE_JPEG_QUALITY, self.config['quality']]
+                success, encoded_jpg = cv2.imencode('.jpg', final_frame, encode_params)
 
-            return encoded_jpg.tobytes() if success else None
-        except Exception as e:
-            logger.error(f"Frame processing failed for camera {self.camera_id}: {e}")
-            return None
-    
-    # ... keep get_latest_frame and get_camera_info methods as they are ...
+                return encoded_jpg.tobytes() if success else None
+            except Exception as e:
+                logger.error(f"Frame processing failed for camera {self.camera_id}: {e}")
+                return None
+            
+
     def get_latest_frame(self) -> Optional[CameraFrame]:
         """Gets the most recent frame, non-blocking."""
         with self._frame_lock:

@@ -106,6 +106,7 @@ def shutdown_handler(signum, frame): global server_running; server_running = Fal
 
 def main():
     # ... (The main function is effectively unchanged, as the logic relies on the helpers)
+    time.sleep(2)  # Give time for the environment to stabilize
     global server_running; signal.signal(signal.SIGINT, shutdown_handler)
     participant = DomainParticipant()
     cmd_topic = Topic(participant, PROCESS_COMMAND_TOPIC, ProcessCommand)
@@ -116,6 +117,8 @@ def main():
     print(f"-> Managing {len(SCRIPTS_TO_MANAGE)} scripts. Waiting for commands...")
 
     print("-> Performing autostart for designated scripts...")
+    time.sleep(2)  # Give time for the environment to stabilize
+
     for script_name, config in SCRIPTS_TO_MANAGE.items():
         if config.get("autostart", False): # Default to False if not specified
             launch_script(script_name)
