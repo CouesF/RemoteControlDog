@@ -15,7 +15,8 @@
             height: 100vh;
             margin: 0;
         }
-        .header {
+        /* 注释掉原来的header样式 */
+        /* .header {
             display: flex;
             justify-content: space-between;
             align-items: center;
@@ -30,11 +31,38 @@
         }
         .header .logo span {
             margin-left: 10px;
+        } */
+        
+        /* 悬浮监听按钮样式 */
+        .floating-mic-container {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 1000;
         }
+        .floating-mic-btn {
+            background-color: #2c3e50;
+            border: none;
+            border-radius: 25px;
+            padding: 10px 20px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+            transition: all 0.3s ease;
+        }
+        .floating-mic-btn:hover {
+            background-color: #34495e;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.3);
+        }
+        .floating-mic-btn:focus {
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.3);
+        }
+        
         .main-container {
             display: flex;
             flex-grow: 1;
             overflow: hidden;
+            height: 100vh; /* 占满整个视口高度 */
         }
         .sidebar {
             width: 220px;
@@ -56,7 +84,7 @@
 </head>
 <body>
     <div id="notification-container"></div>
-    <div class="header">
+    <!-- <div class="header">
         <div class="logo">
             <i class="fas fa-robot"></i>
             <span>WOZ 训练系统</span>
@@ -67,11 +95,18 @@
                 <span>开启监听</span>
             </button>
         </div>
+    </div> -->
+    
+    <!-- 悬浮监听按钮 -->
+    <div class="floating-mic-container">
+        <button id="mic-toggle-btn" class="btn btn-secondary floating-mic-btn">
+            <i class="fas fa-microphone-slash"></i>
+            <span>开启监听</span>
+        </button>
     </div>
     <div class="main-container">
         <div class="sidebar">
             <!-- The logo is now in the main header -->
->>>>>>>
             <ul class="nav-menu">
                 <li>
                     <a href="#" data-page="participant_management">

@@ -539,6 +539,7 @@ export default class ExperimentControl extends BasePage {
 
     async handleJAInstructionResult(status) {
         const { currentTarget, instructionLevel } = this.state;
+        const participantName = sessionStorage.getItem('currentParticipantName') || '未知';
 
         try {
             if (status === 'success') {
