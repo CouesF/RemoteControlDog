@@ -13,6 +13,8 @@ from urllib.parse import urlparse
 from websockets.client import connect
 import warnings
 import re
+import websockets.exceptions
+
 
 # 配置参数（替换为实际值）
 appid = "2657638375"
@@ -208,7 +210,14 @@ class AsrWsClient:
         try:
             async with connect(self.ws_url, extra_headers=header, max_size=1000000000) as ws:
                 await ws.send(full_client_request)
-                res = await ws.recv()
+
+                # 首次连接响应等待
+                try:
+                    res = await asyncio.wait_for(ws.recv(), timeout=2.0)
+                except asyncio.TimeoutError:
+                    print("连接后未及时响应，超时退出")
+                    return {"error": "initial response timeout"}
+
                 result = parse_response(res)
                 if 'payload_msg' in result and result['payload_msg'].get('code') != self.success_code:
                     return result
@@ -221,29 +230,43 @@ class AsrWsClient:
                     audio_request = bytearray(header_bytes)
                     audio_request.extend(len(payload_bytes).to_bytes(4, 'big'))
                     audio_request.extend(payload_bytes)
+
                     await ws.send(audio_request)
-                    res = await ws.recv()
-                    parsed = parse_response(res)
-                    payload_msg = parsed.get("payload_msg", {})
-                    results_list = payload_msg.get("result", [])
-                    new_text = results_list[0].get("text", "") if results_list else ""
-                    if new_text.startswith(full_text):
-                        appended = new_text[len(full_text):]
-                        matches = sentence_end_re.findall(appended)
-                        for sentence in matches:
-                            sentence_clean = sentence.strip()
-                            if sentence_clean and sentence_clean not in printed_sentences:
-                                print("[Partial]", sentence_clean)
-                                results.append(sentence_clean)
-                                printed_sentences.add(sentence_clean)
-                        full_text = new_text
-                    elif new_text:
-                        print("[Partial]", new_text)
-                        results.append(new_text)
-                        full_text = new_text
+
+                    try:
+                        res = await asyncio.wait_for(ws.recv(), timeout=2.0)
+                        parsed = parse_response(res)
+                        payload_msg = parsed.get("payload_msg", {})
+                        results_list = payload_msg.get("result", [])
+                        new_text = results_list[0].get("text", "") if results_list else ""
+
+                        if new_text.startswith(full_text):
+                            appended = new_text[len(full_text):]
+                            matches = sentence_end_re.findall(appended)
+                            for sentence in matches:
+                                sentence_clean = sentence.strip()
+                                if sentence_clean and sentence_clean not in printed_sentences:
+                                    print("[Partial]", sentence_clean)
+                                    results.append(sentence_clean)
+                                    printed_sentences.add(sentence_clean)
+                            full_text = new_text
+                        elif new_text:
+                            print("[Partial]", new_text)
+                            results.append(new_text)
+                            full_text = new_text
+
+                    except asyncio.TimeoutError:
+                        print("等待识别响应超时，继续...")
+                        continue
+
+        except websockets.exceptions.ConnectionClosedError as e:
+            print(f"连接中断: {e}")
         except asyncio.CancelledError:
             print("任务被取消")
+        except Exception as e:
+            print(f"发生未处理异常: {e}")
         return {"all_results": results}
+
     
     def resample_audio(self, data, original_rate, target_rate=16000):
         """

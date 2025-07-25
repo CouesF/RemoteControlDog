@@ -854,11 +854,14 @@ class SmartCameraHandler:
         """
         # --- MORE ROBUST GStreamer Pipeline ---
         # Your observation about redder edges points to a lens shading issue.
-        # This version adds 'lsc-mode=1' to enable automatic Lens Shading Correction.
-        # Combining auto white balance ('wbmode=1') and auto LSC ('lsc-mode=1') is the
-        # most robust way to ensure uniform, accurate color across the entire image.
+        # --- MORE ROBUST GStreamer Pipeline ---
+        # This version adds:
+        # - maxperf-enable=true: Ensures the sensor runs at its maximum clock rate.
+        # - tnr-mode=2: Enables temporal noise reduction for better image quality.
+        # - wbmode=1, lsc-mode=2: Auto white balance and lens shading correction.
+        # - appsink drop=true max-buffers=1: Crucial for low latency, drops old frames.
         pipeline = (
-            f"nvarguscamerasrc sensor-id={sensor_id} wbmode=1 lsc-mode=2 ! "
+            f"nvarguscamerasrc sensor-id={sensor_id} maxperf-enable=true tnr-mode=2 wbmode=1 lsc-mode=2 ! "
             f"video/x-raw(memory:NVMM), width=(int){width}, height=(int){height}, format=(string)NV12, framerate=(fraction){fps}/1 ! "
             f"nvvidconv flip-method={flip} ! "
             f"video/x-raw, width=(int){width}, height=(int){height}, format=(string)BGRx ! "
@@ -1170,9 +1173,9 @@ class SmartCameraHandler:
     def get_latest_frame(self) -> Optional[CameraFrame]:
         """Gets the most recent frame, non-blocking."""
         with self._frame_lock:
-            # Return the frame and immediately clear it so it's not sent twice
+            # Non-destructive read: return the latest frame without clearing it.
+            # This ensures the most recent data is always available for streaming.
             frame = self._latest_frame
-            self._latest_frame = None 
             return frame
     
     def get_camera_info(self) -> Dict[str, Any]:

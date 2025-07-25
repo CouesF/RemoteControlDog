@@ -3,6 +3,7 @@ WOZ系统后端主应用 - FastAPI入口点
 """
 import logging
 import asyncio
+import signal
 from contextlib import asynccontextmanager
 from typing import Dict, List, Optional
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Depends, WebSocket, WebSocketDisconnect
@@ -11,10 +12,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from flask.cli import F
 import uvicorn
-import pyaudio
 import threading
 import numpy as np
 import librosa
+import subprocess
+import shlex
 
 
 from .config import (
@@ -49,6 +51,8 @@ from dds_data_structure import SpeechControl, RobotLog
 
 ChannelFactoryInitialize(networkInterface="enP8p1s0")
 
+# 全局关闭事件
+shutdown_event = asyncio.Event()
 
 class DogStatus:
     _instance = None
@@ -72,7 +76,7 @@ class DogStatus:
         import io
         from contextlib import redirect_stdout
         from functools import wraps
-        while self.running:
+        while self.running and not shutdown_event.is_set():
             try:
                 # 创建一个StringIO对象来捕获输出
                 captured_output = io.StringIO()
@@ -95,6 +99,8 @@ class DogStatus:
             except Exception as e:
                 pass
             time.sleep(0.4)  # 避免过于频繁的轮询
+        logger.info("DDS listener thread stopped")
+
 dog_status = DogStatus()
 
 class SpeechController:
@@ -152,9 +158,22 @@ async def lifespan(app: FastAPI):
     yield
     
     # 关闭时清理
-    # logger.info("Shutting down WOZ System Backend...")
+    logger.info("Shutting down WOZ System Backend...")
+    
+    # 设置全局关闭事件
+    shutdown_event.set()
+    
+    # 停止DDS监听线程
+    try:
+        dog_status.running = False
+        logger.info("Stopping DDS listener thread...")
+        # 等待DDS线程结束（最多等5秒）
+        await asyncio.sleep(0.5)
+    except Exception as e:
+        logger.error(f"Error stopping DDS listener: {e}")
+    
     # await dds_bridge.shutdown()
-    # logger.info("WOZ System Backend shutdown complete")
+    logger.info("WOZ System Backend shutdown complete")
 
 
 # 创建FastAPI应用
@@ -492,121 +511,183 @@ async def send_robot_command(command_data: Dict):
 
 # 音频流参数 (调整以降低延迟和优化语音)
 CHUNK = 2048  # 减小块大小以降低延迟
-FORMAT = pyaudio.paInt16
+FORMAT = "S16_LE"  # 16-bit signed little endian (与原来的pyaudio.paInt16相同)
 CHANNELS = 1
-RATE = 48000 # 恢复至16000Hz，因为硬件不支持8000Hz
+RATE = 48000  # 设置为48000Hz以匹配硬件原生采样率，避免重采样
 
-def find_input_device(p: pyaudio.PyAudio):
-    """辅助函数，查找可用的音频输入设备"""
-    device_index = None
-    device_list = []
-    for i in range(p.get_device_count()):
-        dev_info = p.get_device_info_by_index(i)
-        if dev_info['maxInputChannels'] > 0:
-            logger.info(f"Found input device: {dev_info['name']} (Index: {i})")
-            # 优先选择包含'USB'或'mic'的设备
-            if 'usb' in dev_info['name'].lower() or 'mic' in dev_info['name'].lower():
-                logger.info(f"Prioritizing USB/Mic device: {dev_info['name']}")
-                device_list.append(i)
-                # return i
-            if device_index is None: # 备用选项
-                device_index = i
-    if device_list:
-        device_index = device_list[1]
-    else:
-        logger.warning("No USB or Mic device found, using first available input device.")
-    # 如果没有找到合适的设备，记录错误
-    if device_index is None:
-        logger.error("No suitable audio input device found!")
-    return device_index
+
 @app.websocket(f"{API_PREFIX}/ws/mic")
 async def websocket_mic_stream(websocket: WebSocket, samplerate: int = 16000):
     await websocket.accept()
     logger.info(f"Microphone WebSocket connection established. Target samplerate: {samplerate}")
     
-    p = pyaudio.PyAudio()
-    stream = None
-    
     # 目标采样率
     TARGET_RATE = samplerate
-
-    try:
-        input_device_index = find_input_device(p)
-        if input_device_index is None:
-            raise RuntimeError("No suitable audio input device found.")
-
-        stream = p.open(format=FORMAT,
-                        channels=CHANNELS,
-                        rate=RATE,
-                        input=True,
-                        frames_per_buffer=CHUNK,
-                        input_device_index=input_device_index)
-        
-        logger.info(f"Microphone stream opened at {RATE} Hz.")
-
-        while True:
+    
+    # 统计变量
+    packets_sent = 0
+    stats_start_time = time.time()
+    last_stats_time = stats_start_time
+    
+    # arecord 进程
+    arecord_process = None
+    
+    # 异步统计任务
+    async def log_stats():
+        nonlocal packets_sent, last_stats_time
+        while not shutdown_event.is_set():
             try:
-                # 记录读取时间
-                read_start = time.time()
-                data = await asyncio.to_thread(stream.read, CHUNK, exception_on_overflow=False)
-                read_end = time.time()
-
-                processed_data = data
-                # 如果目标采样率与原始采样率不同，则进行重采样
-                if TARGET_RATE != RATE:
-                    # 将字节数据转换为numpy数组 (int16) -> float32
-                    audio_np = np.frombuffer(data, dtype=np.int16).astype(np.float32) / 32768.0
-                    
-                    # 使用librosa进行重采样
-                    resampled_audio = librosa.resample(audio_np, orig_sr=RATE, target_sr=TARGET_RATE)
-                    
-                    # 将重采样后的数据转换回int16，然后转换为字节
-                    resampled_audio_int16 = (resampled_audio * 32767).astype(np.int16)
-                    processed_data = resampled_audio_int16.tobytes()
-
-                # 创建带时间戳的数据包
-                timestamp = int(time.time() * 1000)  # 毫秒级时间戳
-                
-                # 发送时间戳信息（可选，用于调试）
-                metadata = {
-                    "timestamp": timestamp,
-                    "read_time": (read_end - read_start) * 1000,
-                    "data_size": len(processed_data),
-                    "original_sample_rate": RATE,
-                    "sent_sample_rate": TARGET_RATE
-                }
-                
-                # 先发送元数据，再发送音频数据
-                await websocket.send_text(json.dumps(metadata))
-                await websocket.send_bytes(processed_data)
-                
-                # 记录发送时间
-                # logger.debug(f"Audio chunk sent: {len(processed_data)} bytes, read_time: {metadata['read_time']:.2f}ms")
-                
+                await asyncio.sleep(5.0)  # 每5秒统计一次
+                current_time = time.time()
+                elapsed = current_time - last_stats_time
+                if elapsed > 0:
+                    packets_per_second = packets_sent / elapsed
+                    logger.info(f"Audio stats - Packets sent: {packets_sent}, Rate: {packets_per_second:.2f} packets/sec")
+                    packets_sent = 0
+                    last_stats_time = current_time
             except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"Error in stats logging: {e}")
+    
+    stats_task = asyncio.create_task(log_stats())
+    
+    try:
+        # 构建 arecord 命令
+        # 使用 plughw 设备避免 ALSA 配置问题
+        # hw:0,0 是 USB PnP Audio Device
+        cmd = [
+            "arecord",
+            "-D", "hw:0,0",
+            "-f", FORMAT,        # 格式
+            "-c", str(CHANNELS), # 声道数
+            "-r", str(RATE),     # 采样率
+            "-t", "raw",         # 输出原始数据
+            "--buffer-size=8192",  # 设置缓冲区大小，减少延迟
+            "-q"                 # 安静模式，减少日志输出
+        ]
+        
+        logger.info(f"Starting arecord with command: {' '.join(cmd)}")
+        
+        # 创建子进程
+        arecord_process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        
+        logger.info("arecord process started successfully")
+        
+        # 给 arecord 一点时间初始化
+        await asyncio.sleep(0.5)
+        
+        # 检查进程是否仍在运行
+        if arecord_process.returncode is not None:
+            stderr_output = await arecord_process.stderr.read()
+            logger.error(f"arecord process exited with code {arecord_process.returncode}. stderr: {stderr_output.decode()}")
+            raise Exception("arecord process failed to start")
+        
+        # 读取音频数据
+        empty_reads = 0
+        while not shutdown_event.is_set():
+            try:
+                # 读取较小的数据块，让读取更快响应
+                data = await asyncio.wait_for(
+                    arecord_process.stdout.read(512),  # 减小读取块大小
+                    timeout=2.0  # 增加超时时间
+                )
+                
+                if not data:
+                    empty_reads += 1
+                    if empty_reads > 5:  # 允许最多5次空读取
+                        logger.warning("No data received from arecord after multiple attempts")
+                        break
+                    await asyncio.sleep(0.1)  # 短暂等待后重试
+                    continue
+                
+                empty_reads = 0  # 重置空读取计数
+                
+                # 处理音频数据
+                processed_data = data
+                
+                # 如果需要重采样
+                if TARGET_RATE != RATE:
+                    try:
+                        # 将字节数据转换为numpy数组 (int16) -> float32
+                        audio_np = np.frombuffer(data, dtype=np.int16).astype(np.float32) / 32768.0
+                        
+                        # 使用librosa进行重采样
+                        resampled_audio = librosa.resample(audio_np, orig_sr=RATE, target_sr=TARGET_RATE)
+                        
+                        # 将重采样后的数据转换回int16，然后转换为字节
+                        resampled_audio_int16 = (resampled_audio * 32767).astype(np.int16)
+                        processed_data = resampled_audio_int16.tobytes()
+                    except Exception as e:
+                        logger.error(f"Error during resampling: {e}")
+                        continue
+                
+                # 发送音频数据（只发送纯音频字节流）
+                await websocket.send_bytes(processed_data)
+                packets_sent += 1
+                
+            except asyncio.TimeoutError:
+                # 超时是正常的，继续循环
+                continue
+            except asyncio.CancelledError:
+                logger.info("Audio streaming cancelled")
+                break
+            except WebSocketDisconnect:
+                logger.info("WebSocket client disconnected")
                 break
             except Exception as e:
                 logger.error(f"Error during audio streaming: {e}")
                 break
-                
-    except WebSocketDisconnect:
-        logger.info("WebSocket client disconnected.")
+    
     except Exception as e:
-        logger.error(f"Failed to open microphone stream: {e}")
+        logger.error(f"Failed to start arecord: {e}")
+        await websocket.close(code=1011, reason="Audio capture failed")
+    
     finally:
-        if stream and stream.is_active():
-            stream.stop_stream()
-            stream.close()
-        p.terminate()
-        logger.info("Microphone WebSocket connection closed.")
+        # 清理工作
+        logger.info("Starting audio stream cleanup...")
+        
+        # 取消统计任务
+        stats_task.cancel()
+        try:
+            await stats_task
+        except asyncio.CancelledError:
+            pass
+        
+        # 终止 arecord 进程
+        if arecord_process:
+            try:
+                logger.info("Terminating arecord process...")
+                arecord_process.terminate()
+                # 等待进程结束（最多等2秒）
+                try:
+                    await asyncio.wait_for(arecord_process.wait(), timeout=2.0)
+                    logger.info("arecord process terminated gracefully")
+                except asyncio.TimeoutError:
+                    logger.warning("arecord process did not terminate in time, killing it")
+                    arecord_process.kill()
+                    await arecord_process.wait()
+            except Exception as e:
+                logger.error(f"Error terminating arecord: {e}")
+        
+        # 输出最终统计
+        total_time = time.time() - stats_start_time
+        logger.info(f"WebSocket closed. Total time: {total_time:.2f}s, Total packets sent: {packets_sent}")
+        logger.info("Microphone WebSocket connection closed")
+
+
 # ==================== 健康检查API ====================
 
 @app.get("/health")
 async def health_check():
     """健康检查端点"""
     return {
-        "status": "test",
-        "timestamp": asyncio.get_event_loop().time(),
+        "status": "healthy",
+        "timestamp": time.time(),
         "dds_connected": True
     }
 
@@ -621,11 +702,23 @@ async def root():
     }
 
 
+def handle_shutdown(signum, frame):
+    """处理关闭信号"""
+    logger.info(f"Received signal {signum}, initiating shutdown...")
+    shutdown_event.set()
+    dog_status.running = False
+
+
 def run_server():
+    # 注册信号处理器
+    signal.signal(signal.SIGINT, handle_shutdown)
+    signal.signal(signal.SIGTERM, handle_shutdown)
+    
+    # 启动DDS监听线程
     dog_log_thread = threading.Thread(target=dog_status.dds_listener_thread)
+    dog_log_thread.daemon = True
     dog_log_thread.start()
     
-
     """运行服务器"""
     uvicorn.run(
         "woz_system_backend.main:app",
@@ -634,8 +727,6 @@ def run_server():
         reload=False,
         log_level=LOG_LEVEL.lower()
     )
-    dog_status.running = False
-    dog_log_thread.join()
 
 
 if __name__ == "__main__":
