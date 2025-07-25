@@ -883,7 +883,10 @@ export default class RobotDogController extends BaseComponent {
         }
     }
 
-    async beforeCleanup() {
+    // 停止控制方法 - 用于结束实验时调用
+    async stopControl() {
+        Logger.info('Stopping robot control...');
+        
         // 停止控制循环
         if (this.sendInterval) {
             clearInterval(this.sendInterval);
@@ -895,13 +898,16 @@ export default class RobotDogController extends BaseComponent {
             this.bodyLogInterval = null;
         }
         
-        // 发送停止命令
-        this.controlState = {
-            x: 0, y: 0, r: 0,
-            angle1: 0, angle2: 0,
-            headPitch: 0, headYaw: 0
-        };
+        // 重置控制状态
+        this.controlState.x = 0;
+        this.controlState.y = 0;
+        this.controlState.r = 0;
+        this.controlState.angle1 = 0;
+        this.controlState.angle2 = 0;
+        this.controlState.headPitch = 0;
+        this.controlState.headYaw = 0;
         
+        // 发送停止命令
         await this.sendCommand({
             command_type: 'xyr_control',
             target: 'body',
@@ -909,6 +915,16 @@ export default class RobotDogController extends BaseComponent {
                 x: 0, y: 0, r: 0
             }
         });
+        
+        // 切换到阻尼模式
+        this.switchMode('damp');
+        
+        Logger.info('Robot control stopped successfully');
+    }
+
+    async beforeCleanup() {
+        // 调用停止控制方法
+        await this.stopControl();
         
         // 断开UDP连接
         if (this.isConnected && window.api?.disconnectUDP) {

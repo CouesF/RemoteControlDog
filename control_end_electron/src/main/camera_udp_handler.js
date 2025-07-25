@@ -87,6 +87,18 @@ class CameraUDPHandler {
                 this.frameCache.delete(cameraId); // Optional: clear cache after sending
             }
         });
+
+        // Add a heartbeat handler for proactive connection checks
+        ipcMain.handle('camera-heartbeat', async () => {
+            if (this.connectionState !== 'connected') {
+                return { status: 'disconnected' };
+            }
+            const isAlive = (Date.now() - this.lastMessageTimestamp) < HEARTBEAT_TIMEOUT;
+            if (!isAlive) {
+                this._handleDisconnection();
+            }
+            return { status: isAlive ? 'connected' : 'disconnected' };
+        });
     }
 
     connect() {

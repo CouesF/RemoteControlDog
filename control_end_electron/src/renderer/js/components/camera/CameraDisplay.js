@@ -76,7 +76,12 @@ class CameraDisplay extends HTMLElement {
         this.cameraId = null;
         this.frameHandler = this._handleFrame.bind(this);
         this.connectionStateHandler = this._updateConnectionStatus.bind(this);
-        this.frameRequestInterval = null; // Interval for requesting frames
+        
+        // Animation frame loop for efficient rendering
+        this.animationFrameId = null;
+        this.lastFrameTime = 0;
+        this.fps = 30; // Target FPS
+        this.frameInterval = 1000 / this.fps;
     }
 
     connectedCallback() {
@@ -90,8 +95,8 @@ class CameraDisplay extends HTMLElement {
         cameraManager.on(`frame-for-camera-${this.cameraId}`, this.frameHandler);
         cameraManager.on('connection-state-updated', this.connectionStateHandler);
         
-        // Start requesting frames periodically
-        this.frameRequestInterval = setInterval(() => this.requestFrame(), 1000 / 30); // 30 FPS
+        // Start the frame request loop
+        this._startFrameLoop();
 
         // Set initial state
         this._updateConnectionStatus(cameraManager.connectionState);
@@ -103,11 +108,48 @@ class CameraDisplay extends HTMLElement {
             cameraManager.off(`frame-for-camera-${this.cameraId}`, this.frameHandler);
             cameraManager.off('connection-state-updated', this.connectionStateHandler);
             
-            // Stop requesting frames
-            if (this.frameRequestInterval) {
-                clearInterval(this.frameRequestInterval);
-                this.frameRequestInterval = null;
-            }
+            // Stop the frame request loop
+            this._stopFrameLoop();
+        }
+    }
+
+    /**
+     * Starts the frame request loop using requestAnimationFrame for efficiency.
+     * @private
+     */
+    _startFrameLoop() {
+        if (!this.animationFrameId) {
+            // Bind the method once to avoid creating new functions in the loop
+            this.boundFrameLoop = this.boundFrameLoop || this._frameLoop.bind(this);
+            this.animationFrameId = requestAnimationFrame(this.boundFrameLoop);
+        }
+    }
+
+    /**
+     * The core loop that requests frames at a target FPS.
+     * @param {DOMHighResTimeStamp} timestamp - The current time provided by requestAnimationFrame.
+     * @private
+     */
+    _frameLoop(timestamp) {
+        this.animationFrameId = requestAnimationFrame(this.boundFrameLoop);
+
+        const elapsed = timestamp - this.lastFrameTime;
+
+        // Limit the frame requests to the target FPS
+        if (elapsed > this.frameInterval) {
+            this.lastFrameTime = timestamp - (elapsed % this.frameInterval);
+            this.requestFrame();
+        }
+    }
+
+    /**
+     * Stops the frame request loop.
+     * @private
+     */
+    _stopFrameLoop() {
+        if (this.animationFrameId) {
+            cancelAnimationFrame(this.animationFrameId);
+            this.animationFrameId = null;
         }
     }
 
