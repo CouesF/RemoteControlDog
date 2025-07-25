@@ -83,24 +83,13 @@ export class AudioPlayer {
             };
 
             this.websocket.onmessage = (event) => {
-                const receiveTime = Date.now();
-                
-                // 处理JSON元数据消息
-                if (typeof event.data === 'string') {
-                    try {
-                        const metadata = JSON.parse(event.data);
-                        this.lastMetadata = metadata;
-                    } catch (e) {
-                        console.error("Failed to parse metadata:", e);
-                    }
-                } 
-                // 处理二进制音频数据
-                else if (event.data instanceof ArrayBuffer) {
-                    this.processAudioData(event.data, receiveTime);
-                } else if (event.data instanceof Blob) {
+                // 后端只发送二进制音频数据，直接处理
+                if (event.data instanceof Blob) {
                     event.data.arrayBuffer().then(arrayBuffer => {
-                        this.processAudioData(arrayBuffer, receiveTime);
+                        this.processAudioData(arrayBuffer);
                     });
+                } else if (event.data instanceof ArrayBuffer) {
+                    this.processAudioData(arrayBuffer);
                 }
             };
 
@@ -119,19 +108,7 @@ export class AudioPlayer {
         });
     }
 
-    processAudioData(arrayBuffer, receiveTime) {
-        if (!this.lastMetadata) {
-            console.warn("No metadata available for this audio chunk");
-            return;
-        }
-        
-        const timestamp = this.lastMetadata.timestamp;
-        const networkLatency = receiveTime - timestamp;
-        
-        if (networkLatency > 300) {
-            console.warn(`⚠️ High network latency: ${networkLatency}ms`);
-        }
-        
+    processAudioData(arrayBuffer) {
         const processStart = performance.now();
         
         // 将二进制数据转换为音频数据
@@ -151,7 +128,7 @@ export class AudioPlayer {
         audioBuffer.copyToChannel(float32Data, 0);
         
         // 将音频数据添加到缓冲队列
-        this.queueAudioBuffer(audioBuffer, timestamp);
+        this.queueAudioBuffer(audioBuffer);
         
         // 计算处理时间并更新平均值
         const processingTime = performance.now() - processStart;
@@ -160,15 +137,14 @@ export class AudioPlayer {
         
         // 只在调试时打印详细日志
         if (this.processedChunks % 10 === 0) {
-            console.log(`📊 Audio stats: Avg processing time: ${this.averageProcessingTime.toFixed(2)}ms, Buffer size: ${this.audioQueue.length}, Network latency: ${networkLatency}ms`);
+            console.log(`📊 Audio stats: Avg processing time: ${this.averageProcessingTime.toFixed(2)}ms, Buffer size: ${this.audioQueue.length}`);
         }
     }
 
-    queueAudioBuffer(buffer, timestamp) {
+    queueAudioBuffer(buffer) {
         // 将音频缓冲区添加到队列
         this.audioQueue.push({
-            buffer: buffer,
-            timestamp: timestamp
+            buffer: buffer
         });
         
         // 如果缓冲区已经达到预设大小或者未处于播放状态，启动播放
@@ -239,11 +215,10 @@ export class AudioPlayer {
         
         // 记录延迟信息
         const playbackDelay = (startTime - currentTime) * 1000; // 转为毫秒
-        const totalLatency = Date.now() - audioItem.timestamp + playbackDelay;
         
         // 只在调试或有问题时打印日志
-        if (playbackDelay > 100 || totalLatency > 300) {
-            console.log(`🎵 Audio playback: delay=${playbackDelay.toFixed(0)}ms, total latency=${totalLatency.toFixed(0)}ms`);
+        if (playbackDelay > 100) {
+            console.log(`🎵 Audio playback: delay=${playbackDelay.toFixed(0)}ms`);
         }
         
         // 当这个缓冲区播放完毕时，安排下一个
