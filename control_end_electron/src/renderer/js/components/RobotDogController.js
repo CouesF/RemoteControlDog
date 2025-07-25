@@ -23,7 +23,12 @@ export default class RobotDogController extends BaseComponent {
             angle2: 0,
             // 头部控制
             headPitch: 0,
-            headYaw: 0
+            headYaw: 0,
+            
+            // 上次发送的控制值
+            lastSentXYR: { x: 0, y: 0, r: 0 },
+            lastSentAngles: { angle1: 0, angle2: 0 },
+            lastSentHead: { pitch: 0, yaw: 0 }
         };
         
         // 控制发送间隔
@@ -743,42 +748,52 @@ export default class RobotDogController extends BaseComponent {
             const combinedY = this.controlState.y + y_val;
             const combinedR = this.controlState.r + r_val;
     
-            // 发送身体控制命令
-            if (Math.abs(combinedX) > 0.01 || Math.abs(combinedY) > 0.01 || Math.abs(combinedR) > 0.01) {
+            // --- 发送控制命令 ---
+            const epsilon = 1e-5;
+
+            // 身体控制
+            const { x: lastX, y: lastY, r: lastR } = this.controlState.lastSentXYR;
+            const xyrChanged = Math.abs(combinedX - lastX) > epsilon || 
+                               Math.abs(combinedY - lastY) > epsilon || 
+                               Math.abs(combinedR - lastR) > epsilon;
+            const xyrAboveThreshold = Math.abs(combinedX) > 0.01 || Math.abs(combinedY) > 0.01 || Math.abs(combinedR) > 0.01;
+
+            if (xyrChanged || xyrAboveThreshold) {
                 this.sendCommand({
                     command_type: 'xyr_control',
                     target: 'body',
-                    data: {
-                        x: combinedX,
-                        y: combinedY,
-                        r: combinedR
-                    }
+                    data: { x: combinedX, y: combinedY, r: combinedR }
                 });
+                this.controlState.lastSentXYR = { x: combinedX, y: combinedY, r: combinedR };
             }
-    
-            // 发送抬腿控制 (如果UI有输入)
-            if (Math.abs(this.controlState.angle1) > 0.1 || Math.abs(this.controlState.angle2) > 0.1) {
+
+            // 抬腿控制
+            const { angle1, angle2 } = this.controlState;
+            const { angle1: lastAngle1, angle2: lastAngle2 } = this.controlState.lastSentAngles;
+            const anglesChanged = Math.abs(angle1 - lastAngle1) > epsilon || Math.abs(angle2 - lastAngle2) > epsilon;
+            const anglesAboveThreshold = Math.abs(angle1) > 0.1 || Math.abs(angle2) > 0.1;
+
+            if (anglesChanged || anglesAboveThreshold) {
                 this.sendCommand({
                     command_type: 'object_control',
                     target: 'leg',
-                    data: {
-                        angle1: this.controlState.angle1,
-                        angle2: this.controlState.angle2
-                    }
+                    data: { angle1, angle2 }
                 });
+                this.controlState.lastSentAngles = { angle1, angle2 };
             }
-    
-            // 发送头部控制
-            if (Math.abs(head_pitch) > 0.01 || Math.abs(head_yaw) > 0.01) {
+
+            // 头部控制
+            const { pitch: lastPitch, yaw: lastYaw } = this.controlState.lastSentHead;
+            const headChanged = Math.abs(head_pitch - lastPitch) > epsilon || Math.abs(head_yaw - lastYaw) > epsilon;
+            const headAboveThreshold = Math.abs(head_pitch) > 0.01 || Math.abs(head_yaw) > 0.01;
+
+            if (headChanged || headAboveThreshold) {
                 this.sendCommand({
                     command_type: 'object_control',
                     target: 'head',
-                    data: {
-                        pitch: head_pitch,
-                        yaw: head_yaw,
-                        expression: 'c'
-                    }
+                    data: { pitch: head_pitch, yaw: head_yaw, expression: 'c' }
                 });
+                this.controlState.lastSentHead = { pitch: head_pitch, yaw: head_yaw };
             }
         }, this.sendFrequency);
     }
