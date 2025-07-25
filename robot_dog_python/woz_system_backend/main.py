@@ -509,11 +509,11 @@ async def send_robot_command(command_data: Dict):
 
 # ==================== 麦克风音频流API ====================
 
-# 音频流参数 (调整以降低延迟和优化语音)
-CHUNK = 2048  # 减小块大小以降低延迟
-FORMAT = "S16_LE"  # 16-bit signed little endian (与原来的pyaudio.paInt16相同)
+# 优化音频流参数 - 降低延迟和减少处理负载
+CHUNK = 4096  # 增大块大小以提高效率，减少系统调用频率
+FORMAT = "S16_LE"  # 16-bit signed little endian
 CHANNELS = 1
-RATE = 48000  # 设置为48000Hz以匹配硬件原生采样率，避免重采样
+RATE = 16000  # 直接使用目标采样率，避免重采样延迟
 
 
 @app.websocket(f"{API_PREFIX}/ws/mic")
@@ -587,51 +587,35 @@ async def websocket_mic_stream(websocket: WebSocket, samplerate: int = 16000):
             logger.error(f"arecord process exited with code {arecord_process.returncode}. stderr: {stderr_output.decode()}")
             raise Exception("arecord process failed to start")
         
-        # 读取音频数据
+        # 优化音频数据读取循环
         empty_reads = 0
+        read_size = CHUNK  # 使用较大的读取块大小提高效率
+        
         while not shutdown_event.is_set():
             try:
-                # 读取较小的数据块，让读取更快响应
+                # 读取音频数据 - 使用更大的块来减少系统调用
                 data = await asyncio.wait_for(
-                    arecord_process.stdout.read(512),  # 减小读取块大小
-                    timeout=2.0  # 增加超时时间
+                    arecord_process.stdout.read(read_size),
+                    timeout=1.0  # 减少超时时间以更快响应
                 )
                 
                 if not data:
                     empty_reads += 1
-                    if empty_reads > 5:  # 允许最多5次空读取
-                        logger.warning("No data received from arecord after multiple attempts")
+                    if empty_reads > 3:  # 减少允许的空读取次数
+                        logger.warning("No audio data received, connection may be lost")
                         break
-                    await asyncio.sleep(0.1)  # 短暂等待后重试
+                    await asyncio.sleep(0.05)  # 减少等待时间
                     continue
                 
-                empty_reads = 0  # 重置空读取计数
+                empty_reads = 0
                 
-                # 处理音频数据
-                processed_data = data
-                
-                # 如果需要重采样
-                if TARGET_RATE != RATE:
-                    try:
-                        # 将字节数据转换为numpy数组 (int16) -> float32
-                        audio_np = np.frombuffer(data, dtype=np.int16).astype(np.float32) / 32768.0
-                        
-                        # 使用librosa进行重采样
-                        resampled_audio = librosa.resample(audio_np, orig_sr=RATE, target_sr=TARGET_RATE)
-                        
-                        # 将重采样后的数据转换回int16，然后转换为字节
-                        resampled_audio_int16 = (resampled_audio * 32767).astype(np.int16)
-                        processed_data = resampled_audio_int16.tobytes()
-                    except Exception as e:
-                        logger.error(f"Error during resampling: {e}")
-                        continue
-                
-                # 发送音频数据（只发送纯音频字节流）
-                await websocket.send_bytes(processed_data)
+                # 由于采样率已经匹配，直接发送数据，无需重采样
+                # 这大大减少了处理延迟
+                await websocket.send_bytes(data)
                 packets_sent += 1
                 
             except asyncio.TimeoutError:
-                # 超时是正常的，继续循环
+                # 短暂超时是正常的，继续
                 continue
             except asyncio.CancelledError:
                 logger.info("Audio streaming cancelled")
