@@ -113,14 +113,26 @@ EVENT_TTSResponse = 352
 
 # ==== 音频播放器类 ====
 class AudioPlayer:
-    def __init__(self, device_index=0):
+    def __init__(self, device_name=None, device_index=None):
         self.p = pyaudio.PyAudio()
         self.stream = None
-        self.device_index = device_index
         self.TARGET_SAMPLE_RATE = TARGET_SAMPLE_RATE
         
         # 打印音频设备信息
         self._print_audio_devices()
+        
+        # 根据设备名称或索引选择设备
+        if device_name:
+            self.device_index = self._find_device_by_name(device_name)
+            if self.device_index is None:
+                print(f"⚠️ 未找到设备名称包含 '{device_name}' 的音频设备，使用默认设备")
+                self.device_index = 0
+        elif device_index is not None:
+            self.device_index = device_index
+        else:
+            self.device_index = 0
+        
+        print(f"🎯 选择的音频设备索引: {self.device_index}")
         
         # 创建音频流
         self._create_stream()
@@ -155,6 +167,28 @@ class AudioPlayer:
             except:
                 continue
         print("============================")
+    
+    def _find_device_by_name(self, target_name):
+        """根据设备名称查找设备索引"""
+        print(f"🔍 查找包含 '{target_name}' 的音频设备...")
+        
+        for i in range(self.p.get_device_count()):
+            try:
+                info = self.p.get_device_info_by_index(i)
+                if info['maxOutputChannels'] > 0:
+                    device_name = info['name']
+                    print(f"  检查设备 {i}: {device_name}")
+                    
+                    # 检查设备名称是否包含目标字符串
+                    if target_name.lower() in device_name.lower():
+                        print(f"✅ 找到匹配设备: 索引 {i}, 名称: {device_name}")
+                        return i
+            except Exception as e:
+                print(f"  检查设备 {i} 时出错: {e}")
+                continue
+        
+        print(f"❌ 未找到包含 '{target_name}' 的音频设备")
+        return None
     
     def set_system_volume(self, volume_percent: int):
         """设置系统音量（通过ALSA）"""
@@ -775,8 +809,8 @@ async def main():
     speech_control_sub.Init()
     print("📡 语音控制订阅器已创建")
     
-    # 创建音频播放器和语音处理器
-    audio_player = AudioPlayer(device_index=0)
+    # 创建音频播放器和语音处理器 - 使用指定的USB音频设备
+    audio_player = AudioPlayer(device_name="USB PnP Audio Device")
     speech_handler = SpeechControlHandler(audio_player)
     
     print("\n" + "="*60)

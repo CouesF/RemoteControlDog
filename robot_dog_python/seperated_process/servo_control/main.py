@@ -30,8 +30,8 @@ def control_targets(m1: int, m2: int, expr: str,
     :param ad: 已初始化的 ArduinoController 实例
     """
     # Define bounds for Motor 1 (ID 1)
-    MIN_ALLOWED_POS_M1 = 1600  # 经测试，最大摇头角度幅度大约为39.375°
-    MAX_ALLOWED_POS_M1 = 2496  # 为避免破坏结构，暂不进行下一步测试
+    MIN_ALLOWED_POS_M1 = 1024  # 经测试，最大摇头角度幅度大约为39.375°
+    MAX_ALLOWED_POS_M1 = 3072  # 为避免破坏结构，暂不进行下一步测试
 
     # Define bounds for Motor 2 (ID 2)
     MIN_ALLOWED_POS_M2 = 1660 # Example: Set your desired minimum for motor 2

@@ -235,7 +235,7 @@ class RobotController:
                     if not (-4 <= vyaw <= 4):
                         self.log(91, 2, param1=3, param2=vyaw)
                         return
-                    self.sport.Move(vx, vy, vyaw)
+                    self.sport.Move(vx, vy, -vyaw)
                     self.log(24, 0, param1=vx, param2=vyaw)
 
     def handle_state_transition(self, target_state: RobotState):

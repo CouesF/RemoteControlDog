@@ -45,29 +45,51 @@ SERVO_TYPE = 'STS'
 ARDUINO_PORT = '/dev/ttyCH341USB0'
 ARDUINO_BAUD = 115200
 DEG_TO_STEP = 4096 / 360
-MIN_ALLOWED_DEG_M1, MAX_ALLOWED_DEG_M1 = -40.0, 40.0
-MIN_ALLOWED_STEP_M1, MAX_ALLOWED_STEP_M1 = 1600, 2496
-MIN_ALLOWED_DEG_M2, MAX_ALLOWED_DEG_M2 = -34.0, 13.0
-MIN_ALLOWED_STEP_M2, MAX_ALLOWED_STEP_M2 = 1660, 2205
+MIN_ALLOWED_DEG_M1, MAX_ALLOWED_DEG_M1 = -90.0, 90.0
+MIN_ALLOWED_STEP_M1, MAX_ALLOWED_STEP_M1 = 1024, 3072
+MIN_ALLOWED_DEG_M2, MAX_ALLOWED_DEG_M2 = -30.0, 10.0
+MIN_ALLOWED_STEP_M2, MAX_ALLOWED_STEP_M2 = 1706, 2162
 
 # --- Hardware Controller Classes ---
 
 class ArduinoController:
     def __init__(self, port: str, baudrate: int, timeout: float = 1.0):
+        self.ser = None
+        self.port = port
+        self.baudrate = baudrate
+        self.timeout = timeout
+        self.connect()
+
+    def connect(self):
         try:
-            self.ser = serial.Serial(port, baudrate, timeout=timeout)
-            print(f"Arduino controller initialized on {port}.")
+            self.ser = serial.Serial(self.port, self.baudrate, timeout=self.timeout)
+            print(f"Arduino controller initialized on {self.port}.")
         except serial.SerialException as e:
             self.ser = None
-            print(f"Warning: Failed to open Arduino port {port}: {e}. Screen control disabled.")
+            print(f"Warning: Failed to open Arduino port {self.port}: {e}. Screen control disabled.")
 
     def set_expression(self, expr: str):
-        if not self.ser or not isinstance(expr, str) or len(expr) != 1: return
-        self.ser.write(expr.encode('utf-8'))
-        self.ser.flush()
+        if not self.ser:
+            print("Warning: Arduino not connected. Trying to reconnect...")
+            self.connect() # Attempt to reconnect
+            if not self.ser:
+                return # Exit if reconnection fails
+
+        if not isinstance(expr, str) or len(expr) != 1:
+            return
+
+        try:
+            self.ser.write(expr.encode('utf-8'))
+            self.ser.flush()
+        except serial.SerialException as e:
+            print(f"Error writing to Arduino: {e}. Connection may be lost.")
+            self.close() # Close the problematic connection
+            self.ser = None # Set to None so it will try to reconnect on next call
 
     def close(self):
-        if self.ser and self.ser.is_open: self.ser.close()
+        if self.ser and self.ser.is_open:
+            self.ser.close()
+            print("Arduino serial port closed.")
 
 class ServoController:
     def __init__(self, port: str, baudrate: int, servo_type: str = 'STS'):

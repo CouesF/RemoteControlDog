@@ -8,7 +8,7 @@ duration = 10  # 录音时长（秒）
 # 确保选择正确的输入和输出设备。
 # 可以使用 sd.query_devices() 来查看可用设备。
 # sd.default.device = (input_device_index, output_device_index)
-sd.default.device = None  # 使用默认设备
+sd.default.device = (0, None)  # hw:0,0
 
 print("开始实时监听和录音...")
 

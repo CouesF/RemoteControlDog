@@ -25,8 +25,72 @@ import base64
 import subprocess
 import os
 import signal
+import sys
 
 from main_distortion_corrector import FisheyeCorrector
+import numpy as np
+import cv2
+
+current_script_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_script_dir)
+communication_dir_path = os.path.join(parent_dir, 'communication')
+sys.path.append(communication_dir_path)
+
+try:
+    from dds_data_structure import HeadCommand
+    from unitree_sdk2py.core.channel import ChannelSubscriber, ChannelFactoryInitialize
+    DDS_ENABLED = True
+except ImportError as e:
+    DDS_ENABLED = False
+    print(f"Warning: DDS libraries not found or failed to import. Head tracking will be disabled. Error: {e}")
+
+# <--- ADDED START: Head Tracking Configuration --->
+# This is the full horizontal Field of View (FOV) of your camera in degrees.
+# You will need to TUNE THIS VALUE experimentally.
+# A common value for robot cameras is between 90 and 120 degrees.
+# How to tune:
+# 1. Command the head to its maximum right position (e.g., +90 degrees).
+# 2. Adjust this FOV value until the marker appears at the far right edge of the screen.
+CAMERA_HORIZONTAL_FOV_DEG = 90.0
+
+# This is the maximum yaw angle for the head motor, as defined in your head control script.
+HEAD_MAX_YAW_DEG = 90.0
+# <--- ADDED END --->
+RECORDING_PATH = os.path.expanduser("/home/d3lab/Projects/RemoteControlDog/robot_dog_python/robot_recordings")
+
+def radial_color_correction_v2(img, g_center, g_edge, r_center, r_edge):
+    h, w = img.shape[:2]
+    Y, X = np.ogrid[:h, :w]
+    center_x, center_y = w / 2, h / 2
+    distance = np.sqrt((X - center_x) ** 2 + (Y - center_y) ** 2)
+    max_dist = np.sqrt(center_x ** 2 + center_y ** 2)
+    alpha = distance / max_dist  # 0=中心，1=四周
+
+    g_gain = g_center * (1 - alpha) + g_edge * alpha
+    r_gain = r_center * (1 - alpha) + r_edge * alpha
+
+    b, g, r = cv2.split(img)
+    g = np.clip(g * g_gain, 0, 255)
+    r = np.clip(r * r_gain, 0, 255)
+    img_corr = cv2.merge([b.astype(np.uint8), g.astype(np.uint8), r.astype(np.uint8)])
+    return img_corr
+
+def gray_world_awb(img):
+    """
+    灰世界自动白平衡算法。
+    输入img: BGR格式np.uint8图像，输出自动平衡后的np.uint8图像。
+    """
+    img = img.astype(np.float32)
+    avg_b = np.mean(img[:, :, 0])
+    avg_g = np.mean(img[:, :, 1])
+    avg_r = np.mean(img[:, :, 2])
+    avg_gray = (avg_b + avg_g + avg_r) / 3
+    img[:, :, 0] *= avg_gray / avg_b
+    img[:, :, 1] *= avg_gray / avg_g
+    img[:, :, 2] *= avg_gray / avg_r
+    img = np.clip(img, 0, 255)
+    return img.astype(np.uint8)
+
 
 # 配置日志
 logging.basicConfig(
@@ -37,7 +101,7 @@ logger = logging.getLogger(__name__)
 
 # 安全配置
 SHARED_SECRET_KEY = b"robot_dog_camera_secret_2024"
-SESSION_TIMEOUT = 300  # 5分钟会话超时
+SESSION_TIMEOUT = 3000  # 50分钟会话超时
 MAX_UDP_SIZE = 8192  # 增大UDP包大小，减少分片
 FRAGMENT_THRESHOLD = 1400  # 分片阈值提高
 HEADER_SIZE = 32  # 减小头部大小
@@ -49,15 +113,23 @@ CAMERA_CONFIGS = {
         "resolution": (480, 320),
         "fps": 10,
         "quality": 20,
-        "name": "CSI摄像头-0",
+        "name": "CSI-0-R",
         "sensor_id": 0,
+        "enable_recording": False,  # 添加录制开关
 
         "flip_method": "both",
 
+        "crop_params": {
+            "top": 48,      # Pixels to remove from the top
+            "bottom": 48,   # Pixels to remove from the bottom
+            "left": 72,    # Pixels to remove from the left
+            "right": 72    # Pixels to remove from the right
+        },
+        
         "is_fisheye": True,
         "undistorted_resolution": (480, 320), # Desired output size
         "fisheye_params": {
-            'mappingCoeffs': np.array([949.1611106,-0.012213581038145,0.0,0.0]), # a0, a2, a3, a4. Placeholder - adjust for this camera
+            'mappingCoeffs': np.array([4.093337128000973e+02,-8.756678171982792e-04,1.333600250402446e-07,-6.812123301267790e-10]), # a0, a2, a3, a4. Placeholder - adjust for this camera
             'imageSize': np.array([320, 480]),  # rows, cols. Note the order
             'distortionCenter': np.array([240.0, 160.0]), # Placeholder - adjust for this camera
             'stretchMatrix': np.array([[1.5, 0.0], [0.0, 1.5]]),
@@ -69,15 +141,23 @@ CAMERA_CONFIGS = {
         "resolution": (480, 320),
         "fps": 10,
         "quality": 20,
-        "name": "CSI摄像头-1",
+        "name": "CSI-1-L",
         "sensor_id": 1,
+        "enable_recording": False,  # 添加录制开关
 
         "flip_method": "both",
+
+        "crop_params": {
+            "top": 48,      # Pixels to remove from the top
+            "bottom": 48,   # Pixels to remove from the bottom
+            "left": 72,    # Pixels to remove from the left
+            "right": 72    # Pixels to remove from the right
+        },
 
         "is_fisheye": True,
         "undistorted_resolution": (480, 320), # Desired output size
         "fisheye_params": {
-            'mappingCoeffs': np.array([949.1611106,-0.012213581038145,0.0,0.0]), # a0, a2, a3, a4
+            'mappingCoeffs': np.array([411.0715,-0.00081114,0.0,0.0]), # a0, a2, a3, a4
             'imageSize': np.array([320, 480]),  # rows, cols. Note the order
             'distortionCenter': np.array([240.0, 160.0]), # Placeholder - adjust for this camera
             'stretchMatrix': np.array([[1.5, 0.0], [0.0, 1.5]]),
@@ -89,7 +169,8 @@ CAMERA_CONFIGS = {
         "resolution": (640, 480),
         "fps": 15,
         "quality": 50,
-        "name": "USB摄像头-2",
+        "name": "USB-2",
+        "enable_recording": True,  # 只录制USB摄像头
 
         "flip_method": "both",
 
@@ -620,28 +701,36 @@ class PacketManager:
 class SmartCameraHandler:
     """智能摄像头处理器 (v2 - Streamlined Initialization)"""
 
-    def __init__(self, camera_id: int, config: Dict[str, Any]):
+    def __init__(self, camera_id: int, config: Dict[str, Any], head_state: Dict, head_state_lock: threading.Lock, recording_path: str):
         self.camera_id = camera_id
         self.config = config
         self.cap: Optional[cv2.VideoCapture] = None
         self.is_running = False
-        # self.frame_queue = Queue(maxsize=2)
         self.capture_thread = None
 
         self._latest_frame: Optional[CameraFrame] = None
         self._frame_lock = threading.Lock()
 
-        self.corrector: Optional[FisheyeCorrector] = None # added for distortion correction
+        self.is_recording = False
+        self.video_writer: Optional[cv2.VideoWriter] = None
+        self.subscriber_count = 0  # Track number of active subscribers
+        self.output_dir = RECORDING_PATH
+        if not os.path.exists(self.output_dir):
+            os.makedirs(self.output_dir)
 
-        # --- ADD THIS BLOCK to initialize the corrector ---
+        # <--- ADDED: Store reference to shared state --->
+        self.head_state = head_state
+        self.head_state_lock = head_state_lock
+        # <--- END OF ADDED BLOCK --->
+
+        self.corrector: Optional[FisheyeCorrector] = None 
+
         if self.config.get("is_fisheye", False):
             try:
                 self.corrector = FisheyeCorrector(self.config)
             except Exception as e:
                 logger.error(f"Failed to initialize FisheyeCorrector for camera {self.camera_id}: {e}")
-                # Decide if this should be a fatal error for the camera
                 self.corrector = None
-        # --- END OF ADDED BLOCK ---
 
         self.stats = {
             'frames_captured': 0,
@@ -651,13 +740,125 @@ class SmartCameraHandler:
             'capture_method': 'uninitialized'
         }
 
+    def start_recording(self):
+        """Starts recording if not already in progress with robust error handling."""
+        # 检查是否启用录制
+        if not self.config.get('enable_recording', False):
+            return  # 录制未启用
+            
+        if self.is_recording:
+            return  # Already recording, do nothing
+
+        # --- Start Recording with robust initialization ---
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        cam_name = self.config.get('name', f'cam{self.camera_id}').replace(" ", "_")
+        output_filename = os.path.join(self.output_dir, f"{cam_name}_{timestamp}.mp4")
+
+        # Determine correct resolution after potential cropping
+        if self.corrector:
+            width, height = self.config['undistorted_resolution']
+        else:
+            width, height = self.config['resolution']
+
+        if 'crop_params' in self.config:
+            params = self.config['crop_params']
+            width -= (params.get('left', 0) + params.get('right', 0))
+            height -= (params.get('top', 0) + params.get('bottom', 0))
+
+        fps = self.config.get('fps', 15)
+        
+        # 尝试多种编码器以提高兼容性
+        codecs_to_try = [
+            ('XVID', cv2.VideoWriter_fourcc(*'XVID')),  # 更兼容的编码器
+            ('mp4v', cv2.VideoWriter_fourcc(*'mp4v')),  # 原始编码器
+            ('H264', cv2.VideoWriter_fourcc(*'H264')),  # H264编码器
+            ('MJPG', cv2.VideoWriter_fourcc(*'MJPG')),  # MJPEG编码器（最兼容）
+        ]
+        
+        self.video_writer = None
+        self.current_output_file = output_filename
+        
+        for codec_name, fourcc in codecs_to_try:
+            try:
+                # 确保输出目录存在
+                os.makedirs(os.path.dirname(output_filename), exist_ok=True)
+                
+                self.video_writer = cv2.VideoWriter(output_filename, fourcc, fps, (width, height))
+                
+                if self.video_writer and self.video_writer.isOpened():
+                    self.is_recording = True
+                    self.recording_stats = {
+                        'frames_written': 0,
+                        'write_errors': 0,
+                        'last_write_time': time.time(),
+                        'codec_used': codec_name
+                    }
+                    logger.info(f"Camera {self.camera_id}: Started recording to {output_filename} using {codec_name} codec")
+                    return
+                else:
+                    if self.video_writer:
+                        self.video_writer.release()
+                        self.video_writer = None
+                    logger.warning(f"Camera {self.camera_id}: Failed to initialize with {codec_name} codec")
+            except Exception as e:
+                logger.warning(f"Camera {self.camera_id}: Exception with {codec_name} codec: {e}")
+                if self.video_writer:
+                    try:
+                        self.video_writer.release()
+                    except:
+                        pass
+                    self.video_writer = None
+        
+        logger.error(f"Camera {self.camera_id}: Failed to initialize video recording with any codec")
+
+    def stop_recording(self):
+        """Stops recording if in progress with robust cleanup."""
+        if not self.is_recording:
+            return # Not recording, do nothing
+
+        self.is_recording = False
+        
+        if self.video_writer:
+            try:
+                # 安全释放视频写入器
+                self.video_writer.release()
+                logger.info(f"Camera {self.camera_id}: Recording stopped. Stats: {getattr(self, 'recording_stats', {})}")
+                
+                # 检查文件是否成功创建
+                if hasattr(self, 'current_output_file') and os.path.exists(self.current_output_file):
+                    file_size = os.path.getsize(self.current_output_file)
+                    if file_size > 0:
+                        logger.info(f"Camera {self.camera_id}: Video file saved successfully ({file_size} bytes)")
+                    else:
+                        logger.warning(f"Camera {self.camera_id}: Video file is empty, removing it")
+                        try:
+                            os.remove(self.current_output_file)
+                        except:
+                            pass
+                else:
+                    logger.warning(f"Camera {self.camera_id}: Video file was not created")
+                    
+            except Exception as e:
+                logger.error(f"Camera {self.camera_id}: Error during recording cleanup: {e}")
+            finally:
+                self.video_writer = None
+                if hasattr(self, 'recording_stats'):
+                    delattr(self, 'recording_stats')
+                if hasattr(self, 'current_output_file'):
+                    delattr(self, 'current_output_file')
+
     def _get_csi_gstreamer_pipeline(self, sensor_id, width, height, fps, flip=0) -> str:
         """
         Returns a robust GStreamer pipeline string for OpenCV to consume CSI camera frames.
         This pipeline is built for headless operation on NVIDIA Jetson.
         """
+        # --- MORE ROBUST GStreamer Pipeline ---
+        # Your observation about redder edges points to a lens shading issue.
+        # This version adds 'lsc-mode=1' to enable automatic Lens Shading Correction.
+        # Combining auto white balance ('wbmode=1') and auto LSC ('lsc-mode=1') is the
+        # most robust way to ensure uniform, accurate color across the entire image.
         pipeline = (
-            f"nvarguscamerasrc sensor-id={sensor_id} ! "
+            f"nvarguscamerasrc sensor-id={sensor_id} wbmode=1 lsc-mode=2 ! "
             f"video/x-raw(memory:NVMM), width=(int){width}, height=(int){height}, format=(string)NV12, framerate=(fraction){fps}/1 ! "
             f"nvvidconv flip-method={flip} ! "
             f"video/x-raw, width=(int){width}, height=(int){height}, format=(string)BGRx ! "
@@ -828,76 +1029,144 @@ class SmartCameraHandler:
 
                 with self._frame_lock:
                     self._latest_frame = cam_frame
-
-                # 3. Measure time to put frame in queue
-                '''
-                if self.frame_queue.full():
-                    try:
-                        self.frame_queue.get_nowait()
-                        self.stats['frames_dropped'] += 1
-                    except Empty:
-                        pass
-                
-                try:
-                    self.frame_queue.put_nowait(cam_frame)
-                except Full:
-                    self.stats['frames_dropped'] += 1
-            t_queue_done = time.perf_counter()
-            '''
-            
-            # 4. Calculate sleep duration and total loop time
-            # processing_time = t_queue_done - t_loop_start
-            # sleep_duration = frame_interval - processing_time
-            
-            # --- Print all timing results ---
-            capture_ms = (t_capture_done - t_loop_start) * 1000
-            process_ms = (t_process_done - t_capture_done) * 1000
-            # queue_ms = (t_queue_done - t_process_done) * 1000
-            # total_work_ms = processing_time * 1000
-            # sleep_ms = max(0, sleep_duration * 1000)
-
-            print(
-                f"Cam {self.camera_id} Loop (ms) - "
-                f"Capture: {capture_ms:.2f} | "
-                f"Process: {process_ms:.2f} "
-            )
-
-            # if sleep_duration > 0:
-                # time.sleep(sleep_duration)
         
         logger.warning(f"Capture loop for camera {self.camera_id} has exited.")
 
 
     def _process_frame(self, frame: np.ndarray) -> Optional[bytes]:
-            """Processes the frame (resize FIRST, then correct and JPEG encode)."""
-            try:
-                # 1. Define the final target size from the configuration
-                if self.config.get("is_fisheye", False):
-                    target_width, target_height = self.config['undistorted_resolution']
+        """Processes the frame (resize if needed and JPEG encode)."""
+        try:
+            # --- ADD THIS BLOCK TO CHECK RESOLUTION ---
+            if frame is not None:
+                # The .shape attribute gives (height, width, color_channels)
+                height, width, _ = frame.shape
+                # logger.info(f"Camera {self.camera_id}: Captured raw frame with resolution {width}x{height}")
+            # --- END OF BLOCK ---
+            # --- ADD THIS BLOCK for correction ---
+            # 1. Apply fisheye correction if a corrector exists
+            if self.corrector:
+                corrected_frame = self.corrector.correct(frame)
+            else:
+                corrected_frame = frame
+            # --- END OF ADDED BLOCK ---
+
+            # --- Stage 2: Cropping Stage ---
+            # Check if crop parameters are defined for this camera
+            if 'crop_params' in self.config:
+                params = self.config['crop_params']
+                h, w, _ = corrected_frame.shape
+
+                # Get crop values, defaulting to 0 if not specified
+                top, bottom = params.get('top', 0), params.get('bottom', 0)
+                left, right = params.get('left', 0), params.get('right', 0)
+                
+                # Sanity check to prevent cropping more than the image size
+                if (top + bottom < h) and (left + right < w):
+                    # Use NumPy slicing to crop the image
+                    cropped_frame = corrected_frame[top:h-bottom, left:w-right]
+                    # logger.info(f"Cam {self.camera_id}: Cropped frame from {w}x{h} to {cropped_frame.shape[1]}x{cropped_frame.shape[0]}")
                 else:
-                    target_width, target_height = self.config['resolution']
+                    logger.warning(f"Cam {self.camera_id}: Invalid crop values, skipping crop.")
+                    cropped_frame = corrected_frame
+            else:
+                # If no crop_params, just pass the corrected frame through
+                cropped_frame = corrected_frame
+            # --- End of Cropping Stage ---
 
-                # 2. Resize the original frame FIRST
-                # This creates a smaller image to be passed to the corrector
-                resized_frame = cv2.resize(frame, (target_width, target_height), interpolation=cv2.INTER_AREA)
+            # 2. Determine target size for encoding
+            if self.corrector:
+                target_width, target_height = self.config['undistorted_resolution']
+            else:
+                target_width, target_height = self.config['resolution']
 
-                # 3. Apply fisheye correction on the RESIZED frame
-                if self.corrector:
-                    # The corrector's parameters MUST be calibrated for this new, smaller resolution
-                    final_frame = self.corrector.correct(resized_frame)
-                else:
-                    final_frame = resized_frame
+            # 3. Resize if the corrected/original frame doesn't match the final target size
+            if cropped_frame.shape[1] != target_width or cropped_frame.shape[0] != target_height:
+                final_frame = cv2.resize(cropped_frame, (target_width, target_height), interpolation=cv2.INTER_AREA)
+            else:
+                final_frame = cropped_frame
 
-                # 4. JPEG Encode the final frame
-                encode_params = [cv2.IMWRITE_JPEG_QUALITY, self.config['quality']]
-                success, encoded_jpg = cv2.imencode('.jpg', final_frame, encode_params)
+            if self.config.get('type') == 'csi':
 
-                return encoded_jpg.tobytes() if success else None
-            except Exception as e:
-                logger.error(f"Frame processing failed for camera {self.camera_id}: {e}")
-                return None
-            
+                final_frame = gray_world_awb(final_frame)
+                # 空间校色
+                final_frame = radial_color_correction_v2(final_frame, g_center=0.92, g_edge=1.09, r_center=1.03, r_edge=0.89)
+                # 提升整体亮度
+                final_frame = np.clip(final_frame * 1.18, 0, 255).astype(np.uint8)
+                # 加点红/绿
+                b, g, r = cv2.split(final_frame)
+                b = np.clip(b * 0.98, 0, 255).astype(np.uint8)
+                g = np.clip(g * 1.0, 0, 255).astype(np.uint8)
+                r = np.clip(r * 1.07, 0, 255).astype(np.uint8)
+                final_frame = cv2.merge([b, g, r])
 
+            # 安全的视频写入，带错误处理
+            if self.is_recording and self.video_writer:
+                try:
+                    # 验证帧数据有效性
+                    if final_frame is not None and final_frame.size > 0:
+                        # 确保帧尺寸正确
+                        expected_height, expected_width = final_frame.shape[:2]
+                        if hasattr(self, 'recording_stats'):
+                            # 写入帧到视频文件
+                            self.video_writer.write(final_frame)
+                            self.recording_stats['frames_written'] += 1
+                            self.recording_stats['last_write_time'] = time.time()
+                        else:
+                            # 如果没有统计信息，直接写入
+                            self.video_writer.write(final_frame)
+                    else:
+                        if hasattr(self, 'recording_stats'):
+                            self.recording_stats['write_errors'] += 1
+                        logger.warning(f"Camera {self.camera_id}: Invalid frame data for recording")
+                        
+                except Exception as e:
+                    if hasattr(self, 'recording_stats'):
+                        self.recording_stats['write_errors'] += 1
+                    logger.error(f"Camera {self.camera_id}: Video write error: {e}")
+                    
+                    # 如果写入错误过多，停止录制以避免进一步问题
+                    if hasattr(self, 'recording_stats') and self.recording_stats['write_errors'] > 10:
+                        logger.error(f"Camera {self.camera_id}: Too many write errors, stopping recording")
+                        self.stop_recording()
+
+                # <--- ADDED START: Draw Head Direction Marker --->
+            if DDS_ENABLED:
+                current_yaw = 0.0
+                with self.head_state_lock:
+                    current_yaw = self.head_state.get('yaw_deg', 0.0)
+
+                # Get frame dimensions
+                h, w, _ = final_frame.shape
+                center_x = w // 2
+
+                # Map the yaw angle to a pixel coordinate on the screen
+                # The angle is normalized from -1 to 1 based on the camera's FOV
+                # Clamp the angle to prevent the marker from going way off-screen
+                clamped_yaw = max(-HEAD_MAX_YAW_DEG, min(current_yaw, HEAD_MAX_YAW_DEG))
+                angle_ratio = clamped_yaw / (CAMERA_HORIZONTAL_FOV_DEG / 2.0)
+                
+                # Calculate the marker's x position
+                marker_x = int(center_x + (angle_ratio * center_x))
+                marker_x = max(0, min(marker_x, w - 1)) # Clamp to screen bounds
+
+                # Draw an arrowed line as the marker
+                # Points from the top-center downwards to the calculated x position
+                marker_start_pt = (marker_x, 0)
+                marker_end_pt = (marker_x, 20)
+                cv2.arrowedLine(final_frame, marker_start_pt, marker_end_pt, (0, 0, 255), 2, cv2.LINE_AA)
+            # <--- ADDED END --->
+
+
+            # 4. JPEG Encode the final frame
+            encode_params = [cv2.IMWRITE_JPEG_QUALITY, self.config['quality']]
+            success, encoded_jpg = cv2.imencode('.jpg', final_frame, encode_params)
+
+            return encoded_jpg.tobytes() if success else None
+        except Exception as e:
+            logger.error(f"Frame processing failed for camera {self.camera_id}: {e}")
+            return None
+    
+    # ... keep get_latest_frame and get_camera_info methods as they are ...
     def get_latest_frame(self) -> Optional[CameraFrame]:
         """Gets the most recent frame, non-blocking."""
         with self._frame_lock:
@@ -926,6 +1195,9 @@ class SmartCameraHandler:
 
     def stop(self):
         """Stops the camera and releases resources."""
+        if self.is_recording:
+            self.stop_recording() # This will properly stop and release the writer
+
         logger.info(f"Stopping camera {self.camera_id}...")
         self.is_running = False
 
@@ -936,15 +1208,6 @@ class SmartCameraHandler:
             logger.info(f"Releasing VideoCapture object for camera {self.camera_id}.")
             self.cap.release()
             self.cap = None
-
-        # Drain the queue
-        '''
-        while not self.frame_queue.empty():
-            try:
-                self.frame_queue.get_nowait()
-            except Empty:
-                break
-        '''
 
         with self._frame_lock:
             self._latest_frame = None
@@ -995,11 +1258,49 @@ class CameraGateway:
             'frames_sent': 0,
             'errors': 0
         }
+        # <--- ADDED START: DDS State and Thread Management --->
+        if DDS_ENABLED:
+            self.head_state = {'yaw_deg': 0.0} # Shared dictionary for head angle
+            self.head_state_lock = threading.Lock()
+            self.dds_thread = threading.Thread(target=self._dds_subscriber_loop, daemon=True)
+        # <--- ADDED END --->
+    
+    def _dds_subscriber_loop(self):
+        """A dedicated thread to listen for DDS HeadCommand messages."""
+        logger.info("DDS subscriber thread started.")
+        # NOTE: You might need to specify your network interface here
+        # Example: ChannelFactoryInitialize(networkInterface="eth0")
+        try:
+            ChannelFactoryInitialize() 
+            sub = ChannelSubscriber("HeadCommand", HeadCommand)
+            sub.Init()
+            logger.info("Successfully subscribed to DDS topic 'HeadCommand'.")
+        except Exception as e:
+            logger.error(f"Failed to initialize DDS subscriber: {e}. Head tracking is disabled.")
+            return
+
+        while self.is_running:
+            try:
+                msg = sub.Read(100) # Read with a 100ms timeout
+                if msg:
+                    with self.head_state_lock:
+                        self.head_state['yaw_deg'] = msg.yaw_deg
+                    # logger.debug(f"Received head yaw: {msg.yaw_deg:.2f}°")
+            except Exception as e:
+                logger.error(f"Error in DDS subscriber loop: {e}")
+                time.sleep(1) # Avoid spamming errors
+        
+        # sub.Close() # Proper cleanup
+        logger.info("DDS subscriber thread stopped.")
     
     async def start(self):
         """启动网关服务"""
         loop = asyncio.get_running_loop()
         logger.info(f"正在启动摄像头网关，监听端口 {self.port}")
+
+        if DDS_ENABLED:
+            self.is_running = True # Set running flag before starting thread
+            self.dds_thread.start()
 
         try:
             self.transport, self.protocol = await loop.create_datagram_endpoint(
@@ -1024,9 +1325,14 @@ class CameraGateway:
     
     async def _initialize_cameras(self):
         """初始化摄像头"""
-        for camera_id, config in CAMERA_CONFIGS.items():
+        for camera_id, config in CAMERA_CONFIGS.items(): #
             try:
-                camera = SmartCameraHandler(camera_id, config)
+                if DDS_ENABLED: #
+                    # --- MODIFIED TO PASS THE PATH ---
+                    camera = SmartCameraHandler(camera_id, config, self.head_state, self.head_state_lock, RECORDING_PATH) #
+                else:
+                    # Pass dummy data if DDS is disabled
+                    camera = SmartCameraHandler(camera_id, config, {}, threading.Lock(), RECORDING_PATH) #
                 if await camera.start():
                     self.cameras[camera_id] = camera
                     logger.info(f"摄像头 {camera_id} ({config['name']}) 初始化成功")
@@ -1075,6 +1381,12 @@ class CameraGateway:
         camera_ids = data.get('camera_ids', [])
         session_id = data.get('session_id', uuid.uuid4().hex)
         
+        for cam_id in camera_ids:
+            if cam_id in self.cameras:
+                camera = self.cameras[cam_id]
+                camera.subscriber_count += 1
+                camera.start_recording() # This will only start if it's not already running
+
         self.active_clients[addr] = {
             'session_id': session_id,
             'camera_ids': camera_ids,
@@ -1093,6 +1405,13 @@ class CameraGateway:
     async def _handle_unsubscribe(self, data: Dict, addr: Tuple[str, int]):
         """处理取消订阅请求"""
         if addr in self.active_clients:
+            subscribed_ids = self.active_clients[addr].get('camera_ids', [])
+            for cam_id in subscribed_ids:
+                if cam_id in self.cameras:
+                    camera = self.cameras[cam_id]
+                    camera.subscriber_count = max(0, camera.subscriber_count - 1) # Prevent going below zero
+                    if camera.subscriber_count == 0:
+                        camera.stop_recording()
             del self.active_clients[addr]
             logger.info(f"客户端 {addr} 取消订阅")
         
@@ -1273,6 +1592,13 @@ class CameraGateway:
                 ]
                 for addr in expired_clients:
                     if addr in self.active_clients:
+                        subscribed_ids = self.active_clients[addr].get('camera_ids', [])
+                        for cam_id in subscribed_ids:
+                            if cam_id in self.cameras:
+                                camera = self.cameras[cam_id]
+                                camera.subscriber_count = max(0, camera.subscriber_count - 1)
+                                if camera.subscriber_count == 0:
+                                    camera.stop_recording()
                         del self.active_clients[addr]
                         logger.info(f"清理过期客户端: {addr}")
                 
@@ -1319,6 +1645,9 @@ class CameraGateway:
             return
         self.is_running = False
         logger.info("正在停止网关服务...")
+
+        if DDS_ENABLED and self.dds_thread.is_alive():
+            self.dds_thread.join(timeout=2)
         
         for camera in self.cameras.values():
             camera.stop()

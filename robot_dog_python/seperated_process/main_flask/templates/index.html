@@ -533,7 +533,8 @@
             const errorItem = document.createElement('div');
             errorItem.id = `motor-error-item-${i}`;
             errorItem.className = 'motor-error-item';
-            errorItem.innerHTML = `<span class="font-mono text-xs">${motorNames[i]}</span><span id="motor-error-status-${i}">--</span>`;
+            errorItem.innerHTML = `<span class="font-mono text-xs">${motorNames[i]}</span><span id="motor-torque-report-${i}" class="font-mono text-xs text-gray-500">-- Nm</span><span id="motor-error-status-${i}">--</span>`;
+            // errorItem.innerHTML = `<span class="font-mono text-xs">${motorNames[i]}</span><span id="motor-error-status-${i}">--</span>`;
             motorErrorGrid.appendChild(errorItem);
             const card = document.createElement('div');
             card.className = 'motor-card';
@@ -1017,6 +1018,7 @@
                     const errorStatus = document.getElementById(`motor-error-status-${i}`);
                     errorStatus.textContent = motor.error_str;
                     errorItem.className = 'motor-error-item ' + (motor.error_str === 'OK' ? 'motor-error-ok' : 'motor-error-fault');
+                    document.getElementById(`motor-torque-report-${i}`).textContent = `${motor.tau_est.toFixed(2)} Nm`;
                     document.getElementById(`motor-title-${i}`).textContent = `${motorNames[i]} (${motor.error_str})`;
                     document.getElementById(`motor-title-${i}`).classList.toggle('text-danger', motor.error_str !== 'OK');
                     document.getElementById(`motor-q-${i}`).textContent = `${motor.q.toFixed(3)} rad`;

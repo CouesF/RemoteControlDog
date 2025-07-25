@@ -59,33 +59,33 @@ class FisheyeCorrector:
         Applies distortion correction and then flips the frame, measuring each step.
         """
         # Overall timer for the whole correction process
-        t_start_total = time.time()
+        # t_start_total = time.time()
 
         # --- 1. Measure optional resize ---
-        resize_ms = 0.0
-        t_start_resize = time.time()
+        # resize_ms = 0.0
+        # t_start_resize = time.time()
         # Ensure input frame matches the size used for calibration
         if frame.shape[1] != self.calibration_input_size[0] or frame.shape[0] != self.calibration_input_size[1]:
             frame = cv2.resize(frame, self.calibration_input_size, interpolation=cv2.INTER_AREA)
-            resize_ms = (time.time() - t_start_resize) * 1000
+            # resize_ms = (time.time() - t_start_resize) * 1000
 
         # --- 2. Measure core undistortion ---
-        t_start_remap = time.time()
+        # t_start_remap = time.time()
         corrected_frame = cv2.remap(frame, self.map_x, self.map_y,
                                     interpolation=cv2.INTER_LINEAR,
                                     borderMode=cv2.BORDER_CONSTANT,
                                     borderValue=(0, 0, 0))
-        remap_ms = (time.time() - t_start_remap) * 1000
+        # remap_ms = (time.time() - t_start_remap) * 1000
 
         # --- 3. Measure optional flip ---
-        flip_ms = 0.0
+        # flip_ms = 0.0
         if self.flip_code is not None:
             t_start_flip = time.time()
             corrected_frame = cv2.flip(corrected_frame, self.flip_code)
-            flip_ms = (time.time() - t_start_flip) * 1000
+            # flip_ms = (time.time() - t_start_flip) * 1000
 
-        total_ms = (time.time() - t_start_total) * 1000
-
+        # total_ms = (time.time() - t_start_total) * 1000
+        '''
         # --- 4. Print the timing results to the terminal ---
         print(
             f"Correction Timings (ms) - "
@@ -94,7 +94,7 @@ class FisheyeCorrector:
             f"Resize: {resize_ms:.2f} | "
             f"Flip: {flip_ms:.2f}"
         )
-
+        '''
         return corrected_frame
 
     def _generate_maps(self):

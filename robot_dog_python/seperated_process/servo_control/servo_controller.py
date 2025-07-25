@@ -213,8 +213,8 @@ class ServoController:
         • pos <  0 : 解释为“相对当前位置的偏移量”
         """
         # Define your minimum and maximum allowed positions
-        MIN_ALLOWED_POS = 1600 # Example: set your desired minimum
-        MAX_ALLOWED_POS = 2496 # Example: set your desired maximum
+        MIN_ALLOWED_POS = 1024 # Example: set your desired minimum
+        MAX_ALLOWED_POS = 3072 # Example: set your desired maximum
 
         if pos < 0:
             pos = self._calc_target(sid, pos)     # Turn into absolute target

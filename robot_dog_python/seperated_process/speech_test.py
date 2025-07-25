@@ -25,7 +25,7 @@ def test_tts():
     
     # 1. 发送音量设置命令
     vol_cmd = SpeechControl()
-    vol_cmd.volume = 70  # 70%音量
+    vol_cmd.volume = 100  # 70%音量
     pub.Write(vol_cmd)
     print("🔊 已发送音量设置命令 (70%)")
     

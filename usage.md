@@ -9,5 +9,13 @@ cd /home/d3lab/Projects/RemoteControlDog/robot_dog_python/seperated_process && /
 
 cd /home/d3lab/Projects/RemoteControlDog/robot_dog_python/seperated_process && /home/d3lab/Projects/RemoteControlDog/robot_dog_python/env_unitree/bin/python main_dog_body_control.py
 
+cd /home/d3lab/Projects/RemoteControlDog/robot_dog_python/seperated_process && /home/d3lab/Projects/RemoteControlDog/robot_dog_python/env_unitree/bin/python main_dog_head_control.py
+
+
 -----
 cd /home/d3lab/Projects/RemoteControlDog/robot_dog_python/seperated_process/main_flask && /home/d3lab/Projects/RemoteControlDog/robot_dog_python/env_unitree/bin/python app.py
+
+
+
+cd /home/d3lab/Projects/RemoteControlDog/robot_dog_python/seperated_process && /home/d3lab/Projects/RemoteControlDog/robot_dog_python/env_unitree/bin/python main_speech_synthesis.py
+

@@ -13,6 +13,8 @@ from flask.cli import F
 import uvicorn
 import pyaudio
 import threading
+import numpy as np
+import librosa
 
 
 from .config import (
@@ -489,10 +491,10 @@ async def send_robot_command(command_data: Dict):
 # ==================== 麦克风音频流API ====================
 
 # 音频流参数 (调整以降低延迟和优化语音)
-CHUNK = 256  # 减小块大小以降低延迟
+CHUNK = 2048  # 减小块大小以降低延迟
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
-RATE = 16000 # 恢复至16000Hz，因为硬件不支持8000Hz
+RATE = 48000 # 恢复至16000Hz，因为硬件不支持8000Hz
 
 def find_input_device(p: pyaudio.PyAudio):
     """辅助函数，查找可用的音频输入设备"""
@@ -510,7 +512,7 @@ def find_input_device(p: pyaudio.PyAudio):
             if device_index is None: # 备用选项
                 device_index = i
     if device_list:
-        device_index = device_list[0]
+        device_index = device_list[1]
     else:
         logger.warning("No USB or Mic device found, using first available input device.")
     # 如果没有找到合适的设备，记录错误
@@ -518,13 +520,16 @@ def find_input_device(p: pyaudio.PyAudio):
         logger.error("No suitable audio input device found!")
     return device_index
 @app.websocket(f"{API_PREFIX}/ws/mic")
-async def websocket_mic_stream(websocket: WebSocket):
+async def websocket_mic_stream(websocket: WebSocket, samplerate: int = 16000):
     await websocket.accept()
-    logger.info("Microphone WebSocket connection established.")
+    logger.info(f"Microphone WebSocket connection established. Target samplerate: {samplerate}")
     
     p = pyaudio.PyAudio()
     stream = None
     
+    # 目标采样率
+    TARGET_RATE = samplerate
+
     try:
         input_device_index = find_input_device(p)
         if input_device_index is None:
@@ -537,15 +542,28 @@ async def websocket_mic_stream(websocket: WebSocket):
                         frames_per_buffer=CHUNK,
                         input_device_index=input_device_index)
         
-        logger.info("Microphone stream opened.")
+        logger.info(f"Microphone stream opened at {RATE} Hz.")
 
         while True:
             try:
                 # 记录读取时间
                 read_start = time.time()
-                data = await asyncio.to_thread(stream.read, CHUNK)
+                data = await asyncio.to_thread(stream.read, CHUNK, exception_on_overflow=False)
                 read_end = time.time()
-                
+
+                processed_data = data
+                # 如果目标采样率与原始采样率不同，则进行重采样
+                if TARGET_RATE != RATE:
+                    # 将字节数据转换为numpy数组 (int16) -> float32
+                    audio_np = np.frombuffer(data, dtype=np.int16).astype(np.float32) / 32768.0
+                    
+                    # 使用librosa进行重采样
+                    resampled_audio = librosa.resample(audio_np, orig_sr=RATE, target_sr=TARGET_RATE)
+                    
+                    # 将重采样后的数据转换回int16，然后转换为字节
+                    resampled_audio_int16 = (resampled_audio * 32767).astype(np.int16)
+                    processed_data = resampled_audio_int16.tobytes()
+
                 # 创建带时间戳的数据包
                 timestamp = int(time.time() * 1000)  # 毫秒级时间戳
                 
@@ -553,15 +571,17 @@ async def websocket_mic_stream(websocket: WebSocket):
                 metadata = {
                     "timestamp": timestamp,
                     "read_time": (read_end - read_start) * 1000,
-                    "data_size": len(data)
+                    "data_size": len(processed_data),
+                    "original_sample_rate": RATE,
+                    "sent_sample_rate": TARGET_RATE
                 }
                 
                 # 先发送元数据，再发送音频数据
                 await websocket.send_text(json.dumps(metadata))
-                await websocket.send_bytes(data)
+                await websocket.send_bytes(processed_data)
                 
                 # 记录发送时间
-                # logger.debug(f"Audio chunk sent: {len(data)} bytes, read_time: {metadata['read_time']:.2f}ms")
+                # logger.debug(f"Audio chunk sent: {len(processed_data)} bytes, read_time: {metadata['read_time']:.2f}ms")
                 
             except asyncio.CancelledError:
                 break

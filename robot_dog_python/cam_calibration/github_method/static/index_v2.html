@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Periodic Camera Capture</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f0f2f5; margin: 0; padding: 20px; color: #1c1e21; }
+        .container { max-width: 900px; margin: 0 auto; background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        h1, h2 { color: #056de8; border-bottom: 2px solid #e0e0e0; padding-bottom: 10px; }
+        .image-container { text-align: center; margin-bottom: 20px; border: 1px solid #ddd; padding: 10px; border-radius: 8px; background-color: #000; min-height: 320px; display: flex; align-items: center; justify-content: center; }
+        #latest-image { max-width: 100%; height: auto; border-radius: 4px; background-color: #333; }
+        .controls { text-align: center; margin-bottom: 20px; }
+        #capture-btn {
+            background-color: #42b72a; color: white; border: none; padding: 12px 24px;
+            font-size: 18px; font-weight: bold; border-radius: 6px; cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        #capture-btn:hover { background-color: #36a420; }
+        #capture-btn:disabled { background-color: #9dbf97; cursor: not-allowed; }
+        #captured-list { list-style-type: none; padding: 0; }
+        #captured-list li {
+            background: #f7f7f7; padding: 10px; border: 1px solid #ddd;
+            margin-bottom: 8px; border-radius: 4px;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        #captured-list a { text-decoration: none; color: #056de8; font-weight: 500; }
+        .status { text-align: center; margin-top: 10px; font-style: italic; color: #606770; height: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Latest Captured Image</h1>
+        <div class="image-container">
+            <img id="latest-image" src="" alt="Latest capture will appear here.">
+        </div>
+
+        <div class="controls">
+            <button id="capture-btn">Capture Now</button>
+            <div id="status-message" class="status"></div>
+        </div>
+
+        <h2>Capture History</h2>
+        <ul id="captured-list">
+            <li>Loading...</li>
+        </ul>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const captureBtn = document.getElementById('capture-btn');
+            const capturedList = document.getElementById('captured-list');
+            const statusMessage = document.getElementById('status-message');
+            const latestImageElem = document.getElementById('latest-image');
+
+            // Function to fetch and display the list of captured images
+            const refreshCapturedList = async () => {
+                try {
+                    const response = await fetch('/list_captures');
+                    const captures = await response.json();
+                    
+                    capturedList.innerHTML = ''; // Clear the list
+                    
+                    if (captures.length === 0) {
+                         capturedList.innerHTML = '<li>No images captured yet.</li>';
+                    } else {
+                        captures.forEach(capture => {
+                            const li = document.createElement('li');
+                            const a = document.createElement('a');
+                            a.href = capture.path;
+                            a.textContent = capture.filename;
+                            a.target = '_blank';
+                            li.appendChild(a);
+                            capturedList.appendChild(li);
+                        });
+                    }
+                } catch (error) {
+                    console.error('Error fetching captured list:', error);
+                    capturedList.innerHTML = '<li>Error loading images.</li>';
+                }
+            };
+            
+            // Function to update the main image display
+            const updateLatestImage = async () => {
+                try {
+                    const response = await fetch('/latest_image');
+                    if (response.ok) {
+                        const data = await response.json();
+                        // Add a timestamp to the URL to force the browser to reload the image
+                        latestImageElem.src = `${data.path}?t=${new Date().getTime()}`;
+                    }
+                } catch (error) {
+                     console.log('Could not fetch latest image, likely none captured yet.');
+                }
+            };
+
+
+            // Event listener for the manual capture button
+            captureBtn.addEventListener('click', async () => {
+                statusMessage.textContent = 'Capturing...';
+                captureBtn.disabled = true;
+                try {
+                    const response = await fetch('/capture', { method: 'POST' });
+                    if (response.ok) {
+                        const result = await response.json();
+                        statusMessage.textContent = `Success! Captured a new image.`;
+                        // Immediately update the image and the list
+                        await updateLatestImage();
+                        await refreshCapturedList();
+                    } else {
+                        const error = await response.json();
+                        statusMessage.textContent = `Error: ${error.detail}`;
+                    }
+                } catch (error) {
+                    console.error('Manual capture failed:', error);
+                    statusMessage.textContent = 'Capture failed. Check server logs.';
+                } finally {
+                    captureBtn.disabled = false;
+                    setTimeout(() => { statusMessage.textContent = ''; }, 4000);
+                }
+            });
+
+            // --- Initial Load and Periodic Updates ---
+            // Initial load
+            refreshCapturedList();
+            updateLatestImage();
+
+            // Periodically check for new images from the background task
+            // and refresh the capture list.
+            setInterval(() => {
+                updateLatestImage();
+                refreshCapturedList();
+            }, 5000); // Check every 5 seconds
+        });
+    </script>
+</body>
+</html>

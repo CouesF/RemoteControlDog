@@ -77,3 +77,7 @@ logs/
 robot_dog_python/seperated_process/main_flask/SECURITY_UPDATE.md
 capture*.jpg
 undistorted*.jpg
+
+*.mp4
+*.pcm
+*.wav
