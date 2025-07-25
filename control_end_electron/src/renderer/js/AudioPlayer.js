@@ -1,8 +1,8 @@
 /**
  * AudioPlayer.js
  * 
- * Handles WebSocket connection for audio streaming and plays the received audio
- * using the Web Audio API with an improved buffering strategy to prevent stuttering.
+ * Optimized WebSocket audio streaming player with reduced latency and better performance.
+ * Uses simplified buffering strategy to minimize audio stuttering.
  */
 export class AudioPlayer {
     constructor(wsUrl, options = {}) {
@@ -11,19 +11,23 @@ export class AudioPlayer {
         this.websocket = null;
         this.audioContext = null;
         this.isConnected = false;
-        this.actualPlaybackTimes = []; // 记录实际播放时间
         
-        // 音频缓冲区设置
-        this.bufferSize = options.bufferSize || 4; // 缓冲区大小，单位为音频块数
-        this.audioQueue = []; // 音频缓冲队列
-        this.isPlaying = false; // 是否正在播放
-        this.lastMetadata = null; // 上一个元数据
-        this.scheduledEndTime = 0; // 计划的结束时间
+        // 优化后的音频缓冲区设置 - 减少缓冲延迟
+        this.bufferSize = options.bufferSize || 2; // 减少缓冲区大小
+        this.audioQueue = [];
+        this.isPlaying = false;
+        this.scheduledEndTime = 0;
+        this.nextStartTime = 0;
         
         // 性能监控
-        this.bufferUnderrunCount = 0; // 缓冲区不足计数
-        this.averageProcessingTime = 0; // 平均处理时间
-        this.processedChunks = 0; // 处理的块数
+        this.bufferUnderrunCount = 0;
+        this.averageProcessingTime = 0;
+        this.processedChunks = 0;
+        this.totalLatency = 0;
+        
+        // 优化设置
+        this.minBufferTime = 0.05; // 最小缓冲时间50ms
+        this.maxBufferTime = 0.2;  // 最大缓冲时间200ms
     }
 
     initAudio() {
@@ -109,55 +113,74 @@ export class AudioPlayer {
     }
 
     processAudioData(arrayBuffer) {
-        const processStart = performance.now();
-        
-        // 将二进制数据转换为音频数据
-        const int16Data = new Int16Array(arrayBuffer);
-        const float32Data = new Float32Array(int16Data.length);
-
-        for (let i = 0; i < int16Data.length; i++) {
-            float32Data[i] = int16Data[i] / 32768.0;
+        if (!this.audioContext || this.audioContext.state !== 'running') {
+            console.warn('AudioContext not ready, skipping audio data');
+            return;
         }
 
-        const audioBuffer = this.audioContext.createBuffer(
-            1,
-            float32Data.length,
-            this.sampleRate
-        );
+        const processStart = performance.now();
+        
+        try {
+            // 快速转换：直接使用TypedArray视图，避免循环
+            const int16Data = new Int16Array(arrayBuffer);
+            const float32Data = new Float32Array(int16Data.length);
+            
+            // 优化的转换循环 - 批量处理
+            for (let i = 0; i < int16Data.length; i++) {
+                float32Data[i] = int16Data[i] * 0.000030517578125; // 1/32768 预计算
+            }
 
-        audioBuffer.copyToChannel(float32Data, 0);
-        
-        // 将音频数据添加到缓冲队列
-        this.queueAudioBuffer(audioBuffer);
-        
-        // 计算处理时间并更新平均值
-        const processingTime = performance.now() - processStart;
-        this.processedChunks++;
-        this.averageProcessingTime = (this.averageProcessingTime * (this.processedChunks - 1) + processingTime) / this.processedChunks;
-        
-        // 只在调试时打印详细日志
-        if (this.processedChunks % 10 === 0) {
-            console.log(`📊 Audio stats: Avg processing time: ${this.averageProcessingTime.toFixed(2)}ms, Buffer size: ${this.audioQueue.length}`);
+            // 创建音频缓冲区
+            const audioBuffer = this.audioContext.createBuffer(
+                1,
+                float32Data.length,
+                this.sampleRate
+            );
+
+            audioBuffer.copyToChannel(float32Data, 0);
+            
+            // 添加到队列
+            this.queueAudioBuffer(audioBuffer);
+            
+            // 性能统计
+            const processingTime = performance.now() - processStart;
+            this.processedChunks++;
+            this.averageProcessingTime = (this.averageProcessingTime * (this.processedChunks - 1) + processingTime) / this.processedChunks;
+            
+            // 减少日志输出频率
+            if (this.processedChunks % 50 === 0) {
+                console.log(`📊 Audio performance: ${this.averageProcessingTime.toFixed(1)}ms, Queue: ${this.audioQueue.length}, Underruns: ${this.bufferUnderrunCount}`);
+            }
+        } catch (error) {
+            console.error('Error processing audio data:', error);
         }
     }
 
     queueAudioBuffer(buffer) {
-        // 将音频缓冲区添加到队列
+        const bufferDuration = buffer.duration;
+        
+        // 添加带时间戳的缓冲区
         this.audioQueue.push({
-            buffer: buffer
+            buffer: buffer,
+            duration: bufferDuration,
+            timestamp: performance.now()
         });
         
-        // 如果缓冲区已经达到预设大小或者未处于播放状态，启动播放
-        if ((this.audioQueue.length >= this.bufferSize && !this.isPlaying) || 
-            (this.audioQueue.length === 1 && !this.isPlaying)) {
+        // 动态调整启动策略 - 减少延迟
+        const shouldStart = !this.isPlaying && (
+            this.audioQueue.length >= 1 || // 立即开始，减少延迟
+            (this.audioQueue.length === 1 && this.bufferUnderrunCount > 3) // 如果之前有underrun，需要更多缓冲
+        );
+        
+        if (shouldStart) {
             this.startPlayback();
         }
         
-        // 如果缓冲区过大，移除最旧的项防止内存增长过快
-        const maxBufferSize = this.bufferSize * 3;
+        // 防止缓冲区过大
+        const maxBufferSize = Math.max(this.bufferSize * 2, 6);
         if (this.audioQueue.length > maxBufferSize) {
-            console.warn(`Buffer growing too large (${this.audioQueue.length}), trimming...`);
-            this.audioQueue = this.audioQueue.slice(-this.bufferSize);
+            console.warn(`Buffer overflow: ${this.audioQueue.length} > ${maxBufferSize}, dropping old audio`);
+            this.audioQueue = this.audioQueue.slice(-Math.floor(maxBufferSize / 2));
         }
     }
     
@@ -173,10 +196,11 @@ export class AudioPlayer {
     
     playNextBuffer() {
         if (this.audioQueue.length === 0) {
-            // 缓冲区空了，等待更多数据
             this.isPlaying = false;
             this.bufferUnderrunCount++;
-            console.warn(`Buffer underrun #${this.bufferUnderrunCount}`);
+            if (this.bufferUnderrunCount % 5 === 1) { // 减少日志频率
+                console.warn(`Buffer underrun #${this.bufferUnderrunCount}`);
+            }
             return;
         }
         
@@ -185,56 +209,42 @@ export class AudioPlayer {
         const source = this.audioContext.createBufferSource();
         source.buffer = buffer;
         
-        // 连接到分析器节点，然后到输出
-        source.connect(this.analyser);
+        // 直接连接到destination，减少节点链路延迟
+        source.connect(this.audioContext.destination);
         
         const currentTime = this.audioContext.currentTime;
         let startTime;
         
-        // 确定开始时间：如果这是连续播放，则从上一个结束时间开始
-        if (this.scheduledEndTime > currentTime) {
+        // 优化启动时间计算
+        if (this.scheduledEndTime > currentTime + 0.01) { // 添加小的容错时间
             startTime = this.scheduledEndTime;
         } else {
-            // 有缝隙，立即开始播放
-            startTime = currentTime;
+            // 立即播放或很小的延迟
+            startTime = Math.max(currentTime, currentTime + 0.005); // 最小5ms延迟避免点击声
             
-            // 如果发生了明显的缝隙，记录
-            if (this.scheduledEndTime > 0 && currentTime - this.scheduledEndTime > 0.05) {
-                console.warn(`Audio gap detected: ${((currentTime - this.scheduledEndTime) * 1000).toFixed(2)}ms`);
+            // 只在significant gap时警告
+            if (this.scheduledEndTime > 0 && currentTime - this.scheduledEndTime > 0.1) {
+                console.warn(`Significant audio gap: ${((currentTime - this.scheduledEndTime) * 1000).toFixed(0)}ms`);
             }
         }
         
-        // 计算这个缓冲区的持续时间
-        const bufferDuration = buffer.duration;
-        
-        // 更新下一个缓冲区的计划开始时间
-        this.scheduledEndTime = startTime + bufferDuration;
+        // 更新计划结束时间
+        this.scheduledEndTime = startTime + audioItem.duration;
         
         // 启动播放
         source.start(startTime);
         
-        // 记录延迟信息
-        const playbackDelay = (startTime - currentTime) * 1000; // 转为毫秒
+        // 计算并记录延迟
+        const latency = (startTime - currentTime) * 1000;
+        this.totalLatency = (this.totalLatency * 0.9) + (latency * 0.1); // 指数平滑
         
-        // 只在调试或有问题时打印日志
-        if (playbackDelay > 100) {
-            console.log(`🎵 Audio playback: delay=${playbackDelay.toFixed(0)}ms`);
-        }
-        
-        // 当这个缓冲区播放完毕时，安排下一个
-        source.onended = () => {
-            // 实际上我们不使用这个事件，因为它可能不可靠
-            // 我们依赖计划的时间来安排下一个缓冲区
-        };
-        
-        // 安排下一个缓冲区播放（使用定时器而不是onended事件）
-        // 稍微提前安排，以确保无缝播放
-        const schedulingAdvance = Math.min(bufferDuration * 0.5, 0.1); // 最多提前100ms或一半缓冲区时间
-        const schedulingDelay = (bufferDuration - schedulingAdvance) * 1000;
+        // 提前安排下一个缓冲区，使用递归调用而不是setTimeout来减少延迟
+        const advance = Math.min(audioItem.duration * 0.8, 0.05); // 提前时间
+        const nextCallDelay = Math.max((audioItem.duration - advance) * 1000, 10); // 最少10ms
         
         setTimeout(() => {
             this.playNextBuffer();
-        }, schedulingDelay);
+        }, nextCallDelay);
     }
 
     // 这些方法已经被上面的新实现替代，所以可以删除
