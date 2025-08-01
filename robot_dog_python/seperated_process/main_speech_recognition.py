@@ -10,11 +10,21 @@ import numpy as np
 from enum import Enum
 from hashlib import sha256
 from urllib.parse import urlparse
-from websockets.client import connect
+import websockets  # 修复导入方式
 import warnings
+import os
+import sys
 
+from unitree_sdk2py.core.channel import ChannelPublisher, ChannelSubscriber, ChannelFactoryInitialize
 
-# 配置参数（替换为实际值）
+current_script_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_script_dir)
+communication_dir_path = os.path.join(parent_dir, 'communication')
+sys.path.append(communication_dir_path)
+# 只导入Utterance
+from dds_data_structure import Utterance
+
+# 配置参数
 appid = "2657638375"
 token = "NHt65iYV2xQ-0Uv6VfO97BletTaOMtAn"
 cluster = "volcengine_streaming_common"
@@ -156,13 +166,13 @@ class AsrWsClient:
         self.mic_device_index = kwargs.get("mic_device_index", None)
         self.mic_device_name = kwargs.get("mic_device_name", "USB Audio Device")
         self.stop_event = asyncio.Event()
-        
         ChannelFactoryInitialize()  # 初始化 DDS 工厂
-        self.dds_pub = ChannelPublisher("SpeechRecognitionResult")
+        self.dds_pub = ChannelPublisher("SpeechRecognitionResult", Utterance)  # 只发布Utterance类型
+        self.dds_pub.Init() 
 
     def construct_request(self, reqid):
         """构建请求参数"""
-        # 固定使用16000Hz采样率，因为音频已重采样
+        # 固定使用16000Hz采样率
         req = {
             'app': {
                 'appid': self.appid,
@@ -237,7 +247,8 @@ class AsrWsClient:
         results = []
         
         try:
-            async with connect(self.ws_url, extra_headers=header, max_size=1000000000) as ws:
+            # 修复websockets导入方式
+            async with websockets.connect(self.ws_url, additional_headers=header, max_size=1000000000) as ws:
                 await ws.send(full_client_request)
                 res = await ws.recv()
                 result = parse_response(res)
@@ -264,19 +275,44 @@ class AsrWsClient:
                         await ws.send(audio_request)
                         res = await ws.recv()
                         parsed = parse_response(res)
+
+                        #print("DEBUG: Received from server:", parsed) # <-- ADD THIS LINE FOR DEBUGGING
                         
                         if 'payload_msg' in parsed:
-                            print("收到识别响应:", parsed['payload_msg'])  # 添加日志
                             msg = parsed['payload_msg']
-                            if 'utterances' in msg:
-                                for utt in msg['utterances']:
-                                    print("[识别中]", utt["text"])
-                                    if utt.get("definite", False):
-                                        print("[最终结果]", utt["text"])
-                                        results.append(utt["text"])
+                            
+                            # Check if the message contains the 'result' key with transcription data
+                            if 'result' in msg and msg['result']:
+                                # Iterate through each result block (usually there's only one)
+                                for res_item in msg['result']:
+                                    # Extract the main transcribed text
+                                    text_to_publish = res_item.get('text', '').strip()
+                                    
+                                    # Determine if the result is final by checking the 'definite' flag
+                                    # in the first utterance of the result.
+                                    is_definite = False
+                                    if 'utterances' in res_item and res_item['utterances']:
+                                        is_definite = res_item['utterances'][0].get('definite', False)
+
+                                    # Only publish if there is actual text
+                                    if text_to_publish:
+                                        result_type = "FINAL" if is_definite else "INTERIM"
+                                        print(f"[{result_type}] Publishing to DDS: '{text_to_publish}'")
+                                        
+                                        # 1. Create the DDS message object
+                                        utterance = Utterance(
+                                            text=text_to_publish,
+                                            definite=is_definite
+                                        )
+                                        
+                                        # 2. Publish the message over the DDS network
+                                        self.dds_pub.Write(utterance)
+                            else:
+                                # Handle status updates that don't have transcription results
+                                print(f"[STATUS UPDATE] Code: {msg.get('code')}, Message: {msg.get('message')}")
+
 
                         seq += 1
-
                         
                 except KeyboardInterrupt:
                     print("\n检测到用户中断，发送结束帧...")

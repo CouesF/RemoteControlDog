@@ -17,6 +17,30 @@ from cyclonedds.topic import Topic
 from cyclonedds.pub import DataWriter
 from cyclonedds.sub import DataReader
 
+process_management_lock = threading.Lock() 
+managed_processes = {}
+SERVER_SCRIPT_PATH = "/home/d3lab/Projects/RemoteControlDog/robot_dog_python/seperated_process/main_process_manager.py"
+PROCESS_MANAGER_BASE_DIR = os.path.dirname(SERVER_SCRIPT_PATH)
+LOG_DIR = os.path.join(PROCESS_MANAGER_BASE_DIR, "logs")
+
+# Corrected SCRIPTS_TO_MANAGE with absolute paths
+SCRIPTS_TO_MANAGE = {
+    "main_camera_gateway.py":     {"field_name": "cam_gateway",   "path": os.path.join(PROCESS_MANAGER_BASE_DIR, "main_camera_gateway.py"), "autostart": False},
+    "main_control_gateway.py":    {"field_name": "ctrl_gateway",  "path": os.path.join(PROCESS_MANAGER_BASE_DIR, "main_control_gateway.py"), "autostart": False},
+    "main_dog_status.py":         {"field_name": "dog_status",    "path": os.path.join(PROCESS_MANAGER_BASE_DIR, "main_dog_status.py"), "autostart": True},
+    "main_jetson_power_server.py":{"field_name": "power_srv",     "path": os.path.join(PROCESS_MANAGER_BASE_DIR, "main_jetson_power_server.py"), "autostart": False},
+    "main_dog_body_control.py":   {"field_name": "body_ctrl",     "path": os.path.join(PROCESS_MANAGER_BASE_DIR, "main_dog_body_control.py"), "autostart": False},
+    "main_dog_head_control.py":   {"field_name": "head_ctrl",     "path": os.path.join(PROCESS_MANAGER_BASE_DIR, "main_dog_head_control.py"), "autostart": False},
+    "main_speech_synthesis.py":   {"field_name": "speech_synth",  "path": os.path.join(PROCESS_MANAGER_BASE_DIR, "main_speech_synthesis.py"), "autostart": False},
+    "main_speech_recognition.py": {"field_name": "speech_recog", "path": os.path.join(PROCESS_MANAGER_BASE_DIR, "main_speech_recognition.py"), "autostart": False},
+    "start_woz_backend.py": {
+        "field_name": "woz_backend",
+        # Use the correct absolute path for this specific script
+        "path": "/home/d3lab/Projects/RemoteControlDog/robot_dog_python/start_woz_backend.py",
+        "autostart": False
+    }
+}
+
 # --- Real DDS Imports ---
 COMMUNICATION_DIR = "/home/d3lab/Projects/RemoteControlDog/robot_dog_python/communication"
 if COMMUNICATION_DIR not in sys.path:
@@ -299,6 +323,74 @@ def _speech_publisher_thread():
 def index():
     """Renders the main control panel HTML page."""
     return render_template('index.html')
+
+def launch_script(script_name: str):
+    """Launches a script and manages it in-process."""
+    with process_management_lock:
+        if (script_name in managed_processes) and (managed_processes[script_name].poll() is None):
+            print(f"-> Info: Script '{script_name}' is already running.")
+            return
+
+        config = SCRIPTS_TO_MANAGE.get(script_name)
+        if not config:
+            print(f"-> Error: Script '{script_name}' not defined in SCRIPTS_TO_MANAGE.")
+            return
+
+        script_path = config["path"] # Path is now absolute
+
+        if not os.path.exists(script_path):
+            print(f"-> Error: Script path does not exist: {script_path}")
+            return
+
+        os.makedirs(LOG_DIR, exist_ok=True)
+        log_file_path = os.path.join(LOG_DIR, f"{script_name}.log")
+        log_file = open(log_file_path, "a", buffering=1)
+        log_file.write(f"\n--- SESSION STARTED AT {time.ctime()} ---\n")
+        
+        process = subprocess.Popen([sys.executable, script_path], stdout=log_file, stderr=subprocess.STDOUT)
+        managed_processes[script_name] = process
+        process.log_file = log_file
+        print(f"-> Launched '{script_name}' with PID {process.pid}.")
+
+def terminate_script(script_name: str):
+    """Terminates a managed script."""
+    with process_management_lock:
+        if script_name in managed_processes and managed_processes[script_name].poll() is None:
+            process = managed_processes[script_name]
+            print(f"-> Terminating '{script_name}' with PID {process.pid}.")
+            process.terminate()
+            try:
+                process.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                print(f"-> Killing '{script_name}' as it did not terminate gracefully.")
+                process.kill()
+            
+            if hasattr(process, 'log_file') and not process.log_file.closed:
+                process.log_file.write(f"--- SESSION ENDED AT {time.ctime()} ---\n")
+                process.log_file.close()
+            
+            del managed_processes[script_name]
+            print(f"-> Terminated '{script_name}'.")
+
+def build_and_broadcast_status():
+    """Builds the process status dictionary and broadcasts it via SocketIO."""
+    status_dict = {}
+    with process_management_lock:
+        for script_name, config in SCRIPTS_TO_MANAGE.items():
+            status = "STOPPED"
+            pid = 0
+            if (script_name in managed_processes) and (managed_processes[script_name].poll() is None):
+                status = "RUNNING"
+                pid = managed_processes[script_name].pid
+            
+            status_dict[script_name] = {
+                "script_name": script_name,
+                "status": status,
+                "pid": pid
+            }
+    
+    # Broadcast to all connected clients
+    socketio.emit('process_status_update', status_dict)
 
 @socketio.on('connect')
 def handle_connect():
@@ -647,21 +739,14 @@ def process_status_subscriber_thread():
 def status_broadcaster_thread():
     """
     Dedicated thread to broadcast the latest process status to all clients
-    at a regular interval.
+    at a regular interval by directly checking the state.
     """
-    global process_statuses, status_lock
     print("Status broadcaster thread started.")
     while not shutdown_event.is_set():
         try:
-            # Broadcast every 2 seconds.
-            time.sleep(2) 
-            with status_lock:
-                # Make a copy to avoid issues if the dict is updated while emitting.
-                status_to_send = process_statuses.copy()
-
-            if status_to_send: # Only emit if we have some status data.
-                socketio.emit('process_status_update', status_to_send)
-        
+            # Broadcast every 1 second.
+            build_and_broadcast_status()
+            time.sleep(1) 
         except Exception as e:
             print(f"Status broadcaster thread error: {e}")
     print("Status broadcaster thread stopped.")
@@ -669,71 +754,55 @@ def status_broadcaster_thread():
 @socketio.on('request_initial_process_status')
 @check_authentication
 def handle_request_initial_process_status():
-    """
-    Sends the current process status to the client and requests a live update from the server.
-    """
+    """Sends the current process status immediately to the requesting client."""
     sid = request.sid
     print(f"Client {sid} requested initial process status.")
     
-    # Send the last known status immediately to this specific client
-    with status_lock:
-        emit('process_status_update', process_statuses)
-    
-    # Request a fresh status from the process manager (this part is correct)
-    if process_command_writer:
-        try:
-            msg = ProcessCommand(action=ProcessAction.STATUS_ALL.value, target_script="", timestamp=time.time_ns())
-            process_command_writer.write(msg)
-            print("Published STATUS_ALL request to process manager.")
-        except Exception as e:
-            print(f"Error publishing STATUS_ALL request: {e}")
+    # We no longer need to request a status from a server, just build and send it.
+    build_and_broadcast_status()
 
 @socketio.on('process_command')
 @check_authentication
 def handle_process_command(data):
-    """Handles process control commands (start/stop/etc.) from the web UI."""
-
+    """Handles process control commands (start/stop/etc.) directly."""
     command = data.get('command')
     target = data.get('target')
-    print(f"Received process command from {request.sid}: {command} {target}")
+    print(f"Received direct process command from {request.sid}: {command} {target}")
 
     action_map = {
-        'start': ProcessAction.START, 'stop': ProcessAction.STOP, 'restart': ProcessAction.RESTART,
-        'start_all': ProcessAction.START_ALL, 'stop_all': ProcessAction.STOP_ALL, 'restart_all': ProcessAction.RESTART_ALL,
-        'status_all': ProcessAction.STATUS_ALL,
-        'shutdown_all': ProcessAction.SHUTDOWN_SERVER, # Handle the button's command directly
-        'shutdown_server': ProcessAction.SHUTDOWN_SERVER
+        'start': lambda t: launch_script(t),
+        'stop': lambda t: terminate_script(t),
+        'restart': lambda t: (terminate_script(t), time.sleep(0.2), launch_script(t)),
+        'start_all': lambda t: [launch_script(s) for s in SCRIPTS_TO_MANAGE.keys()],
+        'stop_all': lambda t: [terminate_script(s) for s in list(managed_processes.keys())],
+        'restart_all': lambda t: (
+            [terminate_script(s) for s in list(managed_processes.keys())], 
+            time.sleep(0.5), 
+            [launch_script(s) for s in SCRIPTS_TO_MANAGE.keys()]
+        ),
+        'shutdown_server': lambda t: socketio.stop() # Example of how to stop the server
     }
 
-    # --- MODIFIED to use cyclonedds DataWriter ---
-    if process_command_writer is None:
-        print("Error: Process control DDS writer is not initialized.")
-        emit('process_response', {'status': 'error', 'message': 'Backend DDS writer not ready.'})
-        return
-    
-    # The command from the button (e.g., 'start_all' or 'start') is the correct key.
-    action_key = command
-    if action_key not in action_map:
-        # Add this check to see what invalid key is being generated
-        print(f"Error: Invalid action_key '{action_key}' generated.") 
-        emit('process_response', {'status': 'error', 'message': 'Invalid command.'})
-        return
-    
-    msg = ProcessCommand(timestamp=int(time.time_ns()))
-    msg.action = action_map[action_key].value
-    if target and target != 'all':
-        msg.target_script = target
+    if command in action_map:
+        action_function = action_map[command]
+        
+        # We need to handle 'shutdown_server' specially as it doesn't operate on a script target.
+        if command == 'shutdown_server':
+             print("-> Received SHUTDOWN_SERVER command. The web server will stop.")
+             emit('process_response', {'status': 'success', 'message': f"Command '{command}' received. Server is shutting down."})
+             # A more robust solution for shutdown is handled by the atexit handler.
+             # This just confirms receipt of the command. We can trigger a graceful shutdown.
+             shutdown_event.set() # Use the existing event to trigger cleanup
+        else:
+            action_function(target)
+            message = f"Command '{command}' for '{target or 'all'}' executed."
+            print(f"-> {message}")
+            emit('process_response', {'status': 'success', 'message': message})
+            # Give immediate feedback to the client
+            build_and_broadcast_status()
     else:
-        msg.target_script = "" # Ensure it's not None
-
-    try:
-        process_command_writer.write(msg)
-        message = f"Command '{command}' for '{target or 'all'}' sent."
-        print(f"Published ProcessCommand to DDS: {message}")
-        emit('process_response', {'status': 'success', 'message': message})
-    except Exception as e:
-        message = f"DDS publish error for process command: {e}"
-        print(f"Error publishing process command: {e}")
+        message = 'Invalid command.'
+        print(f"-> Error: {message} - '{command}'")
         emit('process_response', {'status': 'error', 'message': message})
 
 
@@ -775,6 +844,14 @@ def cleanup_resources():
     
     # Stop speech publisher
     speech_publisher_active = False
+
+    print("-> Terminating all managed child processes...")
+    with process_management_lock:
+        # Create a copy of the keys to avoid issues while iterating and deleting
+        scripts_to_terminate = list(managed_processes.keys())
+    
+    for script_name in scripts_to_terminate:
+        terminate_script(script_name)
     
     # Close all DDS publishers
     publishers = [
@@ -827,23 +904,21 @@ signal.signal(signal.SIGTERM, signal_handler)
 atexit.register(cleanup_resources)
 
 if __name__ == '__main__':
-    print("--- Launching Dependent Services ---")
-    process_manager_process = launch_process_manager_server()
-    if not process_manager_process:
-        print("WARNING: Continuing without process manager server. Control will be unavailable.")
-
+    print("--- Initializing Integrated Services ---")
+    
+    # 1. Perform autostart for designated scripts
+    print("-> Performing autostart for designated scripts...")
+    for script_name, config in SCRIPTS_TO_MANAGE.items():
+        if config.get("autostart", False):
+            launch_script(script_name)
+    print("-> Autostart complete.")
+    
+    # 2. Initialize all necessary DDS publishers and subscribers
     try:
         print(f"Initializing DDS factory for main process on network interface: {DDS_NETWORK_INTERFACE}")
         ChannelFactoryInitialize(networkInterface=DDS_NETWORK_INTERFACE)
 
-        print("Initializing CycloneDDS participant...")
-        dds_participant = DomainParticipant()
-        
-        # Create the writer for process commands
-        process_cmd_topic = Topic(dds_participant, PROCESS_COMMAND_TOPIC, ProcessCommand)
-        process_command_writer = DataWriter(dds_participant, process_cmd_topic)
-        print(f"CycloneDDS DataWriter for '{PROCESS_COMMAND_TOPIC}' initialized.")
-        
+        # Publishers for robot control (these are correct and needed)
         speech_control_pub = ChannelPublisher(SPEECH_CONTROL_TOPIC, SpeechControl)
         speech_control_pub.Init()
         print(f"DDS Publisher for '{SPEECH_CONTROL_TOPIC}' initialized.")
@@ -865,21 +940,27 @@ if __name__ == '__main__':
         cleanup_resources()
         sys.exit(1)
         
-    # Start threads
+    # 3. Start the necessary background threads
+    print("-> Starting background threads...")
+    
+    # Thread to get dog status from DDS
     subscriber_thread = threading.Thread(target=dds_subscriber_thread, daemon=True)
     subscriber_thread.start()
 
+    # Thread to send speech commands via DDS
     speech_publisher_thread = threading.Thread(target=_speech_publisher_thread, daemon=True)
     speech_publisher_thread.start()
 
-    process_status_thread = threading.Thread(target=process_status_subscriber_thread, daemon=True)
-    process_status_thread.start()
-
+    # Thread to periodically broadcast the status of managed processes
     broadcaster_thread = threading.Thread(target=status_broadcaster_thread, daemon=True)
     broadcaster_thread.start()
 
+    # (The obsolete process_status_thread is now removed)
+    print("-> All threads started.")
+
+    # 4. Run the web server
     try:
-        print("Starting Flask-SocketIO server...")
+        print("Starting Flask-SocketIO server on http://0.0.0.0:5004...")
         socketio.run(app, host='0.0.0.0', port=5004, debug=False, allow_unsafe_werkzeug=True)
     except KeyboardInterrupt:
         print("Received keyboard interrupt, shutting down...")

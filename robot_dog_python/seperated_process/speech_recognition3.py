@@ -13,7 +13,6 @@ from urllib.parse import urlparse
 from websockets.client import connect
 import warnings
 
-
 # 配置参数（替换为实际值）
 appid = "2657638375"
 token = "NHt65iYV2xQ-0Uv6VfO97BletTaOMtAn"
@@ -156,9 +155,6 @@ class AsrWsClient:
         self.mic_device_index = kwargs.get("mic_device_index", None)
         self.mic_device_name = kwargs.get("mic_device_name", "USB Audio Device")
         self.stop_event = asyncio.Event()
-        
-        ChannelFactoryInitialize()  # 初始化 DDS 工厂
-        self.dds_pub = ChannelPublisher("SpeechRecognitionResult")
 
     def construct_request(self, reqid):
         """构建请求参数"""
@@ -266,17 +262,10 @@ class AsrWsClient:
                         parsed = parse_response(res)
                         
                         if 'payload_msg' in parsed:
-                            print("收到识别响应:", parsed['payload_msg'])  # 添加日志
-                            msg = parsed['payload_msg']
-                            if 'utterances' in msg:
-                                for utt in msg['utterances']:
-                                    print("[识别中]", utt["text"])
-                                    if utt.get("definite", False):
-                                        print("[最终结果]", utt["text"])
-                                        results.append(utt["text"])
-
+                            print("[Partial]", parsed['payload_msg'])
+                            results.append(parsed['payload_msg'])
+                            
                         seq += 1
-
                         
                 except KeyboardInterrupt:
                     print("\n检测到用户中断，发送结束帧...")

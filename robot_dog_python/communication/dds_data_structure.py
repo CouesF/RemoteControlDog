@@ -343,6 +343,10 @@ class MyMotionCommand(IdlStruct, typename="MyMotionCommand"):
     y: float = 0.0             # 高级模式下y轴速度
     r: float = 0.0             # 高级模式下旋转速度
     command_id: int = 0        # 特殊指令, e.g., 'q' to exit
+    hl_roll: float = 0.0
+    hl_pitch: float = 0.0
+    hl_yaw: float = 0.0
+    hl_bodyheight: float = 0.0
 
 @dataclass
 class RobotLog(IdlStruct, typename="RobotLog"):
@@ -417,5 +421,22 @@ class ProcessStatus(IdlStruct, typename="ProcessStatus"):
     dog_status: ScriptStatus = field(default_factory=ScriptStatus)
     power_srv: ScriptStatus = field(default_factory=ScriptStatus)
     speech_synth: ScriptStatus = field(default_factory=ScriptStatus)
-    # state_machine: ScriptStatus = field(default_factory=ScriptStatus)
+    state_machine: ScriptStatus = field(default_factory=ScriptStatus)
     woz_backend: ScriptStatus = field(default_factory=ScriptStatus)
+    
+# --------------------------------------------------------------------------
+# 模块: main_speech_recognition
+# 发布主题: SpeechRecognitionResult
+# 描述: 用于发布语音识别的文本结果。
+# --------------------------------------------------------------------------
+@dataclass
+class Utterance(IdlStruct, typename="Utterance"):
+    """
+    单条语音识别结果
+    """
+    text: str = ""       # 识别到的文本
+    definite: bool = False  # 是否为最终确认结果
+    
+    def __init__(self, text="", definite=False):
+        self.text = text
+        self.definite = definite

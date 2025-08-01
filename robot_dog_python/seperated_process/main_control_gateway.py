@@ -490,8 +490,8 @@ class DDSBridge:
             head_cmd = {
                 'timestamp': int(time.time() * 1000),
                 'action': 0,  # MOVE_DIRECT, 1 NOD, 2 SHAKE HEAD
-                'pitch_deg': command.data.get('pitch', 0.0) *30.0,
-                'yaw_deg': command.data.get('yaw', 0.0)*30.0,
+                'pitch_deg': command.data.get('pitch', 0.0) *70.0,
+                'yaw_deg': command.data.get('yaw', 0.0)*70.0,
                 'expression_char': command.data.get('expression', 'c')
             }
             

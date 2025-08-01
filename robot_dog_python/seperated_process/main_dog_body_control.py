@@ -161,6 +161,7 @@ class RobotController:
         self.low_cmd = unitree_go_msg_dds__LowCmd_()
         self.crc = CRC()
         self.stand_pos = [0.0, 0.67, -1.3] * 4
+        self.init_raise_pos = [0, 0.8, -1.4, 0, 0.8, -1.4, 0, 1.2, -1.9, 0, 1.2, -1.9]
         self.lie_down_pos = [-0.35, 1.36, -2.65, 0.35, 1.36, -2.65, -0.5, 1.36, -2.65, 0.5, 1.36, -2.65]
         self.current_pose = list(self.stand_pos)
         self.last_leg_selection = 0
@@ -353,6 +354,7 @@ class RobotController:
         if self.current_state == RobotState.LOW_LEVEL_RAISE_LEG:
             pose_buffer = self.current_pose[:]
             stand_pos = self.stand_pos
+            init_raise_pos = self.init_raise_pos
             use_mirror = (self.last_leg_selection == 1)
             default_indices = [0,1,2,9,10,11]
             indices = [mirror_joint_index(i) if use_mirror else i for i in default_indices]
@@ -373,19 +375,22 @@ class RobotController:
                     self.low_cmd.crc = self.crc.Crc(self.low_cmd)
                     self.low_cmd_publisher.Write(self.low_cmd)
                     time.sleep(0.002)
-            tmp = pose_buffer[:]; tmp[indices[0]] = stand_pos[indices[0]]
+
+            tmp = pose_buffer[:]; tmp[indices[0]] = init_raise_pos[indices[0]]
             interpolate_selected_joints(pose_buffer, tmp, [indices[0]], 300)
-            tmp2 = tmp[:]; tmp2[indices[1]] = stand_pos[indices[1]]
+            tmp2 = tmp[:]; tmp2[indices[1]] = init_raise_pos[indices[1]]
             interpolate_selected_joints(tmp, tmp2, [indices[1]], 300)
-            tmp3 = tmp2[:]; tmp3[indices[2]] = stand_pos[indices[2]]
+            tmp3 = tmp2[:]; tmp3[indices[2]] = init_raise_pos[indices[2]]
             interpolate_selected_joints(tmp2, tmp3, [indices[2]], 300)
-            tmp4 = tmp3[:]; tmp4[indices[3]] = stand_pos[indices[3]]
+            tmp4 = tmp3[:]; tmp4[indices[3]] = init_raise_pos[indices[3]]
             interpolate_selected_joints(tmp3, tmp4, [indices[3]], 400)
-            tmp5 = tmp4[:]; tmp5[indices[4]] = stand_pos[indices[4]]
+            tmp5 = tmp4[:]; tmp5[indices[4]] = init_raise_pos[indices[4]]
             interpolate_selected_joints(tmp4, tmp5, [indices[4]], 400)
-            tmp6 = tmp5[:]; tmp6[indices[5]] = stand_pos[indices[5]]
+            tmp6 = tmp5[:]; tmp6[indices[5]] = init_raise_pos[indices[5]]
             interpolate_selected_joints(tmp5, tmp6, [indices[5]], 400)
-            self.current_pose = list(stand_pos)
+            self.current_pose = list(init_raise_pos)
+            self.interpolate_pose(self.current_pose, self.stand_pos, 700)  # 1000ms，按需调整插值时长
+            self.current_pose = list(self.stand_pos)  # 最后彻底归位
         else:
             self.current_pose = list(self.stand_pos)
         self.start_low_level_thread(self.maintain_static_pose)
@@ -459,18 +464,21 @@ class RobotController:
     def maintain_raise_leg_pose(self, leg_selection):
         self.log(30, 0)
         self.raise_leg_pose_init = True
-        self.interpolate_pose(self.current_pose, self.stand_pos, 500)
-        self.current_pose = list(self.stand_pos)
+        init_raise_leg_pos = [0, 0.8, -1.4, 0, 0.8, -1.4, 0, 1.2, -1.9, 0, 1.2, -1.9]
+        self.interpolate_pose(self.current_pose, init_raise_leg_pos, 500)
+        self.current_pose = list(init_raise_leg_pos)
+
         def clamp_warning(index, new_val, min_val, max_val):
             if new_val < min_val or new_val > max_val:
                 self.log(34, 2, param1=index, param2=new_val)
                 return False
             return True
-        self.interpolate_pose(self.current_pose, self.stand_pos, 250)
-        self.current_pose = list(self.stand_pos)
+        # self.interpolate_pose(self.current_pose, self.stand_pos, 250)
+        # current_pose = list(self.stand_pos)
 
         use_mirror = (leg_selection == 1)
-        step1 = self.stand_pos[:]
+        step1 = init_raise_leg_pos[:]
+
         step1[mirror_joint_index(11) if use_mirror else 11] -= 0.3
         idx_9 = mirror_joint_index(9) if use_mirror else 9
         if use_mirror:
@@ -515,8 +523,11 @@ class RobotController:
             for idx in [6, 7, 8]:
                 high_kp[idx] = 160.0   # 左后腿
                 high_kd[idx] = 10.0
-            for idx in [9, 10, 11]:
-                high_kp[idx] = 100.0   # 右后腿
+            for idx in [10]:
+                high_kp[idx] = 80.0   # 右后腿大腿
+                high_kd[idx] = 8.0
+            for idx in [9, 11]:
+                high_kp[idx] = 100.0   # 右后腿其余关节
                 high_kd[idx] = 8.0
         else:
             # 抬右前腿
@@ -526,8 +537,11 @@ class RobotController:
             for idx in [3, 4, 5]:
                 high_kp[idx] = 100.0   # 左前腿
                 high_kd[idx] = 8.0
-            for idx in [6, 7, 8]:
-                high_kp[idx] = 100.0   # 左后腿
+            for idx in [7]:
+                high_kp[idx] = 80.0   # 左后腿大腿
+                high_kd[idx] = 8.0
+            for idx in [6, 8]:
+                high_kp[idx] = 100.0   # 左后腿其余关节
                 high_kd[idx] = 8.0
             for idx in [9, 10, 11]:
                 high_kp[idx] = 160.0   # 右后腿

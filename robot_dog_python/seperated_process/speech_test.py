@@ -25,7 +25,7 @@ def test_tts():
     
     # 1. 发送音量设置命令
     vol_cmd = SpeechControl()
-    vol_cmd.volume = 100  # 70%音量
+    vol_cmd.volume = 50  # 70%音量
     pub.Write(vol_cmd)
     print("🔊 已发送音量设置命令 (70%)")
     
@@ -35,14 +35,14 @@ def test_tts():
     
     # 2. 发送合成命令 (使用独立消息，不包含音量属性)
     synth_cmd = SpeechControl()
-    synth_cmd.text_to_speak = "我是一只机器狗，我可以说话，动来动去，并且做出可爱的表情！"
+    synth_cmd.text_to_speak = "我是一只机器狗，我可以说话，动来动去，并且做出可爱的表情！你想要跟我一起玩吗，我非常喜欢跟你一起玩，我们下次再见，再见！再见再见！！"
     synth_cmd.volume = vol_cmd.volume
     # 注意: 不设置volume属性
     pub.Write(synth_cmd)
     print("✅ 已发送合成命令")
     
     # 3. 等待后发送停止命令
-    time.sleep(10.0)
+    time.sleep(17.0)
     stop_cmd = SpeechControl()
     stop_cmd.stop_speaking = True
     pub.Write(stop_cmd)

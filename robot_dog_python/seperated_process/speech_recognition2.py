@@ -12,9 +12,6 @@ from hashlib import sha256
 from urllib.parse import urlparse
 from websockets.client import connect
 import warnings
-import re
-import websockets.exceptions
-
 
 # 配置参数（替换为实际值）
 appid = "2657638375"
@@ -58,6 +55,7 @@ def generate_header(
     reserved_data=0x00,
     extension_header=bytes()
 ):
+    """生成协议头"""
     header = bytearray()
     header_size = int(len(extension_header) / 4) + 1
     header.append((version << 4) | header_size)
@@ -68,18 +66,22 @@ def generate_header(
     return header
 
 def generate_full_default_header():
+    """生成完整请求头"""
     return generate_header()
 
 def generate_audio_default_header():
+    """生成音频请求头"""
     return generate_header(message_type=CLIENT_AUDIO_ONLY_REQUEST)
 
 def generate_last_audio_default_header():
+    """生成结束音频请求头"""
     return generate_header(
         message_type=CLIENT_AUDIO_ONLY_REQUEST,
         message_type_specific_flags=NEG_SEQUENCE
     )
 
 def parse_response(res):
+    """解析服务器响应"""
     protocol_version = res[0] >> 4
     header_size = res[0] & 0x0f
     message_type = res[1] >> 4
@@ -89,11 +91,11 @@ def parse_response(res):
     reserved = res[3]
     header_extensions = res[4:header_size * 4]
     payload = res[header_size * 4:]
-
+    
     result = {}
     payload_msg = None
     payload_size = 0
-
+    
     if message_type == SERVER_FULL_RESPONSE:
         payload_size = int.from_bytes(payload[:4], "big", signed=True)
         payload_msg = payload[4:]
@@ -108,18 +110,18 @@ def parse_response(res):
         result['code'] = code
         payload_size = int.from_bytes(payload[4:8], "big", signed=False)
         payload_msg = payload[8:]
-
+    
     if payload_msg is None:
         return result
-
+    
     if message_compression == GZIP:
         payload_msg = gzip.decompress(payload_msg)
-
+    
     if serialization_method == JSON:
         payload_msg = json.loads(str(payload_msg, "utf-8"))
     elif serialization_method != NO_SERIALIZATION:
         payload_msg = str(payload_msg, "utf-8")
-
+    
     result['payload_msg'] = payload_msg
     result['payload_size'] = payload_size
     return result
@@ -155,13 +157,17 @@ class AsrWsClient:
         self.stop_event = asyncio.Event()
 
     def construct_request(self, reqid):
-        return {
+        """构建请求参数"""
+        # 固定使用16000Hz采样率，因为音频已重采样
+        req = {
             'app': {
                 'appid': self.appid,
                 'cluster': self.cluster,
                 'token': self.token,
             },
-            'user': {'uid': self.uid},
+            'user': {
+                'uid': self.uid
+            },
             'request': {
                 'reqid': reqid,
                 'nbest': self.nbest,
@@ -169,104 +175,122 @@ class AsrWsClient:
                 'show_language': self.show_language,
                 'show_utterances': self.show_utterances,
                 'result_type': self.result_type,
-                'sequence': 1
+                "sequence": 1
             },
             'audio': {
                 'format': self.format,
-                'rate': 16000,
+                'rate': 16000,  # 固定为16000Hz
                 'language': self.language,
                 'bits': self.bits,
                 'channel': self.channel,
                 'codec': self.codec
             }
         }
+        return req
 
     def token_auth(self):
+        """Token认证方式"""
         return [('Authorization', f'Bearer; {self.token}')]
 
     def signature_auth(self, data):
-        header_dicts = {'Custom': 'auth_custom'}
+        """签名认证方式"""
+        header_dicts = {
+            'Custom': 'auth_custom',
+        }
+
         url_parse = urlparse(self.ws_url)
         input_str = f'GET {url_parse.path} HTTP/1.1\n'
-        input_str += f'{header_dicts["Custom"]}\n'
-        input_data = bytearray(input_str, 'utf-8') + data
-        mac = base64.urlsafe_b64encode(hmac.new(self.secret.encode('utf-8'), input_data, digestmod=sha256).digest())
-        header_dicts['Authorization'] = f'HMAC256; access_token="{self.token}"; mac="{str(mac, "utf-8")}"; h="Custom"'
-        return list(header_dicts.items())
+        auth_headers = 'Custom'
+        
+        for header in auth_headers.split(','):
+            input_str += f'{header_dicts[header]}\n'
+        
+        input_data = bytearray(input_str, 'utf-8')
+        input_data += data
+        mac = base64.urlsafe_b64encode(
+            hmac.new(self.secret.encode('utf-8'), input_data, digestmod=sha256).digest())
+        header_dicts['Authorization'] = f'HMAC256; access_token="{self.token}"; mac="{str(mac, "utf-8")}"; h="{auth_headers}"'
+        
+        return [(key, value) for key, value in header_dicts.items()]
 
     async def segment_data_processor(self, audio_generator):
+        """处理音频分段并发送到服务器"""
         reqid = str(uuid.uuid4())
-        payload_bytes = gzip.compress(json.dumps(self.construct_request(reqid)).encode())
+        request_params = self.construct_request(reqid)
+        payload_bytes = json.dumps(request_params).encode()
+        payload_bytes = gzip.compress(payload_bytes)
+        
         full_client_request = bytearray(generate_full_default_header())
         full_client_request.extend(len(payload_bytes).to_bytes(4, 'big'))
         full_client_request.extend(payload_bytes)
-        header = self.token_auth() if self.auth_method == "token" else self.signature_auth(full_client_request)
-
+        
+        header = None
+        if self.auth_method == "token":
+            header = self.token_auth()
+        elif self.auth_method == "signature":
+            header = self.signature_auth(full_client_request)
+            
         results = []
-        full_text = ""
-        printed_sentences = set()
-        sentence_end_re = re.compile(r'[^。！？]*[。！？]')
-
+        
         try:
             async with connect(self.ws_url, extra_headers=header, max_size=1000000000) as ws:
                 await ws.send(full_client_request)
-
-                # 首次连接响应等待
-                try:
-                    res = await asyncio.wait_for(ws.recv(), timeout=2.0)
-                except asyncio.TimeoutError:
-                    print("连接后未及时响应，超时退出")
-                    return {"error": "initial response timeout"}
-
+                res = await ws.recv()
                 result = parse_response(res)
-                if 'payload_msg' in result and result['payload_msg'].get('code') != self.success_code:
+                
+                if 'payload_msg' in result and result['payload_msg']['code'] != self.success_code:
                     return result
-
-                async for chunk, last in audio_generator:
-                    if self.stop_event.is_set():
-                        break
-                    payload_bytes = gzip.compress(chunk)
-                    header_bytes = generate_last_audio_default_header() if last else generate_audio_default_header()
-                    audio_request = bytearray(header_bytes)
-                    audio_request.extend(len(payload_bytes).to_bytes(4, 'big'))
-                    audio_request.extend(payload_bytes)
-
-                    await ws.send(audio_request)
-
-                    try:
-                        res = await asyncio.wait_for(ws.recv(), timeout=2.0)
+                
+                seq = 1
+                try:
+                    async for chunk, last in audio_generator:
+                        if self.stop_event.is_set():
+                            break
+                            
+                        payload_bytes = gzip.compress(chunk)
+                        if last:
+                            audio_header = generate_last_audio_default_header()
+                        else:
+                            audio_header = generate_audio_default_header()
+                            
+                        audio_request = bytearray(audio_header)
+                        audio_request.extend(len(payload_bytes).to_bytes(4, 'big'))
+                        audio_request.extend(payload_bytes)
+                        
+                        await ws.send(audio_request)
+                        res = await ws.recv()
                         parsed = parse_response(res)
-                        payload_msg = parsed.get("payload_msg", {})
-                        results_list = payload_msg.get("result", [])
-                        new_text = results_list[0].get("text", "") if results_list else ""
-
-                        if new_text.startswith(full_text):
-                            appended = new_text[len(full_text):]
-                            matches = sentence_end_re.findall(appended)
-                            for sentence in matches:
-                                sentence_clean = sentence.strip()
-                                if sentence_clean and sentence_clean not in printed_sentences:
-                                    print("[Partial]", sentence_clean)
-                                    results.append(sentence_clean)
-                                    printed_sentences.add(sentence_clean)
-                            full_text = new_text
-                        elif new_text:
-                            print("[Partial]", new_text)
-                            results.append(new_text)
-                            full_text = new_text
-
+                        
+                        if 'payload_msg' in parsed:
+                            print("[Partial]", parsed['payload_msg'])
+                            results.append(parsed['payload_msg'])
+                            
+                        seq += 1
+                        
+                except KeyboardInterrupt:
+                    print("\n检测到用户中断，发送结束帧...")
+                    # 发送结束帧通知服务器
+                    last_header = generate_last_audio_default_header()
+                    empty_payload = gzip.compress(b"")
+                    end_request = bytearray(last_header)
+                    end_request.extend(len(empty_payload).to_bytes(4, 'big'))
+                    end_request.extend(empty_payload)
+                    await ws.send(end_request)
+                    
+                    # 等待最终响应
+                    try:
+                        res = await asyncio.wait_for(ws.recv(), timeout=1.0)
+                        parsed = parse_response(res)
+                        if 'payload_msg' in parsed:
+                            print("[Final]", parsed['payload_msg'])
+                            results.append(parsed['payload_msg'])
                     except asyncio.TimeoutError:
-                        print("等待识别响应超时，继续...")
-                        continue
-
-        except websockets.exceptions.ConnectionClosedError as e:
-            print(f"连接中断: {e}")
+                        print("等待最终响应超时")
+                        
         except asyncio.CancelledError:
             print("任务被取消")
-        except Exception as e:
-            print(f"发生未处理异常: {e}")
+            
         return {"all_results": results}
-
     
     def resample_audio(self, data, original_rate, target_rate=16000):
         """
@@ -423,11 +447,12 @@ def test_microphone():
         format="raw",
         codec="pcm",
         auth_method="token",
-        result_type="partial_and_final",
+        result_type="single",       
+        show_utterances=True,  
         sample_rate=16000,  # 初始尝试16000，但会自动调整
         bits=16,
         channel=1,
-        mic_device_name="DJI MIC MINI"
+        mic_device_name="PnP Audio Device"
     )
     print("最终结果:", result)
 
