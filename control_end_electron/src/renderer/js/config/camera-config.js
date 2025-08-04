@@ -11,9 +11,9 @@ const CAMERA_CONFIG = {
     // Defines the roles of each camera ID.
     // This allows the application to know which camera is primary vs. auxiliary.
     ROLES: {
-        MAIN: 2,       // The primary camera, typically shown in a larger view.
-        AUX_1: 0,      // Auxiliary camera 1.
-        AUX_2: 1,      // Auxiliary camera 2.
+        MAIN: 0,       // The primary camera, typically shown in a larger view.
+        AUX_1: 2,      // Auxiliary camera 1.
+        AUX_2: 4,      // Auxiliary camera 2.
     },
 
     // Pre-defined resolution settings for camera streams.

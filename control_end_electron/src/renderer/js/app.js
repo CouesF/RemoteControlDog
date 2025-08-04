@@ -118,7 +118,7 @@ export default class App {
                 micToggleButton.classList.remove('btn-secondary');
                 micToggleButton.classList.add('btn-danger');
                 icon.className = 'fas fa-microphone';
-                text.textContent = '停止监听';
+                text.textContent = 'off';
             } catch (error) {
                 Logger.error("Failed to start microphone listening:", error);
                 this.isMicListening = false; // Revert state on failure
@@ -129,7 +129,7 @@ export default class App {
             micToggleButton.classList.remove('btn-danger');
             micToggleButton.classList.add('btn-secondary');
             icon.className = 'fas fa-microphone-slash';
-            text.textContent = '开启监听';
+            text.textContent = 'on';
         }
     }
 }

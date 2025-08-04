@@ -5,6 +5,7 @@ import { Helpers } from '../utils/helpers.js';
 import Logger from '../utils/logger.js';
 import CONFIG from '../config.js';
 import GamepadManager from '../utils/GamepadManager.js';
+import { SPEECH_COMMANDS } from '../config/speech-config.js';
 
 export default class RobotDogController extends BaseComponent {
     constructor(containerId) {
@@ -102,6 +103,10 @@ export default class RobotDogController extends BaseComponent {
     }
 
     getTemplate() {
+        const speechButtonsHtml = Object.values(SPEECH_COMMANDS).map(command => `
+            <button class="speech-btn" data-text="${command.text}">${command.label}</button>
+        `).join('');
+
         return `
             <div class="robot-dog-control-panel">
                 <div class="card-header">
@@ -197,6 +202,13 @@ export default class RobotDogController extends BaseComponent {
                                 </div>
                             </div>
                         </div>
+                    </div>
+                </div>
+
+                <!-- 语音合成 -->
+                <div class="speech-section">
+                    <div class="speech-buttons">
+                        ${speechButtonsHtml}
                     </div>
                 </div>
                 </div>
@@ -433,6 +445,33 @@ export default class RobotDogController extends BaseComponent {
                 font-weight: bold;
                 color: #007bff;
             }
+
+            .speech-section {
+                padding: 10px;
+                border-top: 1px solid #e9ecef;
+            }
+
+            .speech-buttons {
+                display: flex;
+                flex-wrap: wrap;
+                justify-content: center;
+                gap: 10px;
+            }
+
+            .speech-btn {
+                padding: 10px 15px;
+                border: 2px solid #17a2b8;
+                background: white;
+                color: #17a2b8;
+                border-radius: 5px;
+                cursor: pointer;
+                transition: all 0.3s;
+                font-weight: 500;
+            }
+
+            .speech-btn:hover {
+                background: #e2f3f5;
+            }
         `;
         document.head.appendChild(style);
     }
@@ -460,7 +499,9 @@ export default class RobotDogController extends BaseComponent {
             // 状态
             statusDot: this.querySelector('.status-dot'),
             statusText: this.querySelector('#status-text'),
-            bodyLogValue: this.querySelector('#body-log-value')
+            bodyLogValue: this.querySelector('#body-log-value'),
+            // 语音按钮
+            speechButtons: this.querySelectorAll('.speech-btn')
         };
     }
 
@@ -505,6 +546,14 @@ export default class RobotDogController extends BaseComponent {
 
         // 设置初始模式
         // this.switchMode('damp');
+
+        // 语音按钮
+        this.elements.speechButtons.forEach(btn => {
+            this.addEventListener(btn, 'click', () => {
+                const text = btn.getAttribute('data-text');
+                this.synthesisSpeech(text);
+            });
+        });
     }
 
     setupJoystick(type, callback) {
@@ -930,6 +979,27 @@ export default class RobotDogController extends BaseComponent {
         if (this.isConnected && window.api?.disconnectUDP) {
             window.api.disconnectUDP(this.connectionId);
             this.isConnected = false;
+        }
+    }
+
+    async synthesisSpeech(text) {
+        try {
+            const response = await fetch(`${CONFIG.API.BASE_URL}/api/synthesis_speech`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ text: text })
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const result = await response.json();
+            Logger.info('Speech synthesis request successful:', result);
+        } catch (error) {
+            Logger.error('Failed to send speech synthesis request:', error);
         }
     }
 }
