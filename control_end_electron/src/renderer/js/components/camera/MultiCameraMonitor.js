@@ -329,19 +329,11 @@ class MultiCameraMonitor extends HTMLElement {
      */
     async captureCurrentFrame() {
         try {
-            // MODIFIED: The main camera is now an <img> tag, not a <camera-display>
-            const mainCameraView = this.shadowRoot.querySelector('#main-camera img');
-            if (!mainCameraView) {
-                throw new Error('主摄像头视图 (<img>) 未找到');
-            }
-            
-            // Capturing from an <img> tag requires a different approach (e.g., drawing to a canvas)
-            // For now, we'll throw an error indicating it's not supported this way.
-            throw new Error('截图功能当前不支持新的主摄像头视频流。');
-
+            // Delegate to the more generic capture function for the main camera.
+            return await this.captureCameraFrame('MAIN');
         } catch (error) {
-            logger.error('捕获摄像头画面失败:', error);
-            throw error;
+            logger.error('捕获主摄像头画面失败:', error);
+            throw error; // Re-throw the error to be handled by the caller
         }
     }
 
@@ -385,17 +377,49 @@ class MultiCameraMonitor extends HTMLElement {
                 throw new Error(`无效的摄像头角色: ${cameraRole}`);
             }
 
-            const cameraView = this.shadowRoot.querySelector(`${selector} camera-display`);
-            if (!cameraView) {
-                throw new Error(`摄像头视图未找到: ${cameraRole}`);
+            const cameraContainer = this.shadowRoot.querySelector(selector);
+            if (!cameraContainer) {
+                throw new Error(`摄像头容器未找到: ${cameraRole}`);
             }
 
-            const screenshot = await cameraView.captureFrame();
-            if (!screenshot) {
-                throw new Error(`无法从摄像头获取画面: ${cameraRole}`);
-            }
+            // --- MODIFICATION START: Handle both <img> and <camera-display> ---
+            const imgView = cameraContainer.querySelector('img');
+            if (imgView) {
+                // New MJPEG stream capture logic
+                const canvas = document.createElement('canvas');
+                // Use the image's natural dimensions for the best quality capture
+                canvas.width = imgView.naturalWidth || 640; // Fallback to default
+                canvas.height = imgView.naturalHeight || 480; // Fallback to default
+                
+                const ctx = canvas.getContext('2d');
+                if (!ctx) {
+                    throw new Error('无法获取Canvas 2D上下文');
+                }
+                
+                // Draw the image from the <img> tag to the canvas
+                ctx.drawImage(imgView, 0, 0, canvas.width, canvas.height);
+                
+                // Get the image data as a Base64 string
+                // Using image/jpeg for smaller file size compared to png
+                const screenshot = canvas.toDataURL('image/jpeg');
+                logger.info(`成功从 <img> 标签捕获画面: ${cameraRole}`);
+                return screenshot;
 
-            return screenshot;
+            } else {
+                // Fallback to old <camera-display> logic
+                const cameraDisplay = cameraContainer.querySelector('camera-display');
+                if (!cameraDisplay) {
+                    throw new Error(`摄像头视图 (<img> or <camera-display>) 未找到: ${cameraRole}`);
+                }
+                
+                const screenshot = await cameraDisplay.captureFrame();
+                if (!screenshot) {
+                    throw new Error(`无法从 <camera-display> 获取画面: ${cameraRole}`);
+                }
+                logger.info(`成功从 <camera-display> 捕获画面: ${cameraRole}`);
+                return screenshot;
+            }
+            // --- MODIFICATION END ---
 
         } catch (error) {
             logger.error(`捕获摄像头画面失败 (${cameraRole}):`, error);

@@ -193,23 +193,10 @@ class SessionsAPI extends BaseAPI {
     async handleSpeechGeneration(payload) {
         try {
             const { text } = payload;
-            if (!text) {
-                throw new Error('Text is required for speech generation');
-            }
-
-            // TODO: 实现真实的语音合成调用
-            Logger.info('TODO: Generate speech:', text);
-            
-            // 可以在这里调用系统的语音合成API
-            if ('speechSynthesis' in window) {
-                const utterance = new SpeechSynthesisUtterance(text);
-                utterance.lang = 'zh-CN';
-                speechSynthesis.speak(utterance);
-            }
-
-            return { success: true, message: 'Speech generated successfully' };
+            // This now delegates to the specific synthesis method
+            return await this.synthesisSpeech(text);
         } catch (error) {
-            Logger.error('Failed to generate speech:', error);
+            Logger.error('Failed to generate speech via triggerAction:', error);
             throw error;
         }
     }
@@ -260,6 +247,22 @@ class SessionsAPI extends BaseAPI {
     async jaFailure(sessionId, data) {
         const endpoint = `${this.endpoint}/${sessionId}/ja_failure`;
         return await this.post(endpoint, data);
+    }
+
+    // 调用后端语音合成接口
+    async synthesisSpeech(text) {
+        try {
+            if (!text || !text.trim()) {
+                throw new Error('Text for speech synthesis cannot be empty.');
+            }
+            // 后端提供的独立接口
+            const endpoint = `/api/synthesis_speech`;
+            Logger.info(`Requesting speech synthesis for: "${text}"`);
+            return await this.post(endpoint, { text });
+        } catch (error) {
+            Logger.error('Failed to synthesize speech:', error);
+            throw error;
+        }
     }
 
     // Mock方法
