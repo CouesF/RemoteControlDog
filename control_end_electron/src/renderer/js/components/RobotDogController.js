@@ -738,11 +738,11 @@ export default class RobotDogController extends BaseComponent {
         let keyboardX = 0;
         let keyboardR = 0;
 
-        if (this.keyState.w) keyboardX = 0.4;
-        else if (this.keyState.s) keyboardX = -0.4;
+        if (this.keyState.w) keyboardX = 0.5;
+        else if (this.keyState.s) keyboardX = -0.5;
 
-        if (this.keyState.a) keyboardR = -0.4;
-        else if (this.keyState.d) keyboardR = 0.4;
+        if (this.keyState.a) keyboardR = -0.7;
+        else if (this.keyState.d) keyboardR = 0.7;
 
         // Keyboard overrides joystick and gamepad
         const finalX = keyboardX !== 0 ? keyboardX : this.controlState.x + x_val;
@@ -846,11 +846,11 @@ export default class RobotDogController extends BaseComponent {
             // 合并UI, 手柄和键盘控制
             let keyboardX = 0;
             let keyboardR = 0;
-            if (this.keyState.w) keyboardX = 0.2;
-            else if (this.keyState.s) keyboardX = -0.2;
+            if (this.keyState.w) keyboardX = 0.5;
+            else if (this.keyState.s) keyboardX = -0.5;
 
-            if (this.keyState.a) keyboardR = -0.2;
-            else if (this.keyState.d) keyboardR = 0.2;
+            if (this.keyState.a) keyboardR = -0.7;
+            else if (this.keyState.d) keyboardR = 0.7;
 
             const finalX = keyboardX !== 0 ? keyboardX : this.controlState.x + x_val;
             const finalR = keyboardR !== 0 ? keyboardR : this.controlState.r + r_val;
