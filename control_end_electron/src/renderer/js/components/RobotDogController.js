@@ -29,7 +29,8 @@ export default class RobotDogController extends BaseComponent {
             // 上次发送的控制值
             lastSentXYR: { x: 0, y: 0, r: 0 },
             lastSentAngles: { angle1: 0, angle2: 0 },
-            lastSentHead: { pitch: 0, yaw: 0 }
+            lastSentHead: { pitch: 0, yaw: 0 },
+            lastHeadCommandTime: 0
         };
         
         // 控制发送间隔
@@ -116,22 +117,18 @@ export default class RobotDogController extends BaseComponent {
                     <!-- 模式切换 -->
                     <div class="mode-section">
                         <div class="mode-buttons">
-                            <button class="mode-btn" data-mode="damp">阻尼模式</button>
-                            <button class="mode-btn" data-mode="high_stand">高层站立</button>
-                            <button class="mode-btn" data-mode="low_stand">底层站立</button>
+                            <button class="mode-btn" data-mode="damp">阻尼</button>
+                            <button class="mode-btn" data-mode="high_stand">高层站</button>
+                            <button class="mode-btn" data-mode="low_stand">底层站</button>
                             <button class="mode-btn" data-mode="low_left_raise">底层左抬腿</button>
                             <button class="mode-btn" data-mode="low_right_raise">底层右抬腿</button>
-                            <button class="mode-btn" data-mode="high_lie">高层趴下</button>
+                            <button class="mode-btn" data-mode="high_lie">高层趴</button>
                         </div>
                         <div id="connection-status" class="connection-status">
                             <span class="status-dot"></span>
                             <span id="status-text">未连接</span>
-                            <div class="debug-info ml-3">
-                                <small>控制端点: ${this.controlHost}:${this.controlPort}</small>
-                            </div>
                         </div>
                         <div id="body-log-status" class="body-log-status">
-                            <span class="log-label">状态:</span>
                             <span id="body-log-value">--</span>
                         </div>
                     </div>
@@ -248,7 +245,7 @@ export default class RobotDogController extends BaseComponent {
                 display: flex;
                 flex-wrap: wrap;
                 justify-content: center;
-                gap: 10px;
+                gap: 6px;
                 margin-top: 10px;
             }
             
@@ -529,10 +526,20 @@ export default class RobotDogController extends BaseComponent {
             this.updateAngleDisplay();
         });
         
-        this.setupJoystick('head', (x, y) => {
+        this.headJoystickController = this.setupJoystick('head', (x, y) => {
             this.controlState.headYaw = x;
             this.controlState.headPitch = y;
             this.updateHeadDisplay();
+        }, { 
+            autoReset: false, // Do not auto-reset
+            onMove: (x, y) => {
+                // Dispatch an event when the joystick is moved manually
+                this.dispatchEvent(new CustomEvent('head-joystick-move', {
+                    detail: { x, y },
+                    bubbles: true,
+                    composed: true
+                }));
+            }
         });
         
         // Y控制按钮
@@ -556,76 +563,88 @@ export default class RobotDogController extends BaseComponent {
         });
     }
 
-    setupJoystick(type, callback) {
+    setupJoystick(type, callback, options = {}) {
         const joystickId = `${type}-joystick`;
         const joystick = this.querySelector(`#${joystickId}`);
         const handle = joystick.querySelector('.joystick-handle');
-        
-        if (!joystick || !handle) return;
-        
+
+        if (!joystick || !handle) return null;
+
         let isDragging = false;
         const radius = 40; // 最大移动半径
-        
+        const autoReset = options.autoReset !== false; // Default to true
+
+        const setPosition = (normalizedX, normalizedY) => {
+            const deltaX = normalizedX * radius;
+            const deltaY = -normalizedY * radius; // Y轴反向
+
+            handle.style.transform = `translate(calc(-50% + ${deltaX}px), calc(-50% + ${deltaY}px))`;
+            callback(normalizedX, normalizedY);
+        };
+
         const handleStart = (e) => {
             e.preventDefault();
             isDragging = true;
             handle.style.cursor = 'grabbing';
         };
-        
+
         const handleMove = (e) => {
             if (!isDragging) return;
             e.preventDefault();
-            
+
             const rect = joystick.getBoundingClientRect();
             const centerX = rect.left + rect.width / 2;
             const centerY = rect.top + rect.height / 2;
-            
+
             const clientX = e.clientX || (e.touches && e.touches[0].clientX);
             const clientY = e.clientY || (e.touches && e.touches[0].clientY);
-            
+
             if (!clientX || !clientY) return;
-            
+
             let deltaX = clientX - centerX;
             let deltaY = clientY - centerY;
-            
-            // 限制在圆形区域内
+
             const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
             if (distance > radius) {
                 deltaX = (deltaX / distance) * radius;
                 deltaY = (deltaY / distance) * radius;
             }
-            
-            // 更新手柄位置
-            handle.style.transform = `translate(calc(-50% + ${deltaX}px), calc(-50% + ${deltaY}px))`;
-            
-            // 归一化到-1到1
+
             const normalizedX = deltaX / radius;
-            const normalizedY = -deltaY / radius; // Y轴反向
+            const normalizedY = -deltaY / radius;
+
+            setPosition(normalizedX, normalizedY);
             
-            callback(normalizedX, normalizedY);
+            // If there's a move handler, call it
+            if (options.onMove) {
+                options.onMove(normalizedX, normalizedY);
+            }
         };
-        
+
         const handleEnd = () => {
             if (!isDragging) return;
             isDragging = false;
             handle.style.cursor = 'grab';
-            
-            // 重置位置
-            handle.style.transform = 'translate(-50%, -50%)';
-            
-            // 重置值
-            callback(0, 0);
+
+            if (autoReset) {
+                setPosition(0, 0);
+                if (options.onMove) {
+                    options.onMove(0, 0);
+                }
+            }
         };
-        
-        // 鼠标事件
+
         this.addEventListener(handle, 'mousedown', handleStart);
         this.addEventListener(document, 'mousemove', handleMove);
         this.addEventListener(document, 'mouseup', handleEnd);
-        
-        // 触摸事件
         this.addEventListener(handle, 'touchstart', handleStart);
         this.addEventListener(document, 'touchmove', handleMove);
         this.addEventListener(document, 'touchend', handleEnd);
+
+        // Return the public interface for this joystick
+        return {
+            setPosition
+        };
     }
 
     setupYControl() {
@@ -832,11 +851,25 @@ export default class RobotDogController extends BaseComponent {
             }
 
             // 头部控制
+            const now = Date.now();
             const { pitch: lastPitch, yaw: lastYaw } = this.controlState.lastSentHead;
             const headChanged = Math.abs(head_pitch - lastPitch) > epsilon || Math.abs(head_yaw - lastYaw) > epsilon;
-            const headAboveThreshold = Math.abs(head_pitch) > 0.01 || Math.abs(head_yaw) > 0.01;
+            const headIsActive = Math.abs(head_pitch) > 0.01 || Math.abs(head_yaw) > 0.01;
 
-            if (headChanged || headAboveThreshold) {
+            let shouldSend = false;
+            if (headChanged) {
+                shouldSend = true;
+                // Reset the timer whenever there's a change
+                this.controlState.lastHeadCommandTime = now;
+            } else {
+                // If no change, check if we are within the 2-second resend window
+                const timeSinceLastChange = now - this.controlState.lastHeadCommandTime;
+                if (headIsActive && timeSinceLastChange < 2000) {
+                    shouldSend = true;
+                }
+            }
+
+            if (shouldSend) {
                 this.sendCommand({
                     command_type: 'object_control',
                     target: 'head',

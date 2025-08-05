@@ -98,12 +98,39 @@ export default class ExperimentControl extends BasePage {
             Logger.info('Robot dog controller initialized');
 
             this.cameraMonitor = this.querySelector('multi-camera-monitor');
-            Logger.info('Camera monitor initialized');
+            if (this.cameraMonitor && this.robotController) {
+                // Listen for camera clicks to update the joystick
+                this.addEventListener(this.cameraMonitor, 'set-head-joystick', (e) => {
+                    const { x, y } = e.detail;
+                    if (this.robotController.headJoystickController) {
+                        this.robotController.headJoystickController.setPosition(x, y);
+                    }
+                });
+
+                // Listen for manual joystick moves to update the camera indicator
+                this.addEventListener(this.robotController.container, 'head-joystick-move', (e) => {
+                    const { x, y } = e.detail;
+                    if (this.cameraMonitor.updateIndicatorFromJoystick) {
+                        this.cameraMonitor.updateIndicatorFromJoystick(x, y);
+                    }
+                });
+
+                Logger.info('Camera monitor and robot controller two-way binding initialized.');
+            } else {
+                Logger.error('Camera monitor or robot controller component not found!');
+            }
 
         } catch (error) {
             Logger.error('Failed to initialize components:', error);
             this.showError('组件初始化失败', error.message);
         }
+    }
+
+    handleIndicatorClick(event) {
+        // This handler is now replaced by the 'set-head-joystick' listener,
+        // but we'll keep it here in case it's needed for other purposes.
+        const { x, y } = event.detail;
+        Logger.info(`Legacy indicator click event received: { x: ${x}, y: ${y} }`);
     }
 
     updateSessionInfo() {

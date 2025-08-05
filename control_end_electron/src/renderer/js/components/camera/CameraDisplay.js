@@ -159,40 +159,42 @@ class CameraDisplay extends HTMLElement {
      * @private
      */
     _handleFrame(frame) {
-        logger.info(`[CameraDisplay ${this.cameraId}] _handleFrame called.`);
+        const startTime = performance.now();
+        // logger.info(`[CameraDisplay ${this.cameraId}] _handleFrame called for frameId: ${frame.frameId}.`);
 
         if (!frame || !frame.frameData) {
             logger.warn(`[CameraDisplay ${this.cameraId}] Received empty or invalid frame object.`, frame);
             return;
         }
 
-        logger.info(`[CameraDisplay ${this.cameraId}] Received frame with Base64 data length: ${frame.frameData.length}`);
+        // logger.info(`[CameraDisplay ${this.cameraId}] Received frame with Base64 data length: ${frame.frameData.length}`);
 
         const image = new Image();
         
         // Clean the Base64 string by removing any characters not part of the Base64 alphabet.
-        // This can help prevent errors if the string is malformed (e.g., contains newlines).
         const cleanFrameData = frame.frameData.replace(/[^A-Za-z0-9+/=]/g, '');
         image.src = `data:image/jpeg;base64,${cleanFrameData}`;
 
         image.onload = () => {
-            logger.info(`[CameraDisplay ${this.cameraId}] Image loaded successfully (${image.width}x${image.height}). Drawing to canvas.`);
+            const loadTime = performance.now();
+            // logger.info(`[CameraDisplay ${this.cameraId}] Image loaded successfully (${image.width}x${image.height}). Time to load: ${(loadTime - startTime).toFixed(2)} ms.`);
+            
             const placeholder = this.shadowRoot.querySelector('.placeholder');
             if (placeholder.style.display !== 'none') {
                 placeholder.style.display = 'none';
-                logger.info(`[CameraDisplay ${this.cameraId}] Placeholder hidden.`);
             }
 
             if (this.canvas.width !== image.width || this.canvas.height !== image.height) {
                 this.canvas.width = image.width;
                 this.canvas.height = image.height;
-                logger.info(`[CameraDisplay ${this.cameraId}] Canvas resized to ${image.width}x${image.height}.`);
             }
             this.ctx.drawImage(image, 0, 0);
+            const drawTime = performance.now();
+            logger.info(`[PERF] Frame ${frame.frameId} for Cam ${this.cameraId}: Total Render Time = ${(drawTime - startTime).toFixed(2)} ms (Load: ${(loadTime - startTime).toFixed(2)} ms, Draw: ${(drawTime - loadTime).toFixed(2)} ms)`);
         };
 
         image.onerror = (err) => {
-            logger.error(`[CameraDisplay ${this.cameraId}] Image.onerror triggered. Failed to load image from Base64 data.`, err);
+            logger.error(`[CameraDisplay ${this.cameraId}] Image.onerror triggered for frameId: ${frame.frameId}. Failed to load image from Base64 data.`, err);
         };
     }
 
