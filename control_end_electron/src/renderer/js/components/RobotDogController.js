@@ -48,6 +48,14 @@ export default class RobotDogController extends BaseComponent {
         // Gamepad
         this.gamepadManager = new GamepadManager();
 
+        // Keyboard state
+        this.keyState = {
+            w: false,
+            a: false,
+            s: false,
+            d: false,
+        };
+
         // Body Log
         this.bodyLogInterval = null;
         this.bodyLogMapping = {
@@ -118,11 +126,11 @@ export default class RobotDogController extends BaseComponent {
                     <div class="mode-section">
                         <div class="mode-buttons">
                             <button class="mode-btn" data-mode="damp">阻尼</button>
-                            <button class="mode-btn" data-mode="high_stand">高层站</button>
-                            <button class="mode-btn" data-mode="low_stand">底层站</button>
-                            <button class="mode-btn" data-mode="low_left_raise">底层左抬腿</button>
-                            <button class="mode-btn" data-mode="low_right_raise">底层右抬腿</button>
-                            <button class="mode-btn" data-mode="high_lie">高层趴</button>
+                            <button class="mode-btn" data-mode="high_stand">高站</button>
+                            <button class="mode-btn" data-mode="low_stand">底站</button>
+                            <button class="mode-btn" data-mode="low_left_raise">底左抬</button>
+                            <button class="mode-btn" data-mode="low_right_raise">底右抬</button>
+                            <button class="mode-btn" data-mode="high_lie">高趴</button>
                         </div>
                         <div id="connection-status" class="connection-status">
                             <span class="status-dot"></span>
@@ -332,7 +340,7 @@ export default class RobotDogController extends BaseComponent {
             .joystick-values {
                 display: flex;
                 justify-content: center;
-                gap: 20px;
+                gap: 0px;
                 font-size: 0.5rem;
             }
             
@@ -440,6 +448,7 @@ export default class RobotDogController extends BaseComponent {
 
             #body-log-value {
                 font-weight: bold;
+                font-size: xx-small;
                 color: #007bff;
             }
 
@@ -515,7 +524,7 @@ export default class RobotDogController extends BaseComponent {
         });
         
         // 设置摇杆
-        this.setupJoystick('xr', (x, y) => {
+        this.xrJoystickController = this.setupJoystick('xr', (x, y) => {
             this.controlState.x = y;  // 前后
             this.controlState.r = x;  // 旋转
         });
@@ -553,6 +562,9 @@ export default class RobotDogController extends BaseComponent {
 
         // 设置初始模式
         // this.switchMode('damp');
+
+        // 键盘控制
+        this.setupKeyboardControls();
 
         // 语音按钮
         this.elements.speechButtons.forEach(btn => {
@@ -723,10 +735,30 @@ export default class RobotDogController extends BaseComponent {
         const x_val = (gamepadState.axes[1] || 0) * -1 * speedLimit;
         const r_val = (gamepadState.axes[0] || 0) * speedLimit;
 
-        const combinedX = this.controlState.x + x_val;
-        const combinedR = this.controlState.r + r_val;
+        let keyboardX = 0;
+        let keyboardR = 0;
+
+        if (this.keyState.w) keyboardX = 0.4;
+        else if (this.keyState.s) keyboardX = -0.4;
+
+        if (this.keyState.a) keyboardR = -0.4;
+        else if (this.keyState.d) keyboardR = 0.4;
+
+        // Keyboard overrides joystick and gamepad
+        const finalX = keyboardX !== 0 ? keyboardX : this.controlState.x + x_val;
+        const finalR = keyboardR !== 0 ? keyboardR : this.controlState.r + r_val;
+
+        const combinedX = Helpers.clamp(finalX, -1, 1);
+        const combinedR = Helpers.clamp(finalR, -1, 1);
+
         this.elements.xValue.textContent = combinedX.toFixed(2);
         this.elements.rValue.textContent = combinedR.toFixed(2);
+
+        // Update joystick UI from keyboard
+        if (this.xrJoystickController && (this.keyState.w || this.keyState.s || this.keyState.a || this.keyState.d)) {
+            // Note: joystick's setPosition expects (x, y) which maps to (r, x) for us
+            this.xrJoystickController.setPosition(combinedR, combinedX);
+        }
     }
 
     updateYDisplay(gamepadState = { axes: [0,0,0,0], buttons: [] }) {
@@ -811,10 +843,21 @@ export default class RobotDogController extends BaseComponent {
             const head_yaw = this.controlState.headYaw + (gamepadState.axes[2] || 0);
             const head_pitch = this.controlState.headPitch + (gamepadState.axes[3] || 0) * -1; // Y轴反向
     
-            // 合并UI和手柄控制
-            const combinedX = this.controlState.x + x_val;
-            const combinedY = this.controlState.y + y_val;
-            const combinedR = this.controlState.r + r_val;
+            // 合并UI, 手柄和键盘控制
+            let keyboardX = 0;
+            let keyboardR = 0;
+            if (this.keyState.w) keyboardX = 0.2;
+            else if (this.keyState.s) keyboardX = -0.2;
+
+            if (this.keyState.a) keyboardR = -0.2;
+            else if (this.keyState.d) keyboardR = 0.2;
+
+            const finalX = keyboardX !== 0 ? keyboardX : this.controlState.x + x_val;
+            const finalR = keyboardR !== 0 ? keyboardR : this.controlState.r + r_val;
+
+            const combinedX = Helpers.clamp(finalX, -1, 1);
+            const combinedY = Helpers.clamp(this.controlState.y + y_val, -1, 1);
+            const combinedR = Helpers.clamp(finalR, -1, 1);
     
             // --- 发送控制命令 ---
             const epsilon = 1e-5;
@@ -1013,6 +1056,26 @@ export default class RobotDogController extends BaseComponent {
             window.api.disconnectUDP(this.connectionId);
             this.isConnected = false;
         }
+    }
+
+    setupKeyboardControls() {
+        this.addEventListener(document, 'keydown', (e) => {
+            const key = e.key.toLowerCase();
+            if (key in this.keyState) {
+                this.keyState[key] = true;
+            }
+        });
+
+        this.addEventListener(document, 'keyup', (e) => {
+            const key = e.key.toLowerCase();
+            if (key in this.keyState) {
+                this.keyState[key] = false;
+                // If all keys are up, reset the joystick UI if it was keyboard-controlled
+                if (!Object.values(this.keyState).some(v => v)) {
+                    this.xrJoystickController.setPosition(0, 0);
+                }
+            }
+        });
     }
 
     async synthesisSpeech(text) {

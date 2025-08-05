@@ -34,6 +34,7 @@ export default class ExperimentControl extends BasePage {
             instructionLevel: 1,
         };
         this.jaScripts = null;
+        this.generalScripts = null;
     }
 
     async loadData() {
@@ -52,11 +53,28 @@ export default class ExperimentControl extends BasePage {
 
         // 加载JA脚本
         await this.loadJAScripts();
+        await this.loadGeneralScripts();
+    }
+
+    async loadGeneralScripts() {
+        try {
+            const response = await fetch('../../resources/general.json');
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            this.generalScripts = await response.json();
+            Logger.info('General scripts loaded successfully.');
+        } catch (error) {
+            Logger.error('Failed to load general scripts:', error);
+            this.generalScripts = {}; // Assign an empty object on failure
+        }
     }
 
     async loadJAScripts() {
         try {
-            const response = await fetch('../resources/ja_scripts.json');
+            // const response = await fetch('../../resources/ja_scripts.json');
+            const response = await fetch('../../resources/ja_scripts_simple.json');
+
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
@@ -73,7 +91,49 @@ export default class ExperimentControl extends BasePage {
         this.updateSessionInfo();
         this.renderJATargetList();
         this.renderJATargetDetail();
+        this.renderGeneralScripts();
         this.updateExperimentState(EXPERIMENT_STATE.NAVIGATION);
+    }
+
+    renderGeneralScripts() {
+        const container = this.querySelector('#general-scripts-container');
+        if (!container || !this.generalScripts) return;
+
+        let html = '';
+        for (const category in this.generalScripts) {
+            html += `<p>${category}</p>`;
+            const buttons = this.generalScripts[category];
+            html += '<div class="d-flex flex-wrap">';
+            for (const buttonName in buttons) {
+                const buttonData = buttons[buttonName];
+                html += `
+                    <button class="btn btn-outline-secondary btn-sm m-1 general-script-btn" data-texts='${JSON.stringify(buttonData.texts)}'>
+                        ${buttonName}
+                    </button>
+                `;
+            }
+            html += '</div>';
+        }
+        container.innerHTML = html;
+
+        // Add event listeners
+        const generalScriptBtns = container.querySelectorAll('.general-script-btn');
+        generalScriptBtns.forEach(btn => {
+            this.addEventListener(btn, 'click', () => {
+                const texts = JSON.parse(btn.getAttribute('data-texts'));
+                this.handleGeneralScriptClick(texts);
+            });
+        });
+    }
+
+    handleGeneralScriptClick(texts) {
+        if (texts && texts.length > 0) {
+            const randomIndex = Math.floor(Math.random() * texts.length);
+            const text = texts[randomIndex];
+            this.generateSpeech(text);
+        } else {
+            Logger.warn('No texts found for this general script button.');
+        }
     }
 
     setupEventListeners() {
@@ -283,23 +343,30 @@ export default class ExperimentControl extends BasePage {
 
     async generateSpeech(text) {
         try {
-            if (!text || !text.trim()) {
+            let processedText = text.trim();
+            if (!processedText) {
                 this.showWarning('语音内容不能为空');
                 return;
+            }
+
+            // 获取参与者姓名并替换占位符
+            const participantName = sessionStorage.getItem('currentParticipantName');
+            if (participantName && participantName !== '未知') {
+                processedText = processedText.replace(/小朋友/g, participantName);
             }
     
             this.showInfo('正在请求语音合成...');
     
             // 直接调用新的API方法
-            await SessionsAPI.synthesisSpeech(text);
+            await SessionsAPI.synthesisSpeech(processedText);
     
             // 记录语音生成事件
             await SessionsAPI.triggerAction(this.currentSessionId, 'LOG_EVENT', {
                 eventName: 'SPEECH_SYNTHESIS_REQUESTED',
-                details: `Requested speech synthesis for: "${text}"`
+                details: `Requested speech synthesis for: "${processedText}" (Original: "${text}")`
             });
     
-            Logger.info(`Speech synthesis requested for: ${text}`);
+            Logger.info(`Speech synthesis requested for: ${processedText}`);
             this.showSuccess('语音合成请求已发送');
     
         } catch (error) {
@@ -380,12 +447,12 @@ export default class ExperimentControl extends BasePage {
             <h5>${target.targetName}</h5>
             <div class="row">
                 <div class="col-md-6">
-                    <p><strong>目标图片:</strong></p>
-                    <img src="${targetImgUrl}" alt="目标图片" class="img-fluid rounded">
+                    <p>目标图</p>
+                    <img src="${targetImgUrl}" alt="目标图片" class="img-fluid rounded" style="max-width: 6%">
                 </div>
                 <div class="col-md-6">
-                    <p><strong>环境图片:</strong></p>
-                    <img src="${envImgUrl}" alt="环境图片" class="img-fluid rounded">
+                    <p>环境图</p>
+                    <img src="${envImgUrl}" alt="环境图片" class="img-fluid rounded" style="max-width: 6%">
                 </div>
             </div>
             <button id="start-ja-instruction-btn" class="btn btn-primary mt-3">
@@ -526,15 +593,22 @@ export default class ExperimentControl extends BasePage {
     
         let promptText = '';
         const targetName = currentTarget.targetName;
+        console.log(targetName);
+        
     
         if (this.jaScripts && this.jaScripts[targetName]) {
             const script = this.jaScripts[targetName];
             // Levels 2 and 3 use L2_AUDIO_TEXT for the prompt
-            if ((instructionLevel === 2 || instructionLevel === 3) && script.L2_AUDIO_TEXT) {
-                promptText = script.L2_AUDIO_TEXT;
-            } else {
+            console.log(script.L2_AUDIO_TEXT)
+            if ((instructionLevel === 1)) {
+                promptText = `小朋友，请看看${targetName}`;
+            } else if (instructionLevel === 2 && script.L2_AUDIO_TEXT) {
                 // Fallback for level 1 or if L2 text is missing
-                promptText = script.L1_AUDIO_TEXT || `小朋友，请看看${targetName}`;
+                promptText = script.L2_AUDIO_TEXT || `小朋友，请看看${targetName}`;
+            }else if(instructionLevel ===3 && script.L3_AUDIO_TEXT){
+                promptText = script.L3_AUDIO_TEXT || `小朋友，请看看${targetName}`;
+            }else{
+                promptText  = `小朋友，请看看${targetName}`;
             }
         } else {
             promptText = `小朋友，请看看${targetName}`; // Default prompt if target not in scripts
