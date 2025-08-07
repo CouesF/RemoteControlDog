@@ -744,9 +744,11 @@ export default class RobotDogController extends BaseComponent {
         if (this.keyState.a) keyboardR = -0.7;
         else if (this.keyState.d) keyboardR = 0.7;
 
+        const isKeyboardActive = keyboardX !== 0 || keyboardR !== 0;
+
         // Keyboard overrides joystick and gamepad
-        const finalX = keyboardX !== 0 ? keyboardX : this.controlState.x + x_val;
-        const finalR = keyboardR !== 0 ? keyboardR : this.controlState.r + r_val;
+        const finalX = isKeyboardActive ? keyboardX : this.controlState.x + x_val;
+        const finalR = isKeyboardActive ? keyboardR : this.controlState.r + r_val;
 
         const combinedX = Helpers.clamp(finalX, -1, 1);
         const combinedR = Helpers.clamp(finalR, -1, 1);
@@ -754,9 +756,10 @@ export default class RobotDogController extends BaseComponent {
         this.elements.xValue.textContent = combinedX.toFixed(2);
         this.elements.rValue.textContent = combinedR.toFixed(2);
 
-        // Update joystick UI from keyboard
-        if (this.xrJoystickController && (this.keyState.w || this.keyState.s || this.keyState.a || this.keyState.d)) {
-            // Note: joystick's setPosition expects (x, y) which maps to (r, x) for us
+        // If keyboard is active, it dictates the joystick's visual position.
+        // If not, the joystick is controlled by mouse/touch, so we don't touch it here.
+        // When the last key is released, an explicit call in the keyup handler will reset it.
+        if (isKeyboardActive) {
             this.xrJoystickController.setPosition(combinedR, combinedX);
         }
     }
@@ -1060,6 +1063,8 @@ export default class RobotDogController extends BaseComponent {
 
     setupKeyboardControls() {
         this.addEventListener(document, 'keydown', (e) => {
+            // Ignore repeated events from holding a key down
+            if (e.repeat) return;
             const key = e.key.toLowerCase();
             if (key in this.keyState) {
                 this.keyState[key] = true;
@@ -1070,9 +1075,16 @@ export default class RobotDogController extends BaseComponent {
             const key = e.key.toLowerCase();
             if (key in this.keyState) {
                 this.keyState[key] = false;
-                // If all keys are up, reset the joystick UI if it was keyboard-controlled
-                if (!Object.values(this.keyState).some(v => v)) {
+                
+                // Check if any other WASD key is still pressed
+                const isAnyKeyPressed = Object.values(this.keyState).some(v => v);
+
+                if (!isAnyKeyPressed) {
+                    // If no keys are pressed, reset the joystick UI
                     this.xrJoystickController.setPosition(0, 0);
+                    // Also reset the underlying control state if it was driven by keyboard
+                    this.controlState.x = 0;
+                    this.controlState.r = 0;
                 }
             }
         });

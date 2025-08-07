@@ -221,7 +221,7 @@ export default class MapBuilder extends BasePage {
                 el.classList.remove('show');
                 setTimeout(() => el.remove(), 150);
             }
-        }, 5000);
+        }, 2000);
     }
 
     showError(title, message) {

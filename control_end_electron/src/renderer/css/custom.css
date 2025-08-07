@@ -24,10 +24,11 @@
     top: 20px;
     left: 20px;
     z-index: 1050; /* Higher than most elements */
-    width: 300px;
+    width: 200px;
 }
 
 #notification-container .alert {
+    width:190px;
     opacity: 0.9;
     box-shadow: 0 2px 10px rgba(0,0,0,0.2);
 }
