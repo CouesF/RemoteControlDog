@@ -7,6 +7,9 @@ import MapsAPI from '../api/maps.js';
 import { EVENTS, SESSION_STATUS } from '../utils/constants.js';
 import Logger from '../utils/logger.js';
 import CONFIG from '../config.js';
+const JA_SCRIPTS_PATH = '../../resources/ja_scripts_simple.json';
+// const JA_SCRIPTS_PATH = '../../resources/ja_scripts.json';
+
 
 const EXPERIMENT_STATE = {
     NAVIGATION: 'navigation',
@@ -72,8 +75,8 @@ export default class ExperimentControl extends BasePage {
 
     async loadJAScripts() {
         try {
-            // const response = await fetch('../../resources/ja_scripts.json');
-            const response = await fetch('../../resources/ja_scripts_simple.json');
+            // const response = await fetch();
+            const response = await fetch(JA_SCRIPTS_PATH);
 
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
