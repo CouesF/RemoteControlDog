@@ -421,6 +421,8 @@ class RobotController:
         time.sleep(0.5)
         self.ensure_high_level_mode()
         self.sport.BalanceStand()
+        time.sleep(0.5)
+        self.sport.BalanceStand()
         self.current_pose = list(self.stand_pos)
         clear_queue(self.command_queue)
 

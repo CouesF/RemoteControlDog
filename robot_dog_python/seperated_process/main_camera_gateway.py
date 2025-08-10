@@ -108,14 +108,14 @@ CAMERA_CONFIGS = {
         "capture": {
             "format": "MJPG",           # 摄像头格式
             "resolution": (640, 480),   # 摄像头分辨率
-            "fps": 15,                  # 摄像头帧率
+            "fps": 25,                  # 摄像头帧率
         },
         
         # 传输设置
         "stream": {
             "resolution": (640, 480),   # 传输分辨率
-            "fps": 15,                  # 传输帧率
-            "quality": 25,              # JPEG质量
+            "fps": 10,                  # 传输帧率
+            "quality": 15,              # JPEG质量
         },
         
         # 处理选项
@@ -152,9 +152,9 @@ CAMERA_CONFIGS = {
         },
         
         "stream": {
-            "resolution": (320, 240),
-            "fps": 30,
-            "quality": 25,
+            "resolution": (160, 120),
+            "fps": 10,
+            "quality": 10,
         },
         
         "processing": {
@@ -180,9 +180,9 @@ CAMERA_CONFIGS = {
         },
         
         "stream": {
-            "resolution": (320, 240),
-            "fps": 30,
-            "quality": 25,
+            "resolution": (160, 120),
+            "fps": 10,
+            "quality": 10,
         },
         
         "processing": {
@@ -636,18 +636,19 @@ class SmartCameraHandler:
                 continue
             
             consecutive_failures = 0
-            self.stats['last_capture_time'] = time.time()
+            capture_time = time.time()
+            self.stats['last_capture_time'] = capture_time
             self.stats['frames_captured'] += 1
 
             # 检查是否需要发送帧（根据传输帧率控制）
             current_time = time.time()
             if current_time - self.last_send_time >= self.frame_interval:
-                jpg_bytes = self._process_frame(frame)
+                jpg_bytes = self._process_frame(frame, capture_time)
                 if jpg_bytes:
                     cam_frame = CameraFrame(
                         camera_id=self.camera_id,
                         frame_data=jpg_bytes,
-                        timestamp=current_time,
+                        timestamp=capture_time, # Use the more accurate capture time
                         frame_id=uuid.uuid4().hex[:8],
                         resolution=self.config['stream']['resolution'],
                         quality=self.config['stream']['quality']
@@ -685,8 +686,9 @@ class SmartCameraHandler:
         else:
             return frame
 
-    def _process_frame(self, frame: np.ndarray) -> Optional[bytes]:
+    def _process_frame(self, frame: np.ndarray, capture_time: float) -> Optional[bytes]:
         """处理帧"""
+        process_start_time = time.time()
         try:
             processed_frame = frame.copy()
             processing_config = self.config['processing']
@@ -754,8 +756,16 @@ class SmartCameraHandler:
             # 7. JPEG编码
             encode_params = [cv2.IMWRITE_JPEG_QUALITY, self.config['stream']['quality']]
             success, encoded_jpg = cv2.imencode('.jpg', processed_frame, encode_params)
+            
+            process_end_time = time.time()
+            
+            if success:
+                # logger.info(f"[PERF] Cam {self.camera_id}: Frame processed in {(process_end_time - process_start_time)*1000:.2f} ms. Capture-to-encode delay: {(process_end_time - capture_time)*1000:.2f} ms.")
+                return encoded_jpg.tobytes()
+            else:
+                logger.warning(f"Cam {self.camera_id}: JPEG encoding failed.")
+                return None
 
-            return encoded_jpg.tobytes() if success else None
         except Exception as e:
             logger.error(f"Frame processing failed for camera {self.camera_id}: {e}")
             return None
@@ -1109,6 +1119,9 @@ class CameraGateway:
         if not self.transport: 
             return
         try:
+            send_time = time.time()
+            # logger.info(f"[SEND] Sending frame {frame.frame_id} from Cam {frame.camera_id} to {addr}. Frame timestamp: {frame.timestamp:.3f}, Send-capture delay: {(send_time - frame.timestamp)*1000:.2f} ms")
+
             frame_header = struct.pack('!B Q HHHB', 
                 0xFF,                               # Magic number
                 int(frame.timestamp * 1000000),     # Microsecond timestamp
@@ -1127,20 +1140,23 @@ class CameraGateway:
                 self.transport.sendto(full_packet, addr)
                 self.stats['packets_sent'] += 1
             else:
-                await self._send_fragmented_binary(addr, full_packet)
+                await self._send_fragmented_binary(addr, full_packet, frame.frame_id)
                 
         except Exception as e:
             logger.error(f"发送二进制帧失败: {e}")
     
-    async def _send_fragmented_binary(self, addr: Tuple[str, int], data: bytes):
+    async def _send_fragmented_binary(self, addr: Tuple[str, int], data: bytes, original_frame_id: str):
         """发送分片二进制数据"""
         if not self.transport: 
             return
         try:
-            fragment_id = uuid.uuid4().hex[:8].encode('ascii')
+            # Use the original frame_id as the fragment_id for better tracking
+            fragment_id = original_frame_id.encode('ascii')
             chunk_size = FRAGMENT_THRESHOLD - 20
             total_fragments = (len(data) + chunk_size - 1) // chunk_size
             
+            logger.info(f"[FRAG] Sending fragmented frame {original_frame_id} to {addr}. Total chunks: {total_fragments}")
+
             for i in range(total_fragments):
                 chunk = data[i*chunk_size : (i+1)*chunk_size]
                 fragment_header = struct.pack('!B8sHHH',
