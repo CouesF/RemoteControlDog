@@ -438,7 +438,7 @@ async def ja_success(session_id: str, data: Dict):
     """记录孩子脱离画面事件"""
     logger.info(f"Received ja_success for session {session_id}, data: {data}")
     participantName = data.get("participantName", "小朋友")
-    speech_controller.synthesis_speech(f"{participantName}，你太棒啦！", volume=-1)
+    # speech_controller.synthesis_speech(f"{participantName}，你太棒啦！", volume=-1)
 
     return {"message": "JA success event recorded."}
 
@@ -447,7 +447,7 @@ async def ja_failure(session_id: str, data: Dict):
     """记录孩子脱离画面事件"""
     logger.info(f"Received ja_failure for session {session_id}, data: {data}")
     participantName = data.get("participantName", "小朋友")
-    speech_controller.synthesis_speech(f"我们再试一次。", volume=-1)
+    # speech_controller.synthesis_speech(f"我们再试一次。", volume=-1)
     return {"message": "JA failure event recorded."}
 
 @app.post(f"{API_PREFIX}/sessions/{{session_id}}/actions", status_code=202)
@@ -461,12 +461,10 @@ async def trigger_session_action(session_id: str, action_data: Dict):
             text = payload.get("text", "")
             participant_name = payload.get("participantName", "")
 
-        
         elif action_type == "LOG_EVENT":
             event_name = payload.get("eventName", "")
             event_details = payload.get("details", {})
 
-        
         else:
             raise HTTPException(status_code=400, detail=f"Unknown action type: {action_type}")
         
@@ -478,7 +476,16 @@ async def trigger_session_action(session_id: str, action_data: Dict):
         logger.error(f"Failed to trigger action: {e}")
         raise HTTPException(status_code=500, detail="Failed to trigger action")
 
-
+@app.post(f"{API_PREFIX}/synthesis_speech", status_code=200)
+async def synthesis_speech_only(data: Dict):
+    logger.info(f"Received synthesis_speech, data: {data}")
+    text = data.get("text", "")
+    if text != "":
+        speech_controller.synthesis_speech(f"{text}", volume=-1)
+        return {"message": "synthesis_speech event recorded."}
+    else:
+        return {"message": "text is empty"}
+    
 # ==================== 机器人状态API ====================
 
 @app.get(f"{API_PREFIX}/robot/status", response_model=Dict)

@@ -21,6 +21,7 @@ import traceback
 import signal
 import struct
 from datetime import datetime
+from pydub import AudioSegment
 from urllib.parse import urlencode
 from unitree_sdk2py.core.channel import ChannelPublisher, ChannelSubscriber, ChannelFactoryInitialize
 
@@ -133,15 +134,20 @@ class AudioPlayer:
             self.device_index = 0
         
         print(f"🎯 选择的音频设备索引: {self.device_index}")
-        
+
+        global DEVICE_INDEX
+        DEVICE_INDEX = self.device_index
+
         # 创建音频流
         self._create_stream()
         
         # 播放控制
+        self.is_paused = threading.Event()
         self.stop_requested = threading.Event()
         self.stream_lock = threading.Lock()
         self.queue_lock = threading.Lock()
         self.audio_queue = queue.Queue()
+        self.chunker_thread = None
         self.current_volume = 70
         self.set_system_volume(self.current_volume)
         
@@ -182,6 +188,8 @@ class AudioPlayer:
                     # 检查设备名称是否包含目标字符串
                     if target_name.lower() in device_name.lower():
                         print(f"✅ 找到匹配设备: 索引 {i}, 名称: {device_name}")
+                        global DEVICE_NAME
+                        DEVICE_NAME = device_name
                         return i
             except Exception as e:
                 print(f"  检查设备 {i} 时出错: {e}")
@@ -196,7 +204,7 @@ class AudioPlayer:
             return
         volume = max(0, min(100, volume_percent))
         self.current_volume = volume
-        cmd = f"amixer -D hw:0 sset 'PCM' {volume}% >/dev/null 2>&1"
+        cmd = f"amixer -D hw:{int(DEVICE_NAME.split('hw:')[1].split(',')[0])} sset 'PCM' {volume}% >/dev/null 2>&1"
         os.system(cmd)
         print(f"🔈 设置系统音量: {volume}%")
     
@@ -234,6 +242,11 @@ class AudioPlayer:
                     print("⚠️ 音频流未准备好，跳过播放")
                     continue
                 
+                while self.is_paused.is_set():
+                    if self.stop_requested.is_set(): # Allow stop to interrupt pause
+                        break
+                    time.sleep(0.1)
+
                 # 音量放大
 
                 # amplified_audio = self.amplify_audio(audio_data)
@@ -253,6 +266,24 @@ class AudioPlayer:
                 print(f"播放线程错误: {e}")
                 self._recover_stream()
     
+    def toggle_pause(self):
+        """Toggles the pause/resume state of the audio playback."""
+        # Check if something is in the queue or the stream is working
+        is_active = not self.audio_queue.empty() or (self.stream and self.stream.is_active())
+
+        if not is_active:
+            print("⏯️ No audio is playing, cannot toggle pause.")
+            return
+
+        if self.is_paused.is_set():
+            self.is_paused.clear()
+            print("▶️ Playback resumed.")
+            send_feedback(audio_playing=True) # Optional: send feedback
+        else:
+            self.is_paused.set()
+            print("⏸️ Playback paused.")
+            send_feedback(audio_playing=False) # Optional: send feedback
+
     def _ensure_stream_ready(self):
         """确保音频流准备好接收新音频"""
         if not self.stream or not self.stream.is_active():
@@ -281,9 +312,14 @@ class AudioPlayer:
     def stop_immediately(self):
         """立即停止播放"""
         print("⏹️ 执行立即停止操作")
+        if self.is_paused.is_set():
+            self.is_paused.clear()
         # 设置停止标志
         self.stop_requested.set()
         
+        if self.chunker_thread and self.chunker_thread.is_alive():
+            self.chunker_thread.join(timeout=0.2)
+
         # 清空音频队列
         with self.queue_lock:
             while not self.audio_queue.empty():
@@ -323,6 +359,37 @@ class AudioPlayer:
         except queue.Full:
             print("⚠️ 音频队列已满，丢弃数据")
     
+    def _chunker_worker(self, audio_data: bytes):
+        """
+        A worker thread that takes a large block of audio data,
+        breaks it into small chunks, and puts them in the audio_queue.
+        """
+        print("▶️ Starting chunker thread...")
+        chunk_size = 2048  # Process audio in 2KB chunks
+        data_index = 0
+
+        while data_index < len(audio_data):
+            # IMPORTANT: Check for stop command between every chunk
+            if self.stop_requested.is_set():
+                print("⏹️ Chunker thread received stop signal. Aborting.")
+                break
+
+            # If paused, wait here. The playback worker will also be waiting.
+            while self.is_paused.is_set():
+                time.sleep(0.1)
+
+            chunk = audio_data[data_index : data_index + chunk_size]
+            
+            # Put the small chunk into the queue for the playback thread
+            self.audio_queue.put(chunk)
+            data_index += chunk_size
+            
+            # Small sleep to prevent this thread from running too fast
+            # and filling the queue excessively.
+            time.sleep(0.01)
+        
+        print("⏹️ Chunker thread finished.")
+
     def amplify_audio(self, audio_data):
         """放大音频音量"""
         if len(audio_data) < 2:
@@ -354,6 +421,46 @@ class AudioPlayer:
             print(f"音量放大失败: {e}")
             return audio_data
     
+    def play_local_file(self, file_path: str):
+        """
+        Loads a local audio file and starts a "chunker" thread to stream it
+        into the playback queue.
+        """
+        if not os.path.exists(file_path):
+            error_msg = f"Local audio file not found: {file_path}"
+            print(f"❌ {error_msg}")
+            send_feedback(error_message=error_msg)
+            return
+
+        print(f"🎵 Received request to play local file: {file_path}")
+        
+        self.stop_immediately() # Stop any current audio
+        
+        try:
+            print("🎧 Loading and decoding file with pydub...")
+            audio_segment = AudioSegment.from_file(file_path)
+
+            audio_segment = audio_segment.set_channels(1)
+            audio_segment = audio_segment.set_frame_rate(self.TARGET_SAMPLE_RATE)
+            
+            # --- REPLACEMENT LOGIC ---
+            # Instead of queueing the huge file, start the chunker thread.
+            self.chunker_thread = threading.Thread(
+                target=self._chunker_worker, 
+                args=(audio_segment.raw_data,), 
+                daemon=True
+            )
+            self.chunker_thread.start()
+            # --- END REPLACEMENT ---
+
+            send_feedback(audio_playing=True)
+            print(f"✅ Started streaming '{os.path.basename(file_path)}' for playback.")
+
+        except Exception as e:
+            error_msg = f"Failed to play local file {file_path}: {e}"
+            print(f"❌ {error_msg}")
+            send_feedback(error_message=error_msg)
+
     def close(self):
         """释放音频资源"""
         self.stop_immediately()
@@ -394,6 +501,11 @@ class SpeechControlHandler:
             try:
                 control_msg = self.command_queue.get(timeout=0.5)
                 
+                if hasattr(control_msg, 'pause_resume') and control_msg.pause_resume:
+                    print("⏯️ 收到暂停/恢复命令")
+                    self.audio_player.toggle_pause()
+                    continue
+
                 # 处理停止命令
                 if hasattr(control_msg, 'stop_speaking') and control_msg.stop_speaking:
                     current_time = time.time()
@@ -498,7 +610,10 @@ def get_payload_bytes(uid='1234', event=EVENT_NONE, text='', speaker='',
             "speaker": speaker,
             "audio_params": {
                 "format": audio_format,
-                "sample_rate": audio_sample_rate
+                "sample_rate": audio_sample_rate,
+                "emotion":"depressed",
+                "enable_emotion": True,
+                "speed_ratio":2
             }
         }
     }
@@ -823,6 +938,9 @@ async def main():
                 # 读取DDS消息
                 control_msg = speech_control_sub.Read(1)
                 if control_msg is not None:
+                    is_handler_command = (control_msg.stop_speaking or control_msg.volume != 0 or (hasattr(control_msg, 'pause_resume') and control_msg.pause_resume))
+                    if is_handler_command:
+                         speech_handler.add_command(control_msg)
                     # 打印接收到的DDS消息
                     msg_info = ""
                     if hasattr(control_msg, 'text_to_speak') and control_msg.text_to_speak:
@@ -836,23 +954,29 @@ async def main():
                     
                     # 将消息添加到处理器队列
                     speech_handler.add_command(control_msg)
-                    
+
                     # 如果有文本需要合成
                     if hasattr(control_msg, 'text_to_speak') and control_msg.text_to_speak.strip():
                         if control_msg.text_to_speak == "":continue
-                        print(f"🔊 启动语音合成: '{control_msg.text_to_speak[:20]}...'")
-                        timestamp = int(time.time())
-                        output_path = f"./tts_output_{timestamp}.pcm"
+                        text_command = control_msg.text_to_speak.strip()
+                        if text_command.startswith("path:"):
+                            file_path = text_command[5:].strip()
+                            print(f"📂 收到本地文件播放请求: {file_path}")
+                            audio_player.play_local_file(file_path)
+                        else:
+                            print(f"🔊 启动语音合成: '{control_msg.text_to_speak[:20]}...'")
+                            timestamp = int(time.time())
+                            output_path = f"./tts_output_{timestamp}.pcm"
                         
-                        # 启动语音合成任务
-                        await run_tts(
-                            appId=APP_ID,
-                            token=TOKEN,
-                            speaker="zh_female_shuangkuaisisi_moon_bigtts", 
-                            text=control_msg.text_to_speak,
-                            output_path=output_path,
-                            audio_player=audio_player
-                        )
+                            # 启动语音合成任务
+                            await run_tts(
+                                appId=APP_ID,
+                                token=TOKEN,
+                                speaker="zh_female_shuangkuaisisi_moon_bigtts", 
+                                text=control_msg.text_to_speak,
+                                output_path=output_path,
+                                audio_player=audio_player
+                            )
                     
                 # 短暂休眠
                 await asyncio.sleep(DDS_SLEEP_INTERVAL)

@@ -33,6 +33,8 @@ SCRIPTS_TO_MANAGE = {
     "main_dog_head_control.py":   {"field_name": "head_ctrl",     "path": os.path.join(PROCESS_MANAGER_BASE_DIR, "main_dog_head_control.py"), "autostart": False},
     "main_speech_synthesis.py":   {"field_name": "speech_synth",  "path": os.path.join(PROCESS_MANAGER_BASE_DIR, "main_speech_synthesis.py"), "autostart": False},
     "main_speech_recognition.py": {"field_name": "speech_recog", "path": os.path.join(PROCESS_MANAGER_BASE_DIR, "main_speech_recognition.py"), "autostart": False},
+    "main_camera_flask_stream.py": {"field_name": "cam_flask_stream", "path": os.path.join(PROCESS_MANAGER_BASE_DIR, "main_camera_flask_stream.py"), "autostart": False},
+    "main_camera_flask_stream_side.py": {"field_name": "cam_flask_stream_side", "path": os.path.join(PROCESS_MANAGER_BASE_DIR, "main_camera_flask_stream_side.py"), "autostart": False},
     "start_woz_backend.py": {
         "field_name": "woz_backend",
         # Use the correct absolute path for this specific script
