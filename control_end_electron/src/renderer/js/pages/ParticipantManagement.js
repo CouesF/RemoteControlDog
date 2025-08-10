@@ -492,8 +492,9 @@ export default class ParticipantManagement extends BasePage {
         try {
             const participantId = document.querySelector('#participant-select')?.value;
             const mapId = document.querySelector('#map-select')?.value;
+            const scriptPath = document.querySelector('#script-select')?.value;
 
-            if (!participantId || !mapId) {
+            if (!participantId || !mapId || !scriptPath) {
                 this.showWarning('请选择被试和地图');
                 return false;
             }
@@ -506,6 +507,7 @@ export default class ParticipantManagement extends BasePage {
                 // 保存会话信息
                 sessionStorage.setItem('currentSessionId', session.sessionId);
                 sessionStorage.setItem('sessionStartTime', session.startTime);
+                sessionStorage.setItem('currentScriptPath', scriptPath);
 
                 // 保存参与者和地图信息供显示使用
                 const participant = this.participants.find(p => p.participantId === participantId);

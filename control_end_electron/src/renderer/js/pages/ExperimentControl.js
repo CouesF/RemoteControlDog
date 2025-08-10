@@ -7,9 +7,6 @@ import MapsAPI from '../api/maps.js';
 import { EVENTS, SESSION_STATUS } from '../utils/constants.js';
 import Logger from '../utils/logger.js';
 import CONFIG from '../config.js';
-const JA_SCRIPTS_PATH = '../../resources/ja_scripts_simple.json';
-// const JA_SCRIPTS_PATH = '../../resources/ja_scripts.json';
-
 
 const EXPERIMENT_STATE = {
     NAVIGATION: 'navigation',
@@ -75,8 +72,8 @@ export default class ExperimentControl extends BasePage {
 
     async loadJAScripts() {
         try {
-            // const response = await fetch();
-            const response = await fetch(JA_SCRIPTS_PATH);
+            const scriptPath = sessionStorage.getItem('currentScriptPath') || '../../resources/ja_scripts.json';
+            const response = await fetch(`../../${scriptPath}`);
 
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
@@ -608,9 +605,9 @@ export default class ExperimentControl extends BasePage {
             } else if (instructionLevel === 2 && script.L2_AUDIO_TEXT) {
                 // Fallback for level 1 or if L2 text is missing
                 promptText = script.L2_AUDIO_TEXT || `小朋友，请看看${targetName}`;
-            }else if(instructionLevel ===3 && script.L3_AUDIO_TEXT){
+            } else if(instructionLevel ===3 && script.L3_AUDIO_TEXT){
                 promptText = script.L3_AUDIO_TEXT || `小朋友，请看看${targetName}`;
-            }else{
+            } else{
                 promptText  = `小朋友，请看看${targetName}`;
             }
         } else {
@@ -619,7 +616,7 @@ export default class ExperimentControl extends BasePage {
     
         Logger.info(`Sending voice prompt for target: ${targetName}, level: ${instructionLevel}, text: "${promptText}"`);
         
-        try {
+        try{
             await this.generateSpeech(promptText);
             
             // Log the action
@@ -808,6 +805,7 @@ export default class ExperimentControl extends BasePage {
         sessionStorage.removeItem('currentParticipantName');
         sessionStorage.removeItem('currentMapName');
         sessionStorage.removeItem('currentMapId');
+        sessionStorage.removeItem('currentScriptPath');
     }
 
     async beforeCleanup() {
