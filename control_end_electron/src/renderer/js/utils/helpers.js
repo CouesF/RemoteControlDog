@@ -174,4 +174,9 @@ export class Helpers {
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
     }
+
+    // 限制数字在范围内
+    static clamp(value, min, max) {
+        return Math.max(min, Math.min(max, value));
+    }
 }

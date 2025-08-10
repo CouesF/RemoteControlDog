@@ -7,6 +7,9 @@ import MapsAPI from '../api/maps.js';
 import { EVENTS, SESSION_STATUS } from '../utils/constants.js';
 import Logger from '../utils/logger.js';
 import CONFIG from '../config.js';
+const JA_SCRIPTS_PATH = '../../resources/ja_scripts_simple.json';
+// const JA_SCRIPTS_PATH = '../../resources/ja_scripts.json';
+
 
 const EXPERIMENT_STATE = {
     NAVIGATION: 'navigation',
@@ -33,6 +36,8 @@ export default class ExperimentControl extends BasePage {
             currentInstruction: null,
             instructionLevel: 1,
         };
+        this.jaScripts = null;
+        this.generalScripts = null;
     }
 
     async loadData() {
@@ -48,6 +53,40 @@ export default class ExperimentControl extends BasePage {
         // 获取JA目标
         this.state.jaTargets = await MapsAPI.getTargets(this.currentMapId);
         Logger.info(`Loaded ${this.state.jaTargets.length} JA targets`);
+
+        // 加载JA脚本
+        await this.loadJAScripts();
+        await this.loadGeneralScripts();
+    }
+
+    async loadGeneralScripts() {
+        try {
+            const response = await fetch('../../resources/general.json');
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            this.generalScripts = await response.json();
+            Logger.info('General scripts loaded successfully.');
+        } catch (error) {
+            Logger.error('Failed to load general scripts:', error);
+            this.generalScripts = {}; // Assign an empty object on failure
+        }
+    }
+
+    async loadJAScripts() {
+        try {
+            // const response = await fetch();
+            const response = await fetch(JA_SCRIPTS_PATH);
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            this.jaScripts = await response.json();
+            Logger.info('JA scripts loaded successfully.');
+        } catch (error) {
+            Logger.error('Failed to load JA scripts:', error);
+            this.jaScripts = {}; // Assign an empty object on failure to prevent errors
+        }
     }
 
     async renderData() {
@@ -55,7 +94,49 @@ export default class ExperimentControl extends BasePage {
         this.updateSessionInfo();
         this.renderJATargetList();
         this.renderJATargetDetail();
+        this.renderGeneralScripts();
         this.updateExperimentState(EXPERIMENT_STATE.NAVIGATION);
+    }
+
+    renderGeneralScripts() {
+        const container = this.querySelector('#general-scripts-container');
+        if (!container || !this.generalScripts) return;
+
+        let html = '';
+        for (const category in this.generalScripts) {
+            html += `<p>${category}</p>`;
+            const buttons = this.generalScripts[category];
+            html += '<div class="d-flex flex-wrap">';
+            for (const buttonName in buttons) {
+                const buttonData = buttons[buttonName];
+                html += `
+                    <button class="btn btn-outline-secondary btn-sm m-1 general-script-btn" data-texts='${JSON.stringify(buttonData.texts)}'>
+                        ${buttonName}
+                    </button>
+                `;
+            }
+            html += '</div>';
+        }
+        container.innerHTML = html;
+
+        // Add event listeners
+        const generalScriptBtns = container.querySelectorAll('.general-script-btn');
+        generalScriptBtns.forEach(btn => {
+            this.addEventListener(btn, 'click', () => {
+                const texts = JSON.parse(btn.getAttribute('data-texts'));
+                this.handleGeneralScriptClick(texts);
+            });
+        });
+    }
+
+    handleGeneralScriptClick(texts) {
+        if (texts && texts.length > 0) {
+            const randomIndex = Math.floor(Math.random() * texts.length);
+            const text = texts[randomIndex];
+            this.generateSpeech(text);
+        } else {
+            Logger.warn('No texts found for this general script button.');
+        }
     }
 
     setupEventListeners() {
@@ -98,12 +179,39 @@ export default class ExperimentControl extends BasePage {
             Logger.info('Robot dog controller initialized');
 
             this.cameraMonitor = this.querySelector('multi-camera-monitor');
-            Logger.info('Camera monitor initialized');
+            if (this.cameraMonitor && this.robotController) {
+                // Listen for camera clicks to update the joystick
+                this.addEventListener(this.cameraMonitor, 'set-head-joystick', (e) => {
+                    const { x, y } = e.detail;
+                    if (this.robotController.headJoystickController) {
+                        this.robotController.headJoystickController.setPosition(x, y);
+                    }
+                });
+
+                // Listen for manual joystick moves to update the camera indicator
+                this.addEventListener(this.robotController.container, 'head-joystick-move', (e) => {
+                    const { x, y } = e.detail;
+                    if (this.cameraMonitor.updateIndicatorFromJoystick) {
+                        this.cameraMonitor.updateIndicatorFromJoystick(x, y);
+                    }
+                });
+
+                Logger.info('Camera monitor and robot controller two-way binding initialized.');
+            } else {
+                Logger.error('Camera monitor or robot controller component not found!');
+            }
 
         } catch (error) {
             Logger.error('Failed to initialize components:', error);
             this.showError('组件初始化失败', error.message);
         }
+    }
+
+    handleIndicatorClick(event) {
+        // This handler is now replaced by the 'set-head-joystick' listener,
+        // but we'll keep it here in case it's needed for other purposes.
+        const { x, y } = event.detail;
+        Logger.info(`Legacy indicator click event received: { x: ${x}, y: ${y} }`);
     }
 
     updateSessionInfo() {
@@ -238,27 +346,35 @@ export default class ExperimentControl extends BasePage {
 
     async generateSpeech(text) {
         try {
-            if (!text || !text.trim()) {
+            let processedText = text.trim();
+            if (!processedText) {
                 this.showWarning('语音内容不能为空');
                 return;
             }
 
-            this.showInfo('正在生成语音...');
-
-            // 通过SessionsAPI触发语音生成
-            await SessionsAPI.triggerAction(this.currentSessionId, 'GENERATE_SPEECH', { text });
-
+            // 获取参与者姓名并替换占位符
+            const participantName = sessionStorage.getItem('currentParticipantName');
+            if (participantName && participantName !== '未知') {
+                processedText = processedText.replace(/小朋友/g, participantName);
+            }
+    
+            this.showInfo('正在请求语音合成...');
+    
+            // 直接调用新的API方法
+            await SessionsAPI.synthesisSpeech(processedText);
+    
             // 记录语音生成事件
             await SessionsAPI.triggerAction(this.currentSessionId, 'LOG_EVENT', {
-                eventName: 'SPEECH_GENERATED',
-                details: `Generated speech: "${text}"`
+                eventName: 'SPEECH_SYNTHESIS_REQUESTED',
+                details: `Requested speech synthesis for: "${processedText}" (Original: "${text}")`
             });
-
-            Logger.info(`Speech generated: ${text}`);
-
+    
+            Logger.info(`Speech synthesis requested for: ${processedText}`);
+            this.showSuccess('语音合成请求已发送');
+    
         } catch (error) {
-            Logger.error('Failed to generate speech:', error);
-            this.showError('语音生成失败', error.message);
+            Logger.error('Failed to request speech synthesis:', error);
+            this.showError('语音合成失败', error.message);
         }
     }
 
@@ -334,12 +450,12 @@ export default class ExperimentControl extends BasePage {
             <h5>${target.targetName}</h5>
             <div class="row">
                 <div class="col-md-6">
-                    <p><strong>目标图片:</strong></p>
-                    <img src="${targetImgUrl}" alt="目标图片" class="img-fluid rounded">
+                    <p>目标图</p>
+                    <img src="${targetImgUrl}" alt="目标图片" class="img-fluid rounded" style="max-width: 6%">
                 </div>
                 <div class="col-md-6">
-                    <p><strong>环境图片:</strong></p>
-                    <img src="${envImgUrl}" alt="环境图片" class="img-fluid rounded">
+                    <p>环境图</p>
+                    <img src="${envImgUrl}" alt="环境图片" class="img-fluid rounded" style="max-width: 6%">
                 </div>
             </div>
             <button id="start-ja-instruction-btn" class="btn btn-primary mt-3">
@@ -472,19 +588,46 @@ export default class ExperimentControl extends BasePage {
     }
 
     async handleVoicePrompt() {
-        const { currentTarget } = this.state;
-        const participantName = sessionStorage.getItem('currentParticipantName') || '未知';
+        const { currentTarget, instructionLevel } = this.state;
         if (!currentTarget) {
             this.showWarning('没有选择JA目标');
             return;
         }
-        Logger.info(`Sending voice prompt for target: ${currentTarget.targetName}`);
+    
+        let promptText = '';
+        const targetName = currentTarget.targetName;
+        console.log(targetName);
+        
+    
+        if (this.jaScripts && this.jaScripts[targetName]) {
+            const script = this.jaScripts[targetName];
+            // Levels 2 and 3 use L2_AUDIO_TEXT for the prompt
+            console.log(script.L2_AUDIO_TEXT)
+            if ((instructionLevel === 1)) {
+                promptText = `小朋友，请看看${targetName}`;
+            } else if (instructionLevel === 2 && script.L2_AUDIO_TEXT) {
+                // Fallback for level 1 or if L2 text is missing
+                promptText = script.L2_AUDIO_TEXT || `小朋友，请看看${targetName}`;
+            }else if(instructionLevel ===3 && script.L3_AUDIO_TEXT){
+                promptText = script.L3_AUDIO_TEXT || `小朋友，请看看${targetName}`;
+            }else{
+                promptText  = `小朋友，请看看${targetName}`;
+            }
+        } else {
+            promptText = `小朋友，请看看${targetName}`; // Default prompt if target not in scripts
+        }
+    
+        Logger.info(`Sending voice prompt for target: ${targetName}, level: ${instructionLevel}, text: "${promptText}"`);
+        
         try {
-            await SessionsAPI.sendVoicePrompt(this.currentSessionId, {
-                participantName,
-                targetId: currentTarget.targetId,
-                targetName: currentTarget.targetName,
+            await this.generateSpeech(promptText);
+            
+            // Log the action
+            await SessionsAPI.triggerAction(this.currentSessionId, 'LOG_EVENT', {
+                eventName: 'VOICE_PROMPT_SENT',
+                details: `Target: ${targetName}, Level: ${instructionLevel}, Text: "${promptText}"`
             });
+    
             this.showSuccess('已发送语音提示指令');
         } catch (error) {
             Logger.error('Failed to send voice prompt:', error);
@@ -540,52 +683,53 @@ export default class ExperimentControl extends BasePage {
     async handleJAInstructionResult(status) {
         const { currentTarget, instructionLevel } = this.state;
         const participantName = sessionStorage.getItem('currentParticipantName') || '未知';
-
+        const targetName = currentTarget.targetName;
+    
         try {
             if (status === 'success') {
                 this.showSuccess(`JA成功，等级: ${instructionLevel}`);
                 this.updateTargetCompletionStatus(currentTarget.targetId, `完成 (L${instructionLevel})`, 'success');
-                
+    
+                // 1. 发送语音合成请求
+                const successSpeech = this.jaScripts?.[targetName]?.SUCCESS;
+                if (successSpeech) {
+                    await SessionsAPI.synthesisSpeech(successSpeech);
+                }
+    
+                // 2. 发送JA成功逻辑请求
                 await SessionsAPI.jaSuccess(this.currentSessionId, {
                     participantName,
                     targetId: currentTarget.targetId,
-                    targetName: currentTarget.targetName,
+                    targetName: targetName,
                     instructionLevel: instructionLevel
                 });
-
-                // TODO: 执行奖励指令
-                // deprecated
-                await this.executeRewardSequence(currentTarget, instructionLevel);
-                
-                // TODO: 记录成功结果到后端
-                // deprecated
-                await this.recordInstructionResult(currentTarget.targetId, instructionLevel, 'success');
-                
+    
                 this.updateExperimentState(EXPERIMENT_STATE.NAVIGATION);
+    
             } else { // failure
+                // Play failure audio for the current level
+                const script = this.jaScripts?.[targetName];
+                if (script) {
+                    const failText = instructionLevel === 1 ? script.L1_FAIL : script.L2_FAIL;
+                    if (failText) {
+                        await SessionsAPI.synthesisSpeech(failText);
+                    }
+                }
+    
                 await SessionsAPI.jaFailure(this.currentSessionId, {
                     participantName,
                     targetId: currentTarget.targetId,
                     targetName: currentTarget.targetName,
                     instructionLevel: instructionLevel
                 });
+    
                 if (instructionLevel < 3) {
                     this.state.instructionLevel++;
                     this.showWarning(`JA失败，进入下一等级: ${this.state.instructionLevel}`);
                     this.renderJATargetDetail();
                 } else {
-                    // 第3级失败处理
                     this.showWarning('JA失败，已达到最高等级');
                     this.updateTargetCompletionStatus(currentTarget.targetId, '失败', 'danger');
-                    
-                    // TODO: 记录失败结果到后端
-                    // deprecated
-                    await this.recordInstructionResult(currentTarget.targetId, 3, 'failure');
-                    
-                    // TODO: 执行失败后的处理流程
-                    // deprecated
-                    await this.handleTargetFailure(currentTarget);
-                    
                     this.updateExperimentState(EXPERIMENT_STATE.NAVIGATION);
                 }
             }

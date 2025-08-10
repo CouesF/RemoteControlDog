@@ -16,9 +16,7 @@ const { ipcMain } = require('electron');
 const { logger } = require('./utils/logger');
 
 // --- Constants ---
-// const SERVER_HOST = '118.31.58.101';
-const SERVER_HOST = '121.43.134.209';
-
+const SERVER_HOST = '118.31.58.101';
 const SERVER_PORT = 58991;
 const MAX_UDP_SIZE = 65507;
 const FRAGMENT_TIMEOUT = 5000; // 5 seconds
@@ -260,34 +258,23 @@ class CameraUDPHandler {
             const chunk = data.slice(15, 15 + length);
 
             if (!this.fragmentBuffer.has(fragId)) {
-                // This is the first fragment for this ID
                 this.fragmentBuffer.set(fragId, {
                     chunks: new Array(total),
                     count: 0,
                     total,
                     timestamp: Date.now(),
                 });
-                logger.info(`[FRAG] New buffer created for fragId: ${fragId} with ${total} total chunks.`);
             }
 
             const buffer = this.fragmentBuffer.get(fragId);
-
-            // Handle late fragments for a buffer that has already been cleared
-            if (!buffer) {
-                logger.warn(`[FRAG] Received late fragment for already cleared buffer: ${fragId}`);
-                return null;
-            }
-
             if (!buffer.chunks[index]) {
                 buffer.chunks[index] = chunk;
                 buffer.count++;
-                // logger.info(`[FRAG] Added chunk ${index + 1}/${total} to buffer ${fragId}.`);
             }
 
             if (buffer.count === buffer.total) {
                 const fullData = Buffer.concat(buffer.chunks);
                 this.fragmentBuffer.delete(fragId);
-                logger.info(`[FRAG] Successfully reassembled frame from ${total} chunks for fragId: ${fragId}.`);
                 return fullData;
             }
             return null;
