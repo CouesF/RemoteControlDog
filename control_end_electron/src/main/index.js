@@ -4,6 +4,7 @@ const path = require('path');
 const dotenv = require('dotenv');
 const { CameraUDPHandler } = require('./camera_udp_handler');
 const { UDPHandler } = require('./udp_handler');
+const { RemoteControlHandler } = require('./remote_control_handler');
 
 // --- Configuration ---
 dotenv.config({ path: path.join(__dirname, '..', '..', '..', '.env'), override: true });
@@ -11,6 +12,7 @@ dotenv.config({ path: path.join(__dirname, '..', '..', '..', '.env'), override: 
 let mainWindow;
 let cameraHandler;
 let udpHandler;
+let remoteControlHandler;
 
 function createWindow() {
     mainWindow = new BrowserWindow({
@@ -32,6 +34,7 @@ app.whenReady().then(() => {
     // Initialize handlers
     cameraHandler = new CameraUDPHandler(mainWindow);
     udpHandler = new UDPHandler(mainWindow);
+    remoteControlHandler = new RemoteControlHandler(mainWindow);
 
     app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) {
@@ -46,6 +49,9 @@ app.on('window-all-closed', () => {
     }
     if (udpHandler) {
         udpHandler.closeAllConnections();
+    }
+    if (remoteControlHandler) {
+        remoteControlHandler.cleanup();
     }
     if (process.platform !== 'darwin') {
         app.quit();

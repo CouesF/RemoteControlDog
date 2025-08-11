@@ -82,6 +82,23 @@ contextBridge.exposeInMainWorld('api', {
         return () => ipcRenderer.removeAllListeners(channel);
     },
 
+    // --- Remote Control API ---
+    getRemoteControlStatus: () => ipcRenderer.invoke('get-remote-control-status'),
+    connectRemoteControl: () => ipcRenderer.send('connect-remote-control'),
+    disconnectRemoteControl: () => ipcRenderer.send('disconnect-remote-control'),
+    
+    // Remote Control Event Listeners
+    onRemoteControlConnected: (callback) => ipcRenderer.on('remote-control-connected', (event, ...args) => callback(...args)),
+    onRemoteControlDisconnected: (callback) => ipcRenderer.on('remote-control-disconnected', (event, ...args) => callback(...args)),
+    onRemoteControlAuthenticated: (callback) => ipcRenderer.on('remote-control-authenticated', (event, ...args) => callback(...args)),
+    onRemoteControlAuthFailed: (callback) => ipcRenderer.on('remote-control-auth-failed', (event, ...args) => callback(...args)),
+    onRemoteControlCommand: (callback) => ipcRenderer.on('remote-control-command', (event, ...args) => callback(...args)),
+    onRemoteControlStatusUpdate: (callback) => ipcRenderer.on('remote-control-status-update', (event, ...args) => callback(...args)),
+    onRemoteControlMaxReconnectReached: (callback) => ipcRenderer.on('remote-control-max-reconnect-reached', (event, ...args) => callback(...args)),
+    
+    // Send command result back to main process
+    sendRemoteControlResult: (result) => ipcRenderer.send('remote-control-result', result),
+
     // --- Mock Data API (Preserved) ---
     getParticipants: () => Promise.resolve(mockData.participants),
     createParticipant: (participant) => {

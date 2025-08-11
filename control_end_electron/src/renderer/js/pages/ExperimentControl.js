@@ -35,6 +35,12 @@ export default class ExperimentControl extends BasePage {
         };
         this.jaScripts = null;
         this.generalScripts = null;
+        
+        // 远程控制状态
+        this.remoteControlStatus = {
+            isConnected: false,
+            isAuthenticated: false
+        };
     }
 
     async loadData() {
@@ -54,6 +60,9 @@ export default class ExperimentControl extends BasePage {
         // 加载JA脚本
         await this.loadJAScripts();
         await this.loadGeneralScripts();
+        
+        // 初始化远程控制
+        this.initializeRemoteControl();
     }
 
     async loadGeneralScripts() {
@@ -808,6 +817,236 @@ export default class ExperimentControl extends BasePage {
         sessionStorage.removeItem('currentScriptPath');
     }
 
+    // === 远程控制相关方法 ===
+    
+    initializeRemoteControl() {
+        try {
+            if (!window.api?.onRemoteControlCommand) {
+                Logger.warn('Remote control API not available');
+                return;
+            }
+
+            // 监听远程控制命令
+            window.api.onRemoteControlCommand((data) => {
+                this.handleRemoteControlCommand(data);
+            });
+
+            // 监听远程控制状态变化
+            window.api.onRemoteControlConnected(() => {
+                this.remoteControlStatus.isConnected = true;
+                this.updateRemoteControlStatusDisplay();
+                Logger.info('Remote control connected');
+            });
+
+            window.api.onRemoteControlDisconnected(() => {
+                this.remoteControlStatus.isConnected = false;
+                this.remoteControlStatus.isAuthenticated = false;
+                this.updateRemoteControlStatusDisplay();
+                Logger.info('Remote control disconnected');
+            });
+
+            window.api.onRemoteControlAuthenticated(() => {
+                this.remoteControlStatus.isAuthenticated = true;
+                this.updateRemoteControlStatusDisplay();
+                Logger.info('Remote control authenticated');
+            });
+
+            window.api.onRemoteControlAuthFailed((message) => {
+                this.remoteControlStatus.isAuthenticated = false;
+                this.updateRemoteControlStatusDisplay();
+                Logger.error(`Remote control auth failed: ${message}`);
+            });
+
+            // 获取初始状态
+            this.updateRemoteControlStatus();
+
+            Logger.info('Remote control initialized');
+
+        } catch (error) {
+            Logger.error('Failed to initialize remote control:', error);
+        }
+    }
+
+    async updateRemoteControlStatus() {
+        try {
+            if (window.api?.getRemoteControlStatus) {
+                const status = await window.api.getRemoteControlStatus();
+                this.remoteControlStatus = status;
+                this.updateRemoteControlStatusDisplay();
+            }
+        } catch (error) {
+            Logger.error('Failed to get remote control status:', error);
+        }
+    }
+
+    updateRemoteControlStatusDisplay() {
+        // 可以在UI上显示远程控制状态，比如在顶部栏添加状态指示器
+        const { isConnected, isAuthenticated } = this.remoteControlStatus;
+        
+        // 查找或创建远程控制状态指示器
+        let statusIndicator = this.querySelector('#remote-control-status');
+        if (!statusIndicator) {
+            // 如果不存在，可以在适当的位置创建一个
+            statusIndicator = document.createElement('div');
+            statusIndicator.id = 'remote-control-status';
+            statusIndicator.style.cssText = `
+                position: fixed;
+                top: 10px;
+                right: 10px;
+                padding: 8px 12px;
+                border-radius: 20px;
+                font-size: 0.8rem;
+                font-weight: 600;
+                z-index: 1000;
+                transition: all 0.3s ease;
+            `;
+            document.body.appendChild(statusIndicator);
+        }
+
+        // 更新状态显示
+        if (isConnected && isAuthenticated) {
+            statusIndicator.textContent = '🟢 远程控制已连接';
+            statusIndicator.style.background = '#d4edda';
+            statusIndicator.style.color = '#155724';
+            statusIndicator.style.border = '1px solid #c3e6cb';
+        } else if (isConnected) {
+            statusIndicator.textContent = '🟡 远程控制认证中';
+            statusIndicator.style.background = '#fff3cd';
+            statusIndicator.style.color = '#856404';
+            statusIndicator.style.border = '1px solid #ffeaa7';
+        } else {
+            statusIndicator.textContent = '🔴 远程控制断开';
+            statusIndicator.style.background = '#f8d7da';
+            statusIndicator.style.color = '#721c24';
+            statusIndicator.style.border = '1px solid #f5c6cb';
+        }
+    }
+
+    handleRemoteControlCommand(data) {
+        const { action, from_client, timestamp } = data;
+        
+        Logger.info(`Received remote control command: ${action} from ${from_client}`);
+
+        try {
+            let result = null;
+
+            switch (action) {
+                case 'ja_success':
+                    result = this.executeRemoteJASuccess();
+                    break;
+                case 'ja_failure':
+                    result = this.executeRemoteJAFailure();
+                    break;
+                default:
+                    result = {
+                        success: false,
+                        message: `未知的远程控制命令: ${action}`
+                    };
+            }
+
+            // 发送命令执行结果
+            this.sendRemoteControlResult({
+                action,
+                success: result.success,
+                message: result.message,
+                timestamp: Date.now()
+            });
+
+        } catch (error) {
+            Logger.error(`Error executing remote command ${action}:`, error);
+            
+            this.sendRemoteControlResult({
+                action,
+                success: false,
+                message: `命令执行错误: ${error.message}`,
+                timestamp: Date.now()
+            });
+        }
+    }
+
+    executeRemoteJASuccess() {
+        try {
+            // 检查当前状态是否允许执行JA成功
+            if (this.state.experimentStatus !== EXPERIMENT_STATE.JA_INSTRUCTION) {
+                return {
+                    success: false,
+                    message: '当前不在JA指示状态，无法执行JA成功'
+                };
+            }
+
+            if (!this.state.currentTarget) {
+                return {
+                    success: false,
+                    message: '没有选择当前JA目标'
+                };
+            }
+
+            // 直接调用现有的JA成功处理逻辑
+            this.handleJAInstructionResult('success');
+
+            Logger.info('Remote JA success command executed successfully');
+            
+            return {
+                success: true,
+                message: `JA成功指令已执行 - 目标: ${this.state.currentTarget.targetName}, 等级: ${this.state.instructionLevel}`
+            };
+
+        } catch (error) {
+            Logger.error('Error executing remote JA success:', error);
+            return {
+                success: false,
+                message: `执行JA成功时出错: ${error.message}`
+            };
+        }
+    }
+
+    executeRemoteJAFailure() {
+        try {
+            // 检查当前状态是否允许执行JA失败
+            if (this.state.experimentStatus !== EXPERIMENT_STATE.JA_INSTRUCTION) {
+                return {
+                    success: false,
+                    message: '当前不在JA指示状态，无法执行JA失败'
+                };
+            }
+
+            if (!this.state.currentTarget) {
+                return {
+                    success: false,
+                    message: '没有选择当前JA目标'
+                };
+            }
+
+            // 直接调用现有的JA失败处理逻辑
+            this.handleJAInstructionResult('failure');
+
+            Logger.info('Remote JA failure command executed successfully');
+            
+            return {
+                success: true,
+                message: `JA失败指令已执行 - 目标: ${this.state.currentTarget.targetName}, 等级: ${this.state.instructionLevel}`
+            };
+
+        } catch (error) {
+            Logger.error('Error executing remote JA failure:', error);
+            return {
+                success: false,
+                message: `执行JA失败时出错: ${error.message}`
+            };
+        }
+    }
+
+    sendRemoteControlResult(result) {
+        try {
+            if (window.api?.sendRemoteControlResult) {
+                window.api.sendRemoteControlResult(result);
+                Logger.info(`Remote control result sent: ${result.action} - ${result.success}`);
+            }
+        } catch (error) {
+            Logger.error('Failed to send remote control result:', error);
+        }
+    }
+
     async beforeCleanup() {
         // 清理机器人控制器
         if (this.robotController) {
@@ -820,6 +1059,12 @@ export default class ExperimentControl extends BasePage {
         }
         if (this.durationInterval) {
             clearInterval(this.durationInterval);
+        }
+
+        // 清理远程控制状态指示器
+        const statusIndicator = document.querySelector('#remote-control-status');
+        if (statusIndicator) {
+            statusIndicator.remove();
         }
     }
 }
