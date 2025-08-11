@@ -595,6 +595,8 @@ export default class ExperimentControl extends BasePage {
 
     async handleVoicePrompt() {
         const { currentTarget, instructionLevel } = this.state;
+        const participantName = sessionStorage.getItem('currentParticipantName') || '未知';
+
         if (!currentTarget) {
             this.showWarning('没有选择JA目标');
             return;
