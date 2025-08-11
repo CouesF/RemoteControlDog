@@ -10,6 +10,7 @@ import mapsAPI from '../api/maps.js';
 import EventBus from '../eventBus.js';
 import { formatIdDisplayWithTitle } from '../utils/idFormatter.js';
 import CONFIG from '../config.js'; // Import CONFIG
+import NotificationManager from '../components/NotificationManager.js';
 
 export default class MapBuilder extends BasePage {
     constructor() {
@@ -190,53 +191,50 @@ export default class MapBuilder extends BasePage {
         this.initializeCropEvents();
     }
 
-    // --- Start: Non-destructive UI Methods Override ---
-    _showNotification(type, title, message) {
-        let container = document.querySelector('.notification-container-global');
-        if (!container) {
-            container = document.createElement('div');
-            container.className = 'notification-container-global';
-            container.style.cssText = 'position: fixed; top: 20px; right: 20px; z-index: 2050; width: 350px;';
-            document.body.appendChild(container);
-        }
-
-        const alertId = `notif-${Date.now()}`;
-        const alertEl = document.createElement('div');
-        alertEl.id = alertId;
-        alertEl.className = `alert alert-${type} alert-dismissible fade show`;
-        alertEl.setAttribute('role', 'alert');
-        alertEl.innerHTML = `
-            <h5 class="alert-heading">${title}</h5>
-            <p class="mb-0">${message}</p>
-            <button type="button" class="close" data-dismiss="alert" aria-label="Close">
-                <span aria-hidden="true">&times;</span>
-            </button>
-        `;
-        
-        container.appendChild(alertEl);
-
-        setTimeout(() => {
-            const el = document.getElementById(alertId);
-            if (el) {
-                el.classList.remove('show');
-                setTimeout(() => el.remove(), 150);
-            }
-        }, 2000);
-    }
-
+    // --- Start: 统一的通知方法 ---
+    
+    /**
+     * 显示错误通知
+     * @param {string} title - 标题
+     * @param {string} message - 消息内容
+     */
     showError(title, message) {
         Logger.error(`[UI Error] ${title}: ${message}`);
-        this._showNotification('danger', title, message);
+        const notificationManager = window.NotificationManager || new NotificationManager();
+        return notificationManager.error(title, message);
     }
 
+    /**
+     * 显示警告通知
+     * @param {string} title - 标题
+     * @param {string} message - 消息内容
+     */
     showWarning(title, message) {
         Logger.warn(`[UI Warning] ${title}: ${message}`);
-        this._showNotification('warning', title, message);
+        const notificationManager = window.NotificationManager || new NotificationManager();
+        return notificationManager.warning(title, message);
     }
 
+    /**
+     * 显示成功通知
+     * @param {string} title - 标题
+     * @param {string} message - 消息内容
+     */
     showSuccess(title, message) {
         Logger.info(`[UI Success] ${title}: ${message}`);
-        this._showNotification('success', title, message);
+        const notificationManager = window.NotificationManager || new NotificationManager();
+        return notificationManager.success(title, message);
+    }
+
+    /**
+     * 显示信息通知
+     * @param {string} title - 标题
+     * @param {string} message - 消息内容
+     */
+    showInfo(title, message) {
+        Logger.info(`[UI Info] ${title}: ${message}`);
+        const notificationManager = window.NotificationManager || new NotificationManager();
+        return notificationManager.info(title, message);
     }
     
     showLoading(message) {

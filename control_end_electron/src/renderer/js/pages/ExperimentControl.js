@@ -622,10 +622,12 @@ export default class ExperimentControl extends BasePage {
         } else {
             promptText = `小朋友，请看看${targetName}`; // Default prompt if target not in scripts
         }
-    
+        
         Logger.info(`Sending voice prompt for target: ${targetName}, level: ${instructionLevel}, text: "${promptText}"`);
         
         try{
+            promptText = promptText.replace(/小朋友/g, participantName);
+            console.log(promptText)
             await this.generateSpeech(promptText);
             
             // Log the action
@@ -695,9 +697,10 @@ export default class ExperimentControl extends BasePage {
             if (status === 'success') {
                 this.showSuccess(`JA成功，等级: ${instructionLevel}`);
                 this.updateTargetCompletionStatus(currentTarget.targetId, `完成 (L${instructionLevel})`, 'success');
-    
                 // 1. 发送语音合成请求
-                const successSpeech = this.jaScripts?.[targetName]?.SUCCESS;
+                let successSpeech = this.jaScripts?.[targetName]?.SUCCESS;
+                successSpeech = successSpeech.replace(/小朋友/g, participantName);
+
                 if (successSpeech) {
                     await SessionsAPI.synthesisSpeech(successSpeech);
                 }

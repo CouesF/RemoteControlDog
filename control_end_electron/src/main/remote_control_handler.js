@@ -66,7 +66,7 @@ class RemoteControlHandler {
             
             // 使用Socket.IO客户端连接
             const io = require('socket.io-client');
-            this.ws = io('http://121.43.134.209:5000', {
+            this.ws = io('http://121.43.134.209:55000', {
                 transports: ['websocket'],
                 autoConnect: true
             });

@@ -18,20 +18,7 @@
     background-color: #f4f6f9;
 }
 
-/* Notification Container */
-#notification-container {
-    position: fixed;
-    top: 20px;
-    left: 20px;
-    z-index: 1050; /* Higher than most elements */
-    width: 200px;
-}
-
-#notification-container .alert {
-    width:190px;
-    opacity: 0.9;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.2);
-}
+/* 旧的notification容器样式已移除，由NotificationManager统一管理 */
 
 
 /* Experiment Control Page Layout */

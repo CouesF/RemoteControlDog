@@ -2,6 +2,7 @@
 import BaseComponent from '../components/BaseComponent.js';
 import Logger from '../utils/logger.js';
 import { EVENTS } from '../utils/constants.js';
+import NotificationManager from '../components/NotificationManager.js';
 
 export default class BasePage extends BaseComponent {
     constructor() {
@@ -143,59 +144,86 @@ export default class BasePage extends BaseComponent {
         }
     }
 
-    showSuccess(message, autoHide = true) {
-        this.showNotification(message, 'success', autoHide);
+    /**
+     * 显示成功通知
+     * @param {string} message - 消息内容
+     * @param {boolean|Object} options - 自动隐藏或选项对象
+     */
+    showSuccess(message, options = true) {
+        const config = this._normalizeOptions(options);
+        const notificationManager = window.NotificationManager || new NotificationManager();
+        return notificationManager.success('成功', message, config);
     }
 
-    showWarning(message, autoHide = true) {
-        this.showNotification(message, 'warning', autoHide);
+    /**
+     * 显示警告通知
+     * @param {string} message - 消息内容
+     * @param {boolean|Object} options - 自动隐藏或选项对象
+     */
+    showWarning(message, options = true) {
+        const config = this._normalizeOptions(options);
+        const notificationManager = window.NotificationManager || new NotificationManager();
+        return notificationManager.warning('警告', message, config);
     }
 
-    showInfo(message, autoHide = true) {
-        this.showNotification(message, 'info', autoHide);
+    /**
+     * 显示信息通知
+     * @param {string} message - 消息内容
+     * @param {boolean|Object} options - 自动隐藏或选项对象
+     */
+    showInfo(message, options = true) {
+        const config = this._normalizeOptions(options);
+        const notificationManager = window.NotificationManager || new NotificationManager();
+        return notificationManager.info('信息', message, config);
     }
 
-    showNotification(message, type = 'info', autoHide = true) {
-        const notificationId = `notification-${Date.now()}`;
-        const alertClass = `alert-${type}`;
-        const notificationContainer = document.getElementById('notification-container');
+    /**
+     * 显示错误通知
+     * @param {string} message - 消息内容
+     * @param {boolean|Object} options - 自动隐藏或选项对象
+     */
+    showError(message, options = true) {
+        const config = this._normalizeOptions(options);
+        const notificationManager = window.NotificationManager || new NotificationManager();
+        return notificationManager.error('错误', message, config);
+    }
 
-        if (!notificationContainer) {
-            console.error('Notification container not found!');
-            return;
+    /**
+     * 显示通用通知（保持向后兼容）
+     * @param {string} message - 消息内容
+     * @param {string} type - 通知类型
+     * @param {boolean|Object} options - 自动隐藏或选项对象
+     */
+    showNotification(message, type = 'info', options = true) {
+        const config = this._normalizeOptions(options);
+        const notificationManager = window.NotificationManager || new NotificationManager();
+        
+        // 映射类型
+        const typeMap = {
+            'success': 'success',
+            'warning': 'warning',
+            'danger': 'error',
+            'error': 'error',
+            'info': 'info'
+        };
+        
+        const mappedType = typeMap[type] || 'info';
+        const title = type.charAt(0).toUpperCase() + type.slice(1);
+        
+        return notificationManager[mappedType](title, message, config);
+    }
+
+    /**
+     * 标准化选项参数
+     * @private
+     */
+    _normalizeOptions(options) {
+        if (typeof options === 'boolean') {
+            return {
+                duration: options ? 2000 : 0
+            };
         }
-
-        const notificationHtml = `
-            <div id="${notificationId}" class="alert ${alertClass} alert-dismissible fade show" role="alert">
-                ${message}
-                <button type="button" class="close" data-dismiss="alert" aria-label="Close">
-                    <span aria-hidden="true">&times;</span>
-                </button>
-            </div>
-        `;
-
-        notificationContainer.insertAdjacentHTML('beforeend', notificationHtml);
-
-        const notificationElement = document.getElementById(notificationId);
-
-        // 确保 "close" 按钮可以工作
-        const closeButton = notificationElement.querySelector('.close');
-        if (closeButton) {
-            closeButton.addEventListener('click', () => {
-                notificationElement.remove();
-            });
-        }
-
-        // 自动隐藏
-        if (autoHide) {
-            setTimeout(() => {
-                if (notificationElement) {
-                    // 添加淡出效果
-                    notificationElement.classList.remove('show');
-                    setTimeout(() => notificationElement.remove(), 150); // 等待淡出动画完成
-                }
-            }, 2000); // 2秒后消失
-        }
+        return options || {};
     }
 
     // 数据刷新方法

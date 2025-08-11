@@ -5,6 +5,7 @@ import Logger from './utils/logger.js';
 import { EVENTS } from './utils/constants.js';
 import CONFIG from './config.js';
 import { AudioPlayer } from './AudioPlayer.js';
+import NotificationManager from './components/NotificationManager.js';
 
 export default class App {
     constructor() {
@@ -22,6 +23,9 @@ export default class App {
         }
 
         try {
+            // 初始化通知管理器
+            this.initializeNotificationManager();
+            
             // 初始化事件总线
             this.setupGlobalEventListeners();
             
@@ -74,13 +78,31 @@ export default class App {
         }
     }
 
+    /**
+     * 初始化通知管理器
+     */
+    initializeNotificationManager() {
+        if (!window.NotificationManager) {
+            window.NotificationManager = new NotificationManager();
+            Logger.info('NotificationManager initialized');
+        }
+    }
+
     setupErrorHandling() {
         window.addEventListener('error', (event) => {
             Logger.error('Global error:', event.error);
+            // 使用新的通知系统显示错误
+            if (window.NotificationManager) {
+                window.NotificationManager.error('系统错误', '发生了未处理的错误，请查看控制台');
+            }
         });
 
         window.addEventListener('unhandledrejection', (event) => {
             Logger.error('Unhandled promise rejection:', event.reason);
+            // 使用新的通知系统显示错误
+            if (window.NotificationManager) {
+                window.NotificationManager.error('Promise错误', '发生了未处理的Promise错误');
+            }
         });
     }
 
