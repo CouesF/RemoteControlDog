@@ -270,4 +270,4 @@ if __name__ == '__main__':
     logger.info(f"Access URL: http://localhost:5000/?token={VALID_TOKEN}")
     
     # 启动服务器
-    socketio.run(app, host='0.0.0.0', port=5000, debug=True)
+    socketio.run(app, host='0.0.0.0', port=55000, debug=True)
