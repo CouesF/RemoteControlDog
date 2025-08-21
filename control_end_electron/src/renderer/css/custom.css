@@ -58,6 +58,38 @@
     padding:0.75rem;
 }
 
+/* Fix for JA Target List Overflow - Prevent overlap with bottom components */
+#ja-target-list-container {
+    max-height: 420px;  /* Account for card padding and header space within 500px middle-row */
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-right: 0.5rem; /* Add space for scrollbar */
+}
+
+/* Ensure list group items are properly contained */
+#ja-target-list-container .list-group {
+    margin-bottom: 0;
+}
+
+/* Style the scrollbar for better visibility */
+#ja-target-list-container::-webkit-scrollbar {
+    width: 6px;
+}
+
+#ja-target-list-container::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 3px;
+}
+
+#ja-target-list-container::-webkit-scrollbar-thumb {
+    background: #c1c1c1;
+    border-radius: 3px;
+}
+
+#ja-target-list-container::-webkit-scrollbar-thumb:hover {
+    background: #a1a1a1;
+}
+
 .middle-row .card {
     display: flex;
     flex-direction: column;
